@@ -2,6 +2,55 @@
 // 独立模块：航空气象预报发布工具 (全业务流定制 V9.6 交互完美版)
 // =====================================================================
 
+// =====================================================================
+// 🌟 运行日志系统 PBLOG：控制台 + 内存环形缓冲 + 批量上报后端落盘
+// =====================================================================
+window.PBLOG_BUFFER = window.PBLOG_BUFFER || [];
+window._pblogQueue = window._pblogQueue || [];
+function PBLOG(msg, level) {
+    level = (level || 'INFO').toUpperCase();
+    const ts = new Date().toISOString().replace('T', ' ').slice(0, 23);
+    const line = `${ts} [${level}] ${msg}`;
+    // 控制台
+    if (level === 'ERROR') console.error(line);
+    else if (level === 'WARN' || level === 'WARNING') console.warn(line);
+    else console.log(line);
+    // 内存环形缓冲（最多保留 500 条，供一键复制）
+    window.PBLOG_BUFFER.push(line);
+    if (window.PBLOG_BUFFER.length > 500) window.PBLOG_BUFFER.shift();
+    // 批量上报后端（防抱死，最多放 50 条后冲）
+    window._pblogQueue.push({ level, msg });
+    if (window._pblogQueue.length >= 20) PBLOG_FLUSH();
+}
+function PBLOG_FLUSH() {
+    if (!window._pblogQueue.length) return;
+    const entries = window._pblogQueue.splice(0, window._pblogQueue.length);
+    try {
+        fetch('/api/log', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ entries })
+        }).catch(() => {}); // 上报失败不影响前端，控制台仍有
+    } catch (e) {}
+}
+// 定期刷出日志 + 页面关闭前刷出
+setInterval(PBLOG_FLUSH, 4000);
+window.addEventListener('beforeunload', PBLOG_FLUSH);
+// 全局未捕获异常也记入日志，避免静默白屏
+window.addEventListener('error', (e) => PBLOG(`未捕获错误: ${e.message} @ ${e.filename}:${e.lineno}`, 'ERROR'));
+window.addEventListener('unhandledrejection', (e) => PBLOG(`未处理 Promise 拒绝: ${e.reason}`, 'ERROR'));
+window.PBLOG = PBLOG;
+// 一键复制全部日志供排查
+window.copyPublishLog = function() {
+    const text = window.PBLOG_BUFFER.join('\n');
+    navigator.clipboard?.writeText(text).then(
+        () => PBLOG('日志已复制到剪贴板'),
+        () => console.log(text)
+    );
+    return text;
+};
+PBLOG('publish.js 已加载');
+
 window.publishInitialized = false;
 window.AIRPORT_COORDS = window.AIRPORT_COORDS || {};
 window.currentApAnalysis = []; 
@@ -77,6 +126,7 @@ window.saveConfirmedDataToLocal = function() {
 window.initPublishModule = async function() {
     if (window.publishInitialized) return;
     window.publishInitialized = true;
+    PBLOG('initPublishModule 开始初始化');
 
     let savedGroups = localStorage.getItem('pb_airport_groups');
     pbState.airportGroups = savedGroups ? JSON.parse(savedGroups) : DEFAULT_AIRPORT_GROUPS;
@@ -115,31 +165,45 @@ window.initPublishModule = async function() {
     
     // 🌟 修复 Bug 1b：初始化时，从本地缓存合并你修改过的机场名称和坐标！
     
-    initTopBarData();
+    try {
+        initTopBarData();
+        PBLOG('initTopBarData 完成，时间已初始化');
+    } catch (e) {
+        PBLOG('initTopBarData 失败: ' + (e && e.stack ? e.stack : e), 'ERROR');
+    }
     ALL_WX_PHENOMENA.forEach(wx => { pbState.filterWx[wx] = !WX_DEFAULT_HIDDEN.has(wx); });
     [...Object.keys(AIRPORT_CFG.domestic)].forEach(r => { pbState.enabledRegions[r] = true; });
 
-    setupQuickTimeOptions(); 
-    setupModalEvents();
-    setupSearch();
-    setupTableInteraction();
-    setupAirportInteraction();
-    renderAirportGroupsConfig(); 
-    setupGlobalToolbar(); 
+    try {
+        setupQuickTimeOptions(); 
+        setupModalEvents();
+        setupSearch();
+        setupTableInteraction();
+        setupAirportInteraction();
+        renderAirportGroupsConfig(); 
+        setupGlobalToolbar(); 
+        PBLOG('交互组件初始化完成');
+    } catch (e) {
+        PBLOG('交互组件初始化失败: ' + (e && e.stack ? e.stack : e), 'ERROR');
+    }
 
     const token = localStorage.getItem('sf_weather_token');
     const loader = document.getElementById('publish-loading-indicator');
 
     if (!token) {
+        PBLOG('未检测到登录 token，跳过自动加载', 'WARN');
         if (loader) {
             loader.style.display = 'block';
             loader.innerHTML = '<b style="color:#dc2626;">⚠️ 尚未登录或会话已过期。请先在右上角【登录 SF App】。</b>';
         }
     } else {
+        PBLOG('检测到登录 token，自动触发首次数据加载');
         if (loader) {
             loader.style.display = 'block';
-            loader.innerHTML = '<b style="color:#005A9C;">✅ 已登录。请点击上方【🔄 刷新数据】获取最新预报。</b>';
+            loader.innerHTML = '<span class="spinner"></span> 已登录，正在自动加载最新预报数据...';
         }
+        // 🌟 自动触发首次加载（带 loading 动画），不再需要手动点击刷新
+        loadForecastData().catch(e => PBLOG('首次自动加载异常: ' + e, 'ERROR'));
     }
 
     document.getElementById('logout-btn')?.addEventListener('click', () => {
@@ -334,7 +398,14 @@ function setupGlobalToolbar() {
                 let curVal = mainCells[0].text.trim();
                 let startIdx = 0;
                 
-                const formatHour = (offset) => String((startH + offset + 8) % 24).padStart(2, '0');
+                const formatHour = (offset) => {
+                    const totalH = startH + offset + 8;
+                    const dayOffset = Math.floor(totalH / 24);
+                    const h = String(totalH % 24).padStart(2, '0');
+                    const d = new Date(pbState.startDate + 'T00:00:00Z');
+                    d.setUTCDate(d.getUTCDate() + dayOffset);
+                    return `${d.getUTCMonth()+1}月${d.getUTCDate()}日${h}时`;
+                };
                 
                 for (let i = 1; i <= mainCells.length; i++) {
                     let val = i < mainCells.length ? mainCells[i].text.trim() : null;
@@ -608,63 +679,111 @@ function setupModalEvents() {
   });
 
   const dictSearch = document.getElementById('dict-search-input');
-  function renderDictTable(filterText = '') {
-      const dictTbody = document.getElementById('dict-tbody');
-      if (!dictTbody) return;
-      
-      let html = '';
-      Object.keys(window.AIRPORT_COORDS).sort().forEach(icao => {
-          const name = window.GLOBAL_AIRPORT_NAME_MAP[icao] || '未知';
-          if (filterText && !icao.includes(filterText.toUpperCase()) && !name.includes(filterText)) return;
-          const coords = window.AIRPORT_COORDS[icao];
-          html += `
-              <tr style="border-bottom: 1px solid #f1f5f9;">
-                  <td style="padding:8px; font-weight:bold; color:#1e40af;">${icao}</td>
-                  <td style="padding:8px;"><input type="text" class="dict-inp-name" value="${name}" style="width:80px; text-align:center; border:1px solid transparent; background:transparent;"></td>
-                  <td style="padding:8px;"><input type="number" class="dict-inp-lat" value="${coords[0]}" step="0.01" style="width:60px; text-align:center; border:1px solid transparent; background:transparent;"></td>
-                  <td style="padding:8px;"><input type="number" class="dict-inp-lon" value="${coords[1]}" step="0.01" style="width:60px; text-align:center; border:1px solid transparent; background:transparent;"></td>
-                  <td style="padding:8px;">
-                      <button class="mini-btn dict-save-btn" data-icao="${icao}" style="background:#28a745; color:white; padding:4px 8px; font-size:11px;">保存</button>
-                      <button class="mini-btn dict-del-btn" data-icao="${icao}" style="background:#dc2626; color:white; padding:4px 8px; font-size:11px;">删除</button>
-                  </td>
-              </tr>
-          `;
-      });
-      dictTbody.innerHTML = html;
+  // 🌟 问题1：机场字典无限滚动 —— 默认渲染前50个，滚轮到底部继续加50个；搜索时显示全部
+  const DICT_PAGE = 50;
+  let _dictLimit = DICT_PAGE;
+  let _dictFilter = '';
 
-      dictTbody.querySelectorAll('input').forEach(inp => {
-          inp.onfocus = () => { inp.style.border = '1px solid #2563eb'; inp.style.background = 'white'; };
-          inp.onblur = () => { inp.style.border = '1px solid transparent'; inp.style.background = 'transparent'; };
-      });
-
-      dictTbody.querySelectorAll('.dict-save-btn').forEach(btn => {
-          btn.onclick = (e) => {
-              const tr = e.target.closest('tr');
-              const icao = e.target.dataset.icao;
-              const newName = tr.querySelector('.dict-inp-name').value.trim();
-              const newLat = parseFloat(tr.querySelector('.dict-inp-lat').value);
-              const newLon = parseFloat(tr.querySelector('.dict-inp-lon').value);
-              if(isNaN(newLat) || isNaN(newLon)) return alert("经纬度必须为数字！");
-              
-              window.AIRPORT_COORDS[icao] = [newLat, newLon];
-              window.GLOBAL_AIRPORT_NAME_MAP[icao] = newName;
-              syncAirportsToServer(); 
-              e.target.textContent = "已存"; setTimeout(() => e.target.textContent = "保存", 1500);
-          };
-      });
-
-      dictTbody.querySelectorAll('.dict-del-btn').forEach(btn => {
-          btn.onclick = (e) => {
-              const icao = e.target.dataset.icao;
-              if(confirm(`确定移除 ${icao} 吗？`)) {
-                  delete window.AIRPORT_COORDS[icao];
-                  syncAirportsToServer(); renderDictTable(dictSearch.value);
-              }
-          };
-      });
+  function _dictMatchedKeys(filterText) {
+    const ft = (filterText || '').toUpperCase();
+    const all = Object.keys(window.AIRPORT_COORDS || {}).sort();
+    if (!ft) return all;
+    return all.filter(icao => {
+      const name = window.GLOBAL_AIRPORT_NAME_MAP[icao] || '未知';
+      return icao.includes(ft) || name.includes(filterText);
+    });
   }
 
-  if (dictSearch) dictSearch.addEventListener('input', (e) => renderDictTable(e.target.value.trim()));
+  function _dictRowHtml(icao) {
+    const name = window.GLOBAL_AIRPORT_NAME_MAP[icao] || '未知';
+    const coords = window.AIRPORT_COORDS[icao];
+    return `
+            <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding:8px; font-weight:bold; color:#1e40af;">${icao}</td>
+                <td style="padding:8px;"><input type="text" class="dict-inp-name" value="${name}" style="width:80px; text-align:center; border:1px solid transparent; background:transparent;"></td>
+                <td style="padding:8px;"><input type="number" class="dict-inp-lat" value="${coords ? coords[0] : ''}" step="0.01" style="width:60px; text-align:center; border:1px solid transparent; background:transparent;"></td>
+                <td style="padding:8px;"><input type="number" class="dict-inp-lon" value="${coords ? coords[1] : ''}" step="0.01" style="width:60px; text-align:center; border:1px solid transparent; background:transparent;"></td>
+                <td style="padding:8px;">
+                    <button class="mini-btn dict-save-btn" data-icao="${icao}" style="background:#28a745; color:white; padding:4px 8px; font-size:11px;">保存</button>
+                    <button class="mini-btn dict-del-btn" data-icao="${icao}" style="background:#dc2626; color:white; padding:4px 8px; font-size:11px;">删除</button>
+                </td>
+            </tr>
+        `;
+  }
+
+  function _bindDictRowEvents(scope) {
+    scope.querySelectorAll('input').forEach(inp => {
+        inp.onfocus = () => { inp.style.border = '1px solid #2563eb'; inp.style.background = 'white'; };
+        inp.onblur = () => { inp.style.border = '1px solid transparent'; inp.style.background = 'transparent'; };
+    });
+    scope.querySelectorAll('.dict-save-btn').forEach(btn => {
+        btn.onclick = (e) => {
+            const tr = e.target.closest('tr');
+            const icao = e.target.dataset.icao;
+            const newName = tr.querySelector('.dict-inp-name').value.trim();
+            const newLat = parseFloat(tr.querySelector('.dict-inp-lat').value);
+            const newLon = parseFloat(tr.querySelector('.dict-inp-lon').value);
+            if(isNaN(newLat) || isNaN(newLon)) return alert("经纬度必须为数字！");
+            window.AIRPORT_COORDS[icao] = [newLat, newLon];
+            window.GLOBAL_AIRPORT_NAME_MAP[icao] = newName;
+            syncAirportsToServer(); 
+            e.target.textContent = "已存"; setTimeout(() => e.target.textContent = "保存", 1500);
+        };
+    });
+    scope.querySelectorAll('.dict-del-btn').forEach(btn => {
+        btn.onclick = (e) => {
+            const icao = e.target.dataset.icao;
+            if(confirm(`确定移除 ${icao} 吗？`)) {
+                delete window.AIRPORT_COORDS[icao];
+                syncAirportsToServer(); 
+                renderDictTable(document.getElementById('dict-search-input').value.trim());
+            }
+        };
+    });
+  }
+
+  function renderDictTable(filterText = '') {
+    const dictTbody = document.getElementById('dict-tbody');
+    if (!dictTbody) return;
+    _dictFilter = filterText || '';
+    // 搜索时显示全部匹配项；空搜索时从第一页重新开始
+    _dictLimit = _dictFilter ? Number.MAX_SAFE_INTEGER : DICT_PAGE;
+    const keys = _dictMatchedKeys(_dictFilter);
+    const shown = keys.slice(0, _dictLimit);
+    dictTbody.innerHTML = shown.map(_dictRowHtml).join('');
+    _bindDictRowEvents(dictTbody);
+  }
+
+  // 🌟 滚动到底部时追加下一批 50 个（仅非搜索状态生效）
+  function _appendNextDictPage() {
+    if (_dictFilter) return; // 搜索时已全部展开
+    const dictTbody = document.getElementById('dict-tbody');
+    if (!dictTbody) return;
+    const keys = _dictMatchedKeys('');
+    if (_dictLimit >= keys.length) return; // 已全部加载
+    const next = keys.slice(_dictLimit, _dictLimit + DICT_PAGE);
+    _dictLimit += DICT_PAGE;
+    const tmp = document.createElement('tbody');
+    tmp.innerHTML = next.map(_dictRowHtml).join('');
+    while (tmp.firstChild) dictTbody.appendChild(tmp.firstChild);
+    _bindDictRowEvents(dictTbody);
+  }
+
+  // 绑定滚动容器的触底加载（只绑一次）
+  (function bindDictScroll() {
+    const tb = document.getElementById('dict-tbody');
+    const container = tb ? tb.closest('div[style*="overflow"]') : null;
+    if (container && !container._dictScrollBound) {
+        container._dictScrollBound = true;
+        container.addEventListener('scroll', () => {
+            if (container.scrollTop + container.clientHeight >= container.scrollHeight - 40) {
+                _appendNextDictPage();
+            }
+        });
+    }
+  })();
+
+if (dictSearch) dictSearch.addEventListener('input', (e) => renderDictTable(e.target.value.trim()));
 
   document.getElementById('dict-add-new-btn')?.addEventListener('click', () => {
       const icao = prompt("请输入新机场的4位ICAO代码:")?.trim().toUpperCase();
@@ -936,6 +1055,7 @@ function updateTopCountersFromTable() {
 async function loadForecastData(retainOrder = false) {
     const token = localStorage.getItem('sf_weather_token');
     const loader = document.getElementById('publish-loading-indicator');
+    PBLOG(`loadForecastData 开始 | retainOrder=${retainOrder} | startDate=${pbState.startDate} startHour=${pbState.startHour} validity=${pbState.validityHours}h`);
     
     const setProgress = (msg, isError = false) => {
         if (!loader) return;
@@ -943,7 +1063,7 @@ async function loadForecastData(retainOrder = false) {
         loader.innerHTML = isError ? `❌ ${msg}` : `<span class="spinner"></span> ${msg}`;
     };
 
-    if (!token) return; 
+    if (!token) { PBLOG('loadForecastData 中止：无 token', 'WARN'); return; }
 
     try {
         setProgress('初始化: 正在计算航班有效时段...');
@@ -980,13 +1100,39 @@ async function loadForecastData(retainOrder = false) {
 
         const D = Math.ceil((pbState.validityHours + 3) / 24) + 1; 
         const endDate = new Date(startMs + D * 86400000).toISOString().split('T')[0];
+        // 🌟 修复 EC 请求 400：open-meteo 不允许 start_date/end_date 与 past_days 同时使用。
+        // 改为把查询起始日提前 1 天，同样拿到过去 24h 历史数据，供 processAirportData 用 start_idx 溯源。
+        const queryStartDate = new Date(startMs - 86400000).toISOString().split('T')[0];
 
         const chunkSize = 50; const nwpPromises = [];
         for (let i = 0; i < validAps.length; i += chunkSize) {
             const chunkLats = lats.slice(i, i + chunkSize); const chunkLons = lons.slice(i, i + chunkSize);
-            // 🌟 需求C：新增 dew_point_2m 获取温露差，新增 past_days=1 获取过去24小时历史降水以供溯源
-            const nwpUrl = `https://api.open-meteo.com/v1/forecast?latitude=${chunkLats.join(',')}&longitude=${chunkLons.join(',')}&hourly=temperature_2m,dew_point_2m,precipitation,weather_code,visibility,wind_speed_10m,wind_direction_10m,wind_gusts_10m,surface_pressure&models=ecmwf_ifs&timezone=GMT&wind_speed_unit=ms&start_date=${pbState.startDate}&end_date=${endDate}&past_days=1`;
-            nwpPromises.push(fetch(nwpUrl).then(res => res.json()).catch(() => []));
+            // 🌟 需求C：新增 dew_point_2m 获取温露差；query_start 提前1天以含过去24小时历史降水供溯源
+            const nwpUrl = `https://api.open-meteo.com/v1/forecast?latitude=${chunkLats.join(',')}&longitude=${chunkLons.join(',')}&hourly=temperature_2m,dew_point_2m,precipitation,weather_code,visibility,wind_speed_10m,wind_direction_10m,wind_gusts_10m,surface_pressure&models=ecmwf_ifs&timezone=GMT&wind_speed_unit=ms&start_date=${queryStartDate}&end_date=${endDate}`;
+            const chunkIdx = Math.floor(i / chunkSize);
+            // 🌟 不再静默吞错：记录数值预报抓取的 HTTP 状态与失败原因
+            const p = fetch(nwpUrl)
+                .then(res => {
+                    if (!res.ok) {
+                        PBLOG(`数值预报(NWP)请求失败 chunk#${chunkIdx} HTTP ${res.status} ${res.statusText}`, 'ERROR');
+                        return [];
+                    }
+                    return res.json();
+                })
+                .then(data => {
+                    if (data && data.error) {
+                        PBLOG(`数值预报(NWP) chunk#${chunkIdx} 返回错误: ${data.reason || JSON.stringify(data)}`, 'ERROR');
+                    } else {
+                        const cnt = Array.isArray(data) ? data.length : 1;
+                        PBLOG(`数值预报(NWP) chunk#${chunkIdx} 成功，返回 ${cnt} 个点`);
+                    }
+                    return data;
+                })
+                .catch(err => {
+                    PBLOG(`数值预报(NWP)请求异常 chunk#${chunkIdx}: ${err} (可能是断网/防火墙拦截/超时)`, 'ERROR');
+                    return [];
+                });
+            nwpPromises.push(p);
         }
 
         const [tafDataMap, ...nwpChunks] = await Promise.all([
@@ -1078,6 +1224,8 @@ async function loadForecastData(retainOrder = false) {
 
         setProgress('6/6 正在排版...');
         apAnalysis.forEach((ap, idx) => ap.originalIdx = idx);
+        // 🌟 问题2：判断国内(中国大陆 Z 开头，不含港澳台 VH/RC/VM)。国内排前，国际排后。
+        const isDomestic = (icao) => /^Z[BGHSYLUPW]/.test(icao || '');
         apAnalysis.sort((a, b) => {
             const getPriority = (icao, hasAlert) => {
                 if (pbState.confirmedData[icao]) return 5; 
@@ -1093,17 +1241,25 @@ async function loadForecastData(retainOrder = false) {
             const pA = getPriority(a.icao, a.hasAlert);
             const pB = getPriority(b.icao, b.hasAlert);
             if (pA !== pB) return pB - pA;
+            // 🌟 问题2：同优先级内，国内优先于国际
+            const dA = isDomestic(a.icao) ? 0 : 1;
+            const dB = isDomestic(b.icao) ? 0 : 1;
+            if (dA !== dB) return dA - dB;
             return a.originalIdx - b.originalIdx; 
         });
 
         _cachedAirports = apAnalysis.map(a => a.icao);
         window.currentApAnalysis = apAnalysis; 
         renderPublishTableTriRow(window.currentApAnalysis);
+        PBLOG(`数据加载完成，共渲染 ${apAnalysis.length} 个机场`);
 
         if (loader) loader.style.display = 'none';
+        PBLOG_FLUSH();
 
     } catch (e) {
         console.error(e);
+        PBLOG('loadForecastData 致命异常: ' + (e && e.stack ? e.stack : e.message), 'ERROR');
+        PBLOG_FLUSH();
         setProgress(`致命异常: ${e.message}`, true);
     }
 }

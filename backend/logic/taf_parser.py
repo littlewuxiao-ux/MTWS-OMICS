@@ -1,7 +1,8 @@
 # backend/logic/taf_parser.py (已更新)
 
-from avwx import Taf
+from .avwx_standalone_parser import Taf
 from datetime import timedelta, date
+import calendar
 import calendar
 import re
 from typing import Dict, List, Optional, Any
@@ -11,7 +12,8 @@ def _convert_speed_to_mps(speed: Optional[str], unit: str) -> Optional[int]:
     try:
         if not speed: return None
         speed_val = int(speed)
-        return round(speed_val * 0.51444) if unit == "KT" else speed_val
+        # 🌟 修复：avwx 返回的单位是小写(kt)，原判断 unit=="KT" 永远不成立导致国际报文未换算。改为大小写不敏感。
+        return round(speed_val * 0.51444) if (unit or "").upper() == "KT" else speed_val
     except (ValueError, TypeError):
         return None
 
@@ -20,7 +22,8 @@ def _convert_visibility_to_meters(vis: Optional[str], unit: str) -> Optional[int
         if not vis: return None
         if vis == "CAVOK": return 9999
         if ">" in vis: vis = vis.replace(">", "")
-        if "SM" in unit:
+        # 🌟 修复：avwx 返回的单位是小写(sm)，原判断 "SM" in unit 永远不成立导致英里未换算。改为大小写不敏感。
+        if "SM" in (unit or "").upper():
             if "/" in vis:
                 parts = vis.split('/')
                 return int(float(parts[0]) / float(parts[1]) * 1609.34)

@@ -447,7 +447,9 @@ document.addEventListener('DOMContentLoaded', () => {
     
     settingsBtn.addEventListener('click', () => {
         const currentUserId = localStorage.getItem('sf_userId') || ''; 
-        if (currentUserId !== ADMIN_ID) {
+        // 只要在人员字典里，直接放行，不需要密码
+        const isKnownUser = !!personnelDict[currentUserId] || currentUserId === ADMIN_ID;
+        if (!isKnownUser) {
             const inputPwd = prompt("安全验证：访问系统配置需输入管理密码。");
             if (inputPwd !== settingsPassword) {
                 alert("密码错误，拒绝访问！");
@@ -458,15 +460,19 @@ document.addEventListener('DOMContentLoaded', () => {
         renderPersonnelList();
         
         const adminSection = document.getElementById('admin-only-section');
+        const adminNavBtn = document.querySelector('.set-nav[data-target="pane-admin"]');
         if (adminSection) {
-            if (currentUserId === ADMIN_ID || personnelDict[currentUserId] === '吴霄') {
+            const isAdmin = currentUserId === ADMIN_ID || personnelDict[currentUserId] === '吴霄';
+            if (isAdmin) {
                 adminSection.classList.remove('hidden');
                 adminSection.style.display = 'block'; 
+                if (adminNavBtn) adminNavBtn.style.display = 'block';
                 const pwdInput = document.getElementById('admin-pwd-input');
                 if(pwdInput) pwdInput.value = settingsPassword;
             } else {
                 adminSection.classList.add('hidden');
                 adminSection.style.display = 'none';
+                if (adminNavBtn) adminNavBtn.style.display = 'none';
             }
         }
     });

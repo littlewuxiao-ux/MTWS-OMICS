@@ -10,6 +10,27 @@ import time
 import threading
 import copy
 import json
+import logging
+
+# ==========================================
+# 🌟 运行日志：复用 main.py 建立的 'forecast' logger；若独立跑 app.py 则自建
+# ==========================================
+LOG = logging.getLogger('forecast')
+if not LOG.handlers:
+    # 被独立调用（如开发调试直接跑 app.py）时的兼容配置
+    try:
+        from logging.handlers import RotatingFileHandler
+        _base = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
+        _logdir = os.path.join(_base, 'logs')
+        os.makedirs(_logdir, exist_ok=True)
+        _fmt = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+        _fh = RotatingFileHandler(os.path.join(_logdir, 'runtime.log'), maxBytes=2*1024*1024, backupCount=5, encoding='utf-8')
+        _fh.setFormatter(_fmt)
+        LOG.addHandler(_fh)
+        LOG.setLevel(logging.INFO)
+        LOG.propagate = False
+    except Exception:
+        pass
 
 # ==========================================
 # [系统保护] Mock 类与安全导入
@@ -49,7 +70,11 @@ def get_base_path():
 
 base_path = get_base_path()
 
-if os.path.exists(os.path.join(base_path, 'frontend')):
+# 🌟 优先使用 main.py 传入的 FORECAST_WORK_DIR（支持程序放在任意位置，通过路径配置启动）
+_env_work_dir = os.environ.get('FORECAST_WORK_DIR', '').strip()
+if _env_work_dir and os.path.isdir(os.path.join(_env_work_dir, 'frontend')):
+    frontend_folder = os.path.join(_env_work_dir, 'frontend')
+elif os.path.exists(os.path.join(base_path, 'frontend')):
     frontend_folder = os.path.join(base_path, 'frontend')
 elif os.path.exists(os.path.join(os.path.dirname(base_path), 'frontend')):
     frontend_folder = os.path.join(os.path.dirname(base_path), 'frontend')
@@ -91,12 +116,43 @@ def serve_index(): return send_from_directory(frontend_folder, 'index.html')
 @app.route('/<path:path>')
 def serve_static(path): return send_from_directory(frontend_folder, path)
 
+@app.before_request
+def _log_request_start():
+    if request.path.startswith('/api/'):
+        request._start_ts = time.time()
+        LOG.info("--> %s %s", request.method, request.path)
+
 @app.after_request
 def add_header(response):
     response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, post-check=0, pre-check=0, max-age=0'
     response.headers['Pragma'] = 'no-cache'
     response.headers['Expires'] = '-1'
+    if request.path.startswith('/api/'):
+        dur = (time.time() - getattr(request, '_start_ts', time.time())) * 1000
+        LOG.info("<-- %s %s | %s | %.0fms", request.method, request.path, response.status_code, dur)
     return response
+
+@app.route('/api/log', methods=['POST'])
+def api_frontend_log():
+    """接收前端运行日志，统一落盘到 runtime.log。"""
+    try:
+        data = request.get_json(silent=True) or {}
+        entries = data.get('entries')
+        if entries and isinstance(entries, list):
+            for e in entries:
+                lvl = str(e.get('level', 'INFO')).upper()
+                msg = e.get('msg', '')
+                logfn = LOG.error if lvl in ('ERROR', 'WARN', 'WARNING') else LOG.info
+                logfn("[FE] %s", msg)
+        else:
+            lvl = str(data.get('level', 'INFO')).upper()
+            msg = data.get('msg', '')
+            logfn = LOG.error if lvl in ('ERROR', 'WARN', 'WARNING') else LOG.info
+            logfn("[FE] %s", msg)
+        return jsonify({"success": True})
+    except Exception as ex:
+        LOG.exception("前端日志写入失败: %s", ex)
+        return jsonify({"success": False, "error": str(ex)}), 500
 
     
 # --- 辅助函数 ---
@@ -288,7 +344,8 @@ def parse_taf_string_robust(taf_text):
     def parse_elements(tokens):
         data = {'wind_speed': None, 'visibility': None, 'weather': None, 'cloud': None}
         for t in tokens:
-            if re.match(r'^\d{3}\d{2}(?:G\d{2})?MPS$', t) or re.match(r'^\d{3}\d{2}(?:G\d{2})?KT$', t): data['wind_speed'] = int(t[3:5])
+            if re.match(r'^\d{3}\d{2}(?:G\d{2})?MPS$', t): data['wind_speed'] = int(t[3:5])
+            if re.match(r'^\d{3}\d{2}(?:G\d{2})?KT$', t): data['wind_speed'] = round(int(t[3:5]) * 0.51444)
             if re.match(r'^\d{4}$', t) and t != '9999': data['visibility'] = int(t)
             if t == '9999': data['visibility'] = 9999
             if re.search(r'(?:^|\+|-)(?:TS|SH|FZ|BL|DR|MI|BC|PR|RA|SN|SG|PL|GR|GS|DZ|FG|BR|HZ|FU|SA|DU|SS)(?:RA|SN|SG|PL|GR|GS|DZ)?$', t):
@@ -1136,6 +1193,83 @@ def get_desktop_path():
     final_path = os.path.join(desktop_dir, 'SF预报评定导出')
     os.makedirs(final_path, exist_ok=True)
     return jsonify({"success": True, "path": final_path})
+
+
+def _resolve_desktop_dir():
+    """复用：winreg 穿透 OneDrive 定位真实物理桌面目录。"""
+    import winreg
+    try:
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders")
+        reg_path, _ = winreg.QueryValueEx(key, "Desktop")
+        winreg.CloseKey(key)
+        return os.path.expandvars(reg_path)
+    except Exception:
+        user_profile = os.path.expanduser("~")
+        onedrive_desktop = os.path.join(user_profile, 'OneDrive', 'Desktop')
+        return onedrive_desktop if os.path.exists(onedrive_desktop) else os.path.join(user_profile, 'Desktop')
+
+
+@app.route('/api/export_publish', methods=['POST'])
+def export_publish_api():
+    """预报发布界面导出：把前端 html2canvas 截图(base64 PNG)与表格数据(二维数组)
+    分别保存为 PNG 图片和 Excel。export_path 留空则存桌面 SF预报发布导出 文件夹。"""
+    import base64
+    try:
+        data = request.json or {}
+        image_b64 = data.get('image', '')
+        rows = data.get('data', []) or []
+        export_path = (data.get('export_path') or '').strip()
+
+        # 1. 确定导出目录：优先用户配置路径，否则桌面专属文件夹
+        if export_path:
+            target_dir = export_path
+        else:
+            target_dir = os.path.join(_resolve_desktop_dir(), 'SF预报发布导出')
+        try:
+            os.makedirs(target_dir, exist_ok=True)
+        except Exception as e:
+            LOG.error("导出目录创建失败 %s: %s", target_dir, e)
+            return jsonify({"success": False, "error": f"导出目录无法创建: {target_dir} ({e})"}), 200
+
+        ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+        png_path = os.path.join(target_dir, f'预报发布_{ts}.png')
+        xlsx_path = os.path.join(target_dir, f'预报发布_{ts}.xlsx')
+        saved = []
+
+        # 2. 保存 PNG 截图
+        if image_b64:
+            try:
+                if ',' in image_b64:
+                    image_b64 = image_b64.split(',', 1)[1]
+                with open(png_path, 'wb') as f:
+                    f.write(base64.b64decode(image_b64))
+                saved.append(png_path)
+            except Exception as e:
+                LOG.exception("保存预报发布图片失败: %s", e)
+
+        # 3. 保存 Excel
+        if rows:
+            try:
+                import openpyxl
+                wb = openpyxl.Workbook()
+                ws = wb.active
+                ws.title = '预报发布'
+                for row in rows:
+                    ws.append([("" if c is None else str(c)) for c in row])
+                wb.save(xlsx_path)
+                saved.append(xlsx_path)
+            except Exception as e:
+                LOG.exception("保存预报发布 Excel 失败: %s", e)
+                return jsonify({"success": False, "error": f"Excel 写入失败: {e}"}), 200
+
+        if not saved:
+            return jsonify({"success": False, "error": "没有可导出的图片或表格数据"}), 200
+
+        LOG.info("预报发布导出成功: %s", target_dir)
+        return jsonify({"success": True, "path": target_dir, "files": [os.path.basename(p) for p in saved]})
+    except Exception as e:
+        LOG.exception("export_publish 异常: %s", e)
+        return jsonify({"success": False, "error": str(e)}), 200
 
 # === 新增：手动保存接口 (替换 payload 为 data 解决报错) ===
 @app.route('/api/save_score', methods=['POST'])
