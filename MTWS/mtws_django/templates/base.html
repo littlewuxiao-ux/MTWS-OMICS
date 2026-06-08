@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}航空气象报文综合监控告警系统{% endblock %}</title>
+  {% load static %}
+  <link rel="stylesheet" href="{% static 'css/main.css' %}">
+  {% block extra_css %}{% endblock %}
+</head>
+
+<body>
+  {% block content %}{% endblock %}
+
+  <script src="{% static 'js/echarts.min.js' %}"></script>
+  <script src="{% static 'js/main_metar.js' %}"></script>
+  <script src="{% static 'js/main_taf.js' %}"></script>
+  <script src="{% static 'js/main_flight.js' %}"></script>
+  <script src="{% static 'js/main.js' %}"></script>
+  {% block extra_js %}{% endblock %}
+</body>
+
+</html>

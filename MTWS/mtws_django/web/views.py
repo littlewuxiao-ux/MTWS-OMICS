@@ -1,0 +1,122 @@
+"""
+Web应用视图
+提供前端页面渲染
+"""
+
+from django.shortcuts import render
+from django.http import HttpResponse
+import json
+from core.models import Carrier
+from utils.time_manager import TimeManager
+from django.conf import settings as django_settings
+
+
+def index(request, time_mode='current'):
+    """主页"""
+    # 获取时间模式（从URL参数或默认为current）
+    time_mode = request.GET.get('time_mode', time_mode)
+    
+    # 获取承运人数据
+    carriers = list(Carrier.objects.filter(is_active=True).values_list('carrier_code', flat=True))
+    
+    # 获取测试时间（如果是测试模式）
+    test_time_iso = None
+    if time_mode == 'test':
+        test_time_iso = TimeManager.get_test_time_iso_string()
+    
+    # 获取弹窗图表配置
+    popup_config = django_settings.MTWS_CONFIG.get('POPUP_CONFIG', {})
+    chart_default_hours = popup_config.get('CHART_DEFAULT_HOURS', 3)
+    
+    context = {
+        'time_mode': time_mode,
+        'carriers': json.dumps(carriers),  # 转换为JSON字符串传递给前端
+        'test_time_iso': test_time_iso,  # 传递测试时间给前端
+        'chart_default_hours': chart_default_hours,  # 传递图表默认小时数给前端
+    }
+    
+    return render(request, 'web/index.html', context)
+
+
+def airports(request, time_mode='current'):
+    """机场监控页面"""
+    # 目前重定向到主页
+    return index(request, time_mode)
+
+
+def airport_detail(request, airport_code):
+    """机场详情页面"""
+    time_mode = request.GET.get('time_mode', 'current')
+    
+    context = {
+        'airport_code': airport_code,
+        'time_mode': time_mode,
+    }
+    
+    return render(request, 'web/airport_detail.html', context)
+
+
+def search(request):
+    """搜索页面"""
+    time_mode = request.GET.get('time_mode', 'current')
+    
+    context = {
+        'time_mode': time_mode,
+    }
+    
+    return render(request, 'web/search.html', context)
+
+
+def history(request):
+    """历史数据页面"""
+    time_mode = request.GET.get('time_mode', 'current')
+    
+    context = {
+        'time_mode': time_mode,
+    }
+    
+    return render(request, 'web/history.html', context)
+
+
+def statistics(request):
+    """统计分析页面"""
+    time_mode = request.GET.get('time_mode', 'current')
+    
+    context = {
+        'time_mode': time_mode,
+    }
+    
+    return render(request, 'web/statistics.html', context)
+
+
+def admin_panel(request):
+    """管理面板"""
+    return render(request, 'web/admin_panel.html')
+
+
+def admin_config(request):
+    """管理配置"""
+    return render(request, 'web/admin_config.html')
+
+
+def admin_logs(request):
+    """管理日志"""
+    return render(request, 'web/admin_logs.html')
+
+
+def settings(request):
+    """设置页面"""
+    return render(request, 'web/settings.html')
+
+
+def test_time_mode(request):
+    """测试时间模式页面"""
+    return index(request, time_mode='test')
+
+
+def parsing_status(request, time_mode='current'):
+    """解析状态检查页面"""
+    return render(request, 'web/parsing_status.html', {
+        'time_mode': time_mode,
+        'page_title': '解析状态检查 - MTWS'
+    })

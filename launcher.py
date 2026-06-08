@@ -1,14 +1,15 @@
 """
 统一服务启动器 (Unified Launcher)
-深色 macOS 风格 · CustomTkinter · 双服务双屏日志
+深色 macOS 风格 · CustomTkinter · 双服务双屏日志 + 后台 Nginx 统一入口
 
-一个入口同时启动并监控两个服务：
-  ① MTWS 航空气象监控系统   (Django, 默认端口 8000)
-  ② OMICS 预报评定/发布工具 (Flask+Waitress, 默认端口 56789)
+一个入口同时启动并监控三个服务：
+  ① MTWS 航空气象监控系统   (Django, 内部端口 8001)
+  ② OMICS 预报评定/发布工具 (Flask+Waitress, 内部端口 8002)
+  ③ Nginx 统一入口          (对外端口 8000，/mtws/ 与 /omics/)
 
 设计要点：
-  - 两个服务对称处理：subprocess.Popen + CREATE_NO_WINDOW（无黑框）+ 读 stdout
-  - 双屏日志：左 MTWS / 右 OMICS，各自独立面板与状态灯
+  - 两个业务服务对称处理：subprocess.Popen + CREATE_NO_WINDOW（无黑框）+ 读 stdout
+  - 界面只显示 MTWS / OMICS 两个业务面板；Nginx 作为后台统一入口由启动器静默管理
   - 路径可配置：通过 launcher_config.json 记录两个项目的路径，不必放同一文件夹
   - 任一服务未启动 → 对应面板显示「服务未启动」状态
   - MTWS 启动方式与原 server_gui.py 完全一致，显示效果不变
@@ -27,6 +28,7 @@ import os
 import json
 import queue
 import socket
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 from datetime import datetime
@@ -49,7 +51,14 @@ SCRIPT_DIR  = Path(__file__).parent
 CONFIG_PATH = SCRIPT_DIR / "launcher_config.json"
 IPC_PORT    = 19528          # 单实例 IPC（与 MTWS 的 19527 错开）
 AUTH_BROKER_PORT = 19529     # 控制台登录态中转接口（仅 127.0.0.1）
-DEFAULT_MTWS_DIR = SCRIPT_DIR.parent / "MTWS"
+DEFAULT_MTWS_DIR = SCRIPT_DIR / "MTWS"
+DEFAULT_OMICS_DIR = SCRIPT_DIR / "OMICS 5.8"
+ICON_PATH = SCRIPT_DIR / "图标.png" if (SCRIPT_DIR / "图标.png").exists() else SCRIPT_DIR.parent / "图标.png"
+NGINX_DIR = DEFAULT_OMICS_DIR / "tools" / "nginx"
+# Windows 版 Nginx 对中文路径支持很差；运行前缀必须放到纯英文路径。
+NGINX_RUNTIME_DIR = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "MTWS_OMICS_Nginx"
+NGINX_CONF_DIR = NGINX_RUNTIME_DIR / "conf"
+NGINX_LOG_DIR = NGINX_RUNTIME_DIR / "logs"
 
 # ── macOS 深色系统配色（沿用 server_gui.py 同款）────────────────────────────────
 BG_PRIMARY        = "#1c1c1e"
@@ -79,15 +88,25 @@ DEFAULT_CONFIG = {
         "name": "MTWS 监控系统",
         "work_dir": str(DEFAULT_MTWS_DIR) if DEFAULT_MTWS_DIR.exists() else "",  # 指向 MTWS 程序根目录；兼容旧配置 manage_py
         "host": "127.0.0.1",
-        "port": 8000,
+        "port": 8001,
         "home_path": "/current/",
+        "public_home_url": "http://127.0.0.1:8000/mtws/",
     },
     "omics": {
         "name": "OMICS 评定发布",
-        "work_dir": str(SCRIPT_DIR), # 指向 OMICS 项目根目录（包含 backend/frontend）
+        "work_dir": str(DEFAULT_OMICS_DIR) if DEFAULT_OMICS_DIR.exists() else str(SCRIPT_DIR), # 指向 OMICS 项目根目录（包含 backend/frontend）
         "host": "127.0.0.1",
-        "port": 56789,
+        "port": 8002,
         "home_path": "/",
+        "public_home_url": "http://127.0.0.1:8000/omics/",
+    },
+    "nginx": {
+        "name": "Nginx 统一入口",
+        "host": "127.0.0.1",
+        "port": 8000,
+        "home_path": "/",
+        "public_home_url": "http://127.0.0.1:8000/mtws/",
+        "exe_path": "",
     },
 }
 
@@ -98,7 +117,7 @@ def load_config():
         if CONFIG_PATH.exists():
             with open(CONFIG_PATH, "r", encoding="utf-8") as f:
                 saved = json.load(f)
-            for svc in ("mtws", "omics"):
+            for svc in ("mtws", "omics", "nginx"):
                 if svc in saved and isinstance(saved[svc], dict):
                     cfg[svc].update(saved[svc])
     except Exception:
@@ -129,6 +148,137 @@ def is_port_in_use(port: int) -> bool:
         return s.connect_ex(("127.0.0.1", port)) == 0
 
 
+def find_nginx_exe(configured_path=""):
+    """定位 nginx.exe。优先使用配置，其次使用项目内 portable nginx，再尝试 PATH。"""
+    candidates = []
+    if configured_path:
+        candidates.append(Path(configured_path))
+    candidates.extend([
+        NGINX_DIR / "nginx.exe",
+        DEFAULT_OMICS_DIR / "tools" / "nginx" / "nginx.exe",
+        SCRIPT_DIR / "nginx" / "nginx.exe",
+        SCRIPT_DIR / "tools" / "nginx.exe",
+        SCRIPT_DIR / "tools" / "nginx" / "nginx.exe",
+    ])
+    for c in candidates:
+        if c and c.exists() and c.is_file():
+            return c
+    try:
+        import shutil
+        found = shutil.which("nginx.exe") or shutil.which("nginx")
+        if found:
+            return Path(found)
+    except Exception:
+        pass
+    return None
+
+
+def nginx_runtime_paths():
+    prefix = NGINX_RUNTIME_DIR
+    conf = NGINX_CONF_DIR / "nginx.conf"
+    return prefix, conf
+
+
+def ensure_nginx_conf(mtws_cfg, omics_cfg, nginx_cfg):
+    """生成只监听 127.0.0.1 的统一入口配置。"""
+    prefix, conf = nginx_runtime_paths()
+    NGINX_CONF_DIR.mkdir(parents=True, exist_ok=True)
+    NGINX_LOG_DIR.mkdir(parents=True, exist_ok=True)
+    for d in ("client_body_temp", "proxy_temp", "fastcgi_temp", "uwsgi_temp", "scgi_temp"):
+        (NGINX_RUNTIME_DIR / "temp" / d).mkdir(parents=True, exist_ok=True)
+    mime_types = NGINX_CONF_DIR / "mime.types"
+    if not mime_types.exists():
+        mime_types.write_text("""types {
+    text/html                             html htm shtml;
+    text/css                              css;
+    text/xml                              xml;
+    image/gif                             gif;
+    image/jpeg                            jpeg jpg;
+    image/png                             png;
+    image/svg+xml                         svg svgz;
+    image/x-icon                          ico;
+    application/javascript                js;
+    application/json                      json;
+    application/pdf                       pdf;
+    font/woff                             woff;
+    font/woff2                            woff2;
+    application/vnd.ms-fontobject         eot;
+    font/ttf                              ttf;
+}
+""", encoding="utf-8")
+    mtws_host, mtws_port = mtws_cfg.get("host", "127.0.0.1"), int(mtws_cfg.get("port", 8001))
+    omics_host, omics_port = omics_cfg.get("host", "127.0.0.1"), int(omics_cfg.get("port", 8002))
+    nginx_host, nginx_port = nginx_cfg.get("host", "127.0.0.1"), int(nginx_cfg.get("port", 8000))
+    text = f"""worker_processes  1;
+error_log  logs/error.log;
+pid        logs/nginx.pid;
+
+events {{
+    worker_connections  1024;
+}}
+
+http {{
+    include       mime.types;
+    default_type  application/octet-stream;
+    access_log    logs/access.log;
+    sendfile      on;
+    keepalive_timeout  65;
+
+    server {{
+        listen {nginx_host}:{nginx_port};
+        server_name 127.0.0.1 localhost;
+
+        location = / {{
+            return 302 /mtws/;
+        }}
+
+        location /mtws/ {{
+            proxy_pass http://{mtws_host}:{mtws_port}/;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host:$server_port;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_redirect ~^(/.*)$ /mtws$1;
+            proxy_redirect http://{mtws_host}:{mtws_port}/ /mtws/;
+        }}
+
+        location ~ ^/(current|test|system|admin|static|media)(/.*)?$ {{
+            proxy_pass http://{mtws_host}:{mtws_port};
+            proxy_http_version 1.1;
+            proxy_set_header Host $host:$server_port;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }}
+
+        location /omics/ {{
+            proxy_pass http://{omics_host}:{omics_port}/;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host:$server_port;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_redirect ~^(/.*)$ /omics$1;
+            proxy_redirect http://{omics_host}:{omics_port}/ /omics/;
+        }}
+
+        location /api/ {{
+            proxy_pass http://{omics_host}:{omics_port}/api/;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host:$server_port;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }}
+        location /assets/ {{
+            proxy_pass http://{omics_host}:{omics_port}/assets/;
+        }}
+    }}
+}}
+"""
+    conf.write_text(text, encoding="utf-8")
+    return prefix, conf
 
 
 def resolve_mtws_manage_py(path):
@@ -239,6 +389,10 @@ class ServicePanel:
     def home_url(self):
         return f"http://{self.host}:{self.port}{self.cfg.get('home_path', '/')}"
 
+    @property
+    def public_home_url(self):
+        return self.cfg.get("public_home_url") or self.home_url
+
     def target_path(self):
         return self.cfg.get("work_dir")
 
@@ -257,12 +411,17 @@ class ServicePanel:
             return
 
         path = self.target_path()
-        if self.key == "mtws":
+        if self.key == "nginx":
+            valid_path = bool(find_nginx_exe(self.cfg.get("exe_path", "")))
+        elif self.key == "mtws":
             valid_path = bool(resolve_mtws_manage_py(path))
         else:
             valid_path = bool(path and os.path.isdir(os.path.join(path, "backend")) and os.path.isdir(os.path.join(path, "frontend")))
         if not valid_path:
-            self.log(f"未配置有效启动路径，无法启动。请点「路径配置」。", "error")
+            if self.key == "nginx":
+                self.log("未找到 nginx.exe。请将 portable Nginx 放到 tools\\nginx\\nginx.exe，或在「路径配置」中指定。", "error")
+            else:
+                self.log(f"未配置有效启动路径，无法启动。请点「路径配置」。", "error")
             self.app.after(0, self._ui_unstarted)
             return
 
@@ -277,11 +436,16 @@ class ServicePanel:
             if not manage_py:
                 raise FileNotFoundError(f"未找到 MTWS 启动入口 manage.py: {path}")
             return [sys.executable, str(manage_py), "runserver", f"{self.host}:{self.port}"], str(manage_py.parent)
-        else:
-            # OMICS: 内联启动 Flask+Waitress，不再依赖 run_server.py
-            wd = str(Path(path))
-            return ([sys.executable, "-u", "-c", OMICS_INLINE_CODE, "--host", self.host,
-                     "--port", str(self.port), "--work-dir", wd], wd)
+        if self.key == "nginx":
+            exe = find_nginx_exe(self.cfg.get("exe_path", ""))
+            if not exe:
+                raise FileNotFoundError("未找到 nginx.exe")
+            prefix, conf = ensure_nginx_conf(self.app.mtws.cfg, self.app.omics.cfg, self.cfg)
+            return [str(exe), "-p", str(prefix) + os.sep, "-c", str(conf)], str(exe.parent)
+        # OMICS: 内联启动 Flask+Waitress，不再依赖 run_server.py
+        wd = str(Path(path))
+        return ([sys.executable, "-u", "-c", OMICS_INLINE_CODE, "--host", self.host,
+                 "--port", str(self.port), "--work-dir", wd], wd)
 
     def _run(self, path):
         try:
@@ -299,6 +463,18 @@ class ServicePanel:
             self.running = True
             self.app.after(0, self._ui_started)
 
+            if self.key == "nginx":
+                self.log(f"Nginx 配置已生成，统一入口 → {self.public_home_url}", "success")
+                # Windows 版 nginx.exe 通常会拉起后台进程后立即返回；
+                # 这里按监听端口维持运行状态，避免 UI 误报停止。
+                time.sleep(0.8)
+                while not self._quitting and is_port_in_use(self.port):
+                    time.sleep(1.0)
+                self.running = False
+                if not self._quitting:
+                    self.app.after(0, self._ui_stopped)
+                return
+
             for line in self.process.stdout:
                 s = line.rstrip()
                 if s:
@@ -315,6 +491,22 @@ class ServicePanel:
 
     # ── 停止 ──────────────────────────────────────────────────────────────
     def stop(self):
+        if self.key == "nginx" and self.running and not self.attached:
+            self.log("正在停止 Nginx…", "warn")
+            try:
+                exe = find_nginx_exe(self.cfg.get("exe_path", ""))
+                prefix, conf = nginx_runtime_paths()
+                if exe:
+                    subprocess.run([str(exe), "-p", str(prefix) + os.sep, "-c", str(conf), "-s", "stop"],
+                                   cwd=str(exe.parent), creationflags=subprocess.CREATE_NO_WINDOW,
+                                   capture_output=True)
+            except Exception as exc:
+                self.log(f"停止 Nginx 时出错：{exc}", "warn")
+            self.kill_port_listeners()
+            self.process = None
+            self.running = False
+            self._ui_stopped()
+            return
         if self.process and self.running and not self.attached:
             self.log("正在停止服务…", "warn")
             pid = self.process.pid
@@ -375,29 +567,37 @@ class ServicePanel:
 
     # ── 状态 UI 更新 ──────────────────────────────────────────────────────
     def _ui_started(self):
-        self.status_dot.configure(text_color=COLOR_GREEN)
-        self.status_label.configure(text="运行中", text_color=COLOR_GREEN)
+        if self.status_dot:
+            self.status_dot.configure(text_color=COLOR_GREEN)
+        if self.status_label:
+            self.status_label.configure(text="运行中", text_color=COLOR_GREEN)
         if self.toggle_btn:
             self.toggle_btn.configure(text="停止", fg_color=COLOR_RED, hover_color="#e0362d")
-        self.log(f"服务已启动 → {self.home_url}", "success")
+        self.log(f"服务已启动 → {self.public_home_url}", "success")
 
     def _ui_attached(self):
-        self.status_dot.configure(text_color=COLOR_ORANGE)
-        self.status_label.configure(text="已接管", text_color=COLOR_ORANGE)
+        if self.status_dot:
+            self.status_dot.configure(text_color=COLOR_ORANGE)
+        if self.status_label:
+            self.status_label.configure(text="已接管", text_color=COLOR_ORANGE)
         if self.toggle_btn:
             self.toggle_btn.configure(text="外部服务", fg_color=BG_TERTIARY,
                                       hover_color=BG_GROUPED, text_color=COLOR_ORANGE)
 
     def _ui_stopped(self):
-        self.status_dot.configure(text_color=COLOR_RED)
-        self.status_label.configure(text="服务未启动", text_color="#636366")
+        if self.status_dot:
+            self.status_dot.configure(text_color=COLOR_RED)
+        if self.status_label:
+            self.status_label.configure(text="服务未启动", text_color="#636366")
         if self.toggle_btn:
             self.toggle_btn.configure(text="启动", fg_color=COLOR_GREEN, hover_color="#27a846")
         self.log("服务未启动", "warn")
 
     def _ui_unstarted(self):
-        self.status_dot.configure(text_color=COLOR_RED)
-        self.status_label.configure(text="服务未启动", text_color="#636366")
+        if self.status_dot:
+            self.status_dot.configure(text_color=COLOR_RED)
+        if self.status_label:
+            self.status_label.configure(text="服务未启动", text_color="#636366")
         if self.toggle_btn:
             self.toggle_btn.configure(text="启动", fg_color=COLOR_GREEN, hover_color="#27a846")
 
@@ -453,7 +653,7 @@ class ServicePanel:
         tb.configure(state="disabled")
 
     def open_home(self):
-        webbrowser.open(self.home_url)
+        webbrowser.open(self.public_home_url)
 
     @property
     def protocol_label(self):
@@ -549,15 +749,17 @@ class LauncherApp(ctk.CTk):
 
         self.mtws = ServicePanel(self, "mtws", self.cfg["mtws"])
         self.omics = ServicePanel(self, "omics", self.cfg["omics"])
+        self.nginx = ServicePanel(self, "nginx", self.cfg["nginx"])
 
         self.title("统一服务启动器 · MTWS + OMICS")
-        self.geometry("1180x720")
-        self.minsize(960, 600)
+        self.geometry("1080x760")
+        self.minsize(960, 620)
         self.configure(fg_color=BG_PRIMARY)
 
         self._build_ui()
         self._configure_log_tags(self.mtws)
         self._configure_log_tags(self.omics)
+        self._configure_log_tags(self.nginx)
         self.auth_broker = AuthBrokerServer(self)
         self.auth_broker.start()
         self._setup_tray()
@@ -579,7 +781,7 @@ class LauncherApp(ctk.CTk):
         body.grid_columnconfigure(0, weight=1, uniform="service_columns")
         body.grid_columnconfigure(1, weight=1, uniform="service_columns")
         body.grid_rowconfigure(0, weight=1)
-        # 双屏：左 MTWS / 右 OMICS
+        # 只显示业务服务：MTWS / OMICS。Nginx 作为后台统一入口静默启动与退出。
         self._build_service_column(body, self.mtws, col_index=0)
         self._build_service_column(body, self.omics, col_index=1)
 
@@ -590,7 +792,7 @@ class LauncherApp(ctk.CTk):
         ctk.CTkLabel(left, text="🛫", font=ctk.CTkFont(size=20)).pack(side="left")
         ctk.CTkLabel(left, text="航空气象统一服务启动器", font=ctk.CTkFont(size=15, weight="bold"),
                      text_color=COLOR_LABEL).pack(side="left", padx=(8, 0))
-        ctk.CTkLabel(left, text="MTWS 监控 + OMICS 评定发布", font=ctk.CTkFont(size=11),
+        ctk.CTkLabel(left, text="统一入口 8000 · MTWS 8001 · OMICS 8002", font=ctk.CTkFont(size=11),
                      text_color="#636366").pack(side="left", padx=(8, 0), pady=(2, 0))
         right = ctk.CTkFrame(bar, fg_color="transparent"); right.pack(side="right", padx=18)
         self.login_btn = ctk.CTkButton(right, text="扫码登录", width=116, command=self._open_token_login,
@@ -687,6 +889,8 @@ class LauncherApp(ctk.CTk):
         ctk.CTkFrame(parent, fg_color=BG_GROUPED, height=1, corner_radius=0).pack(fill="x", padx=8)
 
     def _configure_log_tags(self, svc):
+        if not svc.log_text:
+            return
         tb = svc.log_text._textbox
         tb.tag_configure("info", foreground=COLOR_BLUE)
         tb.tag_configure("success", foreground=COLOR_GREEN)
@@ -699,27 +903,39 @@ class LauncherApp(ctk.CTk):
     def _poll_logs(self):
         self.mtws.drain_logs()
         self.omics.drain_logs()
+        self.nginx.drain_logs()
         self.after(80, self._poll_logs)
 
     def _monitor_services(self):
         if not self._quitting:
             self.mtws.check_external_health()
             self.omics.check_external_health()
+            self.nginx.check_external_health()
             self.after(1500, self._monitor_services)
 
     # ── 启动控制 ──────────────────────────────────────────────────────────
     def _autostart(self):
         # 初始各服务显示未启动状态提示
-        for svc in (self.mtws, self.omics):
+        for svc in (self.mtws, self.omics, self.nginx):
             path = svc.target_path()
-            ok = bool(resolve_mtws_manage_py(path)) if svc.key == "mtws" else bool(path and os.path.isdir(path))
+            if svc.key == "mtws":
+                ok = bool(resolve_mtws_manage_py(path))
+            elif svc.key == "omics":
+                ok = bool(path and os.path.isdir(path))
+            else:
+                ok = bool(find_nginx_exe(svc.cfg.get("exe_path", "")))
             if not ok:
-                svc.log(f"未配置启动路径，请点右上「路径配置」。", "warn")
+                if svc.key == "nginx":
+                    svc.log("未找到 nginx.exe。后端会启动，但 8000 统一入口需安装/放置 Nginx 后才能工作。", "warn")
+                else:
+                    svc.log(f"未配置启动路径，请点右上「路径配置」。", "warn")
         self._start_all()
 
     def _start_all(self):
         self.mtws.start()
         self.omics.start()
+        # Nginx 需要后端端口已开始启动后再接入
+        self.after(1200, self.nginx.start)
 
     # ── 路径配置 ──────────────────────────────────────────────────────────
     def _open_path_config(self):
@@ -785,6 +1001,7 @@ class LauncherApp(ctk.CTk):
         self.cfg = new_cfg
         self.mtws.cfg = new_cfg["mtws"]
         self.omics.cfg = new_cfg["omics"]
+        self.nginx.cfg = new_cfg["nginx"]
         save_config(new_cfg)
         if autostart:
             self.after(100, self._start_all)
@@ -804,6 +1021,11 @@ class LauncherApp(ctk.CTk):
         self.tray_icon = pystray.Icon("Launcher", icon_img, "航空气象统一启动器", menu)
 
     def _make_tray_icon(self):
+        if ICON_PATH.exists():
+            try:
+                return Image.open(ICON_PATH).convert("RGBA").resize((64, 64), Image.LANCZOS)
+            except Exception:
+                pass
         size = 64
         img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
         d = ImageDraw.Draw(img)
@@ -830,7 +1052,8 @@ class LauncherApp(ctk.CTk):
         self._quitting = True
         self.mtws._quitting = True
         self.omics._quitting = True
-        for svc in (self.mtws, self.omics):
+        self.nginx._quitting = True
+        for svc in (self.nginx, self.mtws, self.omics):
             try:
                 if not svc.attached:
                     svc.stop()
@@ -991,7 +1214,7 @@ class PathConfigDialog(ctk.CTkToplevel):
         self.cfg = json.loads(json.dumps(app.cfg))  # 编辑副本
 
         self.title("路径配置")
-        self.geometry("640x420")
+        self.geometry("720x520")
         self.resizable(False, False)
         self.configure(fg_color=BG_SECONDARY)
         self.grab_set(); self.lift(); self.focus_force()
@@ -1006,7 +1229,7 @@ class PathConfigDialog(ctk.CTkToplevel):
             "MTWS 程序根目录（server_gui.py 所在目录）",
             self.cfg["mtws"].get("work_dir", ""),
             "选择 MTWS 程序根目录")
-        self.mtws_port = self._port_row("MTWS 端口", self.cfg["mtws"].get("port", 8000))
+        self.mtws_port = self._port_row("MTWS 内部端口", self.cfg["mtws"].get("port", 8001))
 
         ctk.CTkFrame(self, fg_color=COLOR_SEPARATOR, height=1).pack(fill="x", padx=24, pady=10)
 
@@ -1015,7 +1238,16 @@ class PathConfigDialog(ctk.CTkToplevel):
             "OMICS 项目根目录（包含 backend/frontend）",
             self.cfg["omics"].get("work_dir", str(SCRIPT_DIR)),
             "选择 OMICS 项目根目录")
-        self.omics_port = self._port_row("OMICS 端口", self.cfg["omics"].get("port", 56789))
+        self.omics_port = self._port_row("OMICS 内部端口", self.cfg["omics"].get("port", 8002))
+
+        ctk.CTkFrame(self, fg_color=COLOR_SEPARATOR, height=1).pack(fill="x", padx=24, pady=10)
+
+        self.nginx_entry = self._path_row(
+            "Nginx.exe 路径（可空；默认查找 tools/nginx/nginx.exe 或 PATH）",
+            self.cfg.get("nginx", {}).get("exe_path", ""),
+            "选择 nginx.exe",
+            [("nginx.exe", "nginx.exe"), ("可执行文件", "*.exe"), ("所有文件", "*.*")])
+        self.nginx_port = self._port_row("Nginx 对外端口", self.cfg.get("nginx", {}).get("port", 8000))
 
         self.hint = ctk.CTkLabel(self, text="", font=ctk.CTkFont(size=11), text_color=COLOR_ORANGE)
         self.hint.pack(anchor="w", padx=24, pady=(8, 0))
@@ -1080,14 +1312,21 @@ class PathConfigDialog(ctk.CTkToplevel):
         if omics_path and (not os.path.isdir(os.path.join(omics_path, "backend")) or not os.path.isdir(os.path.join(omics_path, "frontend"))):
             self.hint.configure(text="⚠ OMICS 项目根目录无效，需包含 backend/frontend。"); return
         try:
-            self.cfg["mtws"]["port"] = int(self.mtws_port.get().strip() or 8000)
-            self.cfg["omics"]["port"] = int(self.omics_port.get().strip() or 56789)
+            self.cfg["mtws"]["port"] = int(self.mtws_port.get().strip() or 8001)
+            self.cfg["omics"]["port"] = int(self.omics_port.get().strip() or 8002)
+            self.cfg.setdefault("nginx", {})["port"] = int(self.nginx_port.get().strip() or 8000)
         except ValueError:
             self.hint.configure(text="⚠ 端口必须是数字。"); return
         self.cfg["mtws"]["work_dir"] = mtws_path
+        self.cfg["mtws"]["public_home_url"] = f"http://127.0.0.1:{self.cfg['nginx']['port']}/mtws/"
         self.cfg["mtws"].pop("manage_py", None)
         self.cfg["omics"]["work_dir"] = omics_path or str(SCRIPT_DIR)
+        self.cfg["omics"]["public_home_url"] = f"http://127.0.0.1:{self.cfg['nginx']['port']}/omics/"
         self.cfg["omics"].pop("run_server", None)
+        self.cfg["nginx"].setdefault("name", "Nginx 统一入口")
+        self.cfg["nginx"].setdefault("host", "127.0.0.1")
+        self.cfg["nginx"]["public_home_url"] = f"http://127.0.0.1:{self.cfg['nginx']['port']}/mtws/"
+        self.cfg["nginx"]["exe_path"] = self.nginx_entry.get().strip()
         self.app.apply_config(self.cfg, autostart=True)
         self.hint.configure(text="✓ 已保存，正在启动未运行的服务。", text_color=COLOR_GREEN)
         self.after(900, self.destroy)

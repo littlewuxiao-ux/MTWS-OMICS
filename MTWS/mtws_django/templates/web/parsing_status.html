@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>解析状态检查 - MTWS</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      background-color: #f5f5f5;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      background-color: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+
+    .status-card {
+      margin: 20px 0;
+      padding: 15px;
+      border-radius: 5px;
+      border-left: 4px solid #007bff;
+      background-color: #f8f9fa;
+    }
+
+    .success {
+      border-left-color: #28a745;
+    }
+
+    .error {
+      border-left-color: #dc3545;
+    }
+
+    .warning {
+      border-left-color: #ffc107;
+    }
+
+    .info {
+      border-left-color: #17a2b8;
+    }
+
+    .btn {
+      background-color: #007bff;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin: 10px 5px;
+    }
+
+    .btn:hover {
+      background-color: #0056b3;
+    }
+
+    .log-container {
+      max-height: 400px;
+      overflow-y: auto;
+      background-color: #f8f9fa;
+      padding: 15px;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 12px;
+    }
+
+    .timestamp {
+      color: #666;
+      font-size: 11px;
+    }
+
+    .loading {
+      text-align: center;
+      color: #666;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>解析状态检查工具</h1>
+      <p>检查航班、METAR、TAF解析程序的执行情况</p>
+    </div>
+
+    <div>
+      <button class="btn" onclick="triggerParsing()">手动触发解析</button>
+      <button class="btn" onclick="checkStatus()">刷新状态</button>
+      <button class="btn" onclick="clearLogs()">清空日志</button>
+    </div>
+
+    <div id="status-container">
+      <div class="loading">正在加载状态...</div>
+    </div>
+
+    <div style="margin-top: 30px;">
+      <h3>实时日志</h3>
+      <div id="log-container" class="log-container">
+        <div class="loading">正在加载日志...</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentTimeMode = '{{ time_mode|default:"current" }}';
+
+    // 页面加载时检查状态
+    document.addEventListener('DOMContentLoaded', function () {
+      checkStatus();
+      loadRecentLogs();
+
+      // 每30秒自动刷新状态
+      setInterval(checkStatus, 30000);
+    });
+
+    // 触发解析
+    async function triggerParsing() {
+      const statusContainer = document.getElementById('status-container');
+      statusContainer.innerHTML = '<div class="loading">正在执行解析...</div>';
+
+      try {
+        const response = await fetch(`/${currentTimeMode}/api/trigger-parsing/`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({})
+        });
+
+        const result = await response.json();
+        displayParsingResult(result);
+
+        // 解析完成后加载最新日志
+        setTimeout(loadRecentLogs, 1000);
+
+      } catch (error) {
+        statusContainer.innerHTML = `
+                    <div class="status-card error">
+                        <h3>❌ 解析触发失败</h3>
+                        <p>错误: ${error.message}</p>
+                    </div>
+                `;
+      }
+    }
+
+    // 检查解析状态
+    async function checkStatus() {
+      try {
+        const response = await fetch(`/${currentTimeMode}/api/parsing-status/`);
+        const result = await response.json();
+        displayStatus(result);
+      } catch (error) {
+        console.error('获取状态失败:', error);
+      }
+    }
+
+    // 显示解析结果
+    function displayParsingResult(result) {
+      const container = document.getElementById('status-container');
+
+      if (result.success) {
+        let html = `
+                    <div class="status-card success">
+                        <h3>✅ 解析执行成功</h3>
+                        <p><strong>消息:</strong> ${result.message}</p>
+                        <p><strong>执行时间:</strong> ${result.data.total_execution_time?.toFixed(2) || 'N/A'} 秒</p>
+                        <p><strong>处理记录数:</strong> ${result.data.total_records || 0} 条</p>
+                `;
+
+        if (result.data.active_airports) {
+          html += `<p><strong>有航班的机场:</strong> ${result.data.active_airports.join(', ')}</p>`;
+        }
+
+        if (result.data.parsers) {
+          html += '<h4>各解析器执行情况:</h4><ul>';
+          Object.keys(result.data.parsers).forEach(parser => {
+            const parserResult = result.data.parsers[parser];
+            const status = parserResult.success ? '✅' : '❌';
+            html += `<li>${status} <strong>${parser}:</strong> ${parserResult.record_count || 0} 条记录</li>`;
+          });
+          html += '</ul>';
+        }
+
+        html += '</div>';
+        container.innerHTML = html;
+      } else {
+        container.innerHTML = `
+                    <div class="status-card error">
+                        <h3>❌ 解析执行失败</h3>
+                        <p><strong>错误:</strong> ${result.error}</p>
+                        <p><strong>消息:</strong> ${result.message}</p>
+                    </div>
+                `;
+      }
+    }
+
+    // 显示状态信息
+    function displayStatus(result) {
+      const container = document.getElementById('status-container');
+
+      if (result.success && result.data.logs.length > 0) {
+        let html = '<h3>📊 最近解析记录</h3>';
+
+        result.data.logs.forEach(log => {
+          const statusClass = log.status === 'success' ? 'success' : 'error';
+          const statusIcon = log.status === 'success' ? '✅' : '❌';
+
+          html += `
+                        <div class="status-card ${statusClass}">
+                            <h4>${statusIcon} ${log.parse_type.toUpperCase()} 解析</h4>
+                            <p><strong>状态:</strong> ${log.status}</p>
+                            <p><strong>消息:</strong> ${log.message}</p>
+                            <p class="timestamp">时间: ${new Date(log.created_at).toLocaleString()}</p>
+                        </div>
+                    `;
+        });
+
+        container.innerHTML = html;
+      } else {
+        container.innerHTML = `
+                    <div class="status-card info">
+                        <h3>ℹ️ 暂无解析记录</h3>
+                        <p>还没有执行过解析程序，点击"手动触发解析"开始执行。</p>
+                    </div>
+                `;
+      }
+    }
+
+    // 加载最近日志
+    function loadRecentLogs() {
+      const logContainer = document.getElementById('log-container');
+      logContainer.innerHTML = '<div class="loading">正在加载日志...</div>';
+
+      // 这里可以实现日志加载逻辑
+      // 目前显示占位信息
+      setTimeout(() => {
+        logContainer.innerHTML = `
+                    <div class="timestamp">[${new Date().toLocaleString()}] 系统启动</div>
+                    <div class="timestamp">[${new Date().toLocaleString()}] 等待解析任务...</div>
+                `;
+      }, 500);
+    }
+
+    // 清空日志
+    function clearLogs() {
+      const logContainer = document.getElementById('log-container');
+      logContainer.innerHTML = '<div class="timestamp">日志已清空</div>';
+    }
+  </script>
+</body>
+
+</html>

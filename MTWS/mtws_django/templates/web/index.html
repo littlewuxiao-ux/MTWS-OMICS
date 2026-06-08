@@ -1,0 +1,365 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<!-- 服务器断连提示横幅（轮询失败时显示，恢复后自动隐藏） -->
+<div id="server-offline-banner">⚠ 服务器连接已断开，正在等待重连...</div>
+
+<!-- 5.1 头部区域 -->
+<header class="header-section">
+  <h1 class="system-title">航空气象报文综合监控告警系统</h1>
+  <!-- 用户信息区域（仅current模式显示） -->
+  <div class="user-info-section" id="user-info-section" style="display: none;">
+    <span class="user-code" id="user-code"></span>
+    <button class="logout-btn" id="logout-btn">登出</button>
+  </div>
+</header>
+
+<!-- 5.2 功能区域 -->
+<section class="function-section">
+  <!-- 左边区域 -->
+  <div class="function-left">
+    <!-- 第1行：国内区域 -->
+    <div class="filter-row">
+      <span class="filter-title">国内</span>
+      <div class="button-group" id="domestic-button-group">
+        <!-- 国内区域按钮将通过JavaScript动态生成 -->
+      </div>
+    </div>
+
+    <!-- 第2行：国际区域 -->
+    <div class="filter-row">
+      <span class="filter-title">国际</span>
+      <div class="button-group" id="international-button-group">
+        <!-- 国际区域按钮将通过JavaScript动态生成 -->
+      </div>
+    </div>
+  </div>
+
+  <!-- 分隔线 -->
+  <div class="separator"></div>
+
+  <!-- 右边区域 -->
+  <div class="function-right">
+    <!-- 第1行：承运人、设置、异常监控 -->
+    <div class="filter-row">
+      <div class="carrier-section">
+        <span class="filter-title carrier-title">承运人</span>
+        <div class="carrier-display" id="carrier-display">
+          {{ carriers|join:" " }}
+        </div>
+      </div>
+
+      <div class="popup-control-section">
+        <span class="popup-control-title">实况弹窗</span>
+        <button class="filter-btn popup-toggle-btn" id="operation-toggle"
+          data-field="operation_metar_popup">运行类</button>
+        <button class="filter-btn popup-toggle-btn" id="parking-toggle" data-field="parking_metar_popup">停场类</button>
+        <button class="snooze-restore-btn snooze-restore-inactive" id="snooze-restore-btn" title="没有可恢复的实况弹窗">
+          <svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" width="20" height="20">
+            <path
+              d="M833.024 104.448H409.088c-43.008 0-77.824 34.816-77.824 77.824v30.208H188.928c-38.4 0-70.144 31.232-70.144 70.144v559.104c0 38.4 31.232 70.144 70.144 70.144h423.936c38.4 0 70.144-31.232 70.144-70.144V819.2h150.016c43.008 0 77.824-34.816 77.824-77.824V181.76c0-42.496-35.328-77.312-77.824-77.312z m-150.016 552.448v-43.52c63.488-38.912 110.08-101.888 127.488-177.664l15.872-66.56c4.096-16.384-1.536-33.792-14.848-44.032-18.432-14.336-45.056-11.776-59.392 6.656l-57.856 68.096c-3.584 4.608-7.68 8.704-11.776 12.8V281.6c0-38.4-31.232-70.144-70.144-70.144H386.56v-30.208c0-12.288 10.24-22.528 22.528-22.528h423.936c12.288 0 22.528 10.24 22.528 22.528v559.104c0 12.288-10.24 22.528-22.528 22.528h-150.016v-105.984z m-124.928-38.4l-16.384 1.536v103.936c0 2.56-1.024 4.096-2.048 4.608s-2.56 2.048-4.608 2.048c-1.536 0-3.072-0.512-4.608-1.536l-178.688-159.232c-2.56-2.56-3.072-6.656-0.512-9.728l0.512-0.512 178.688-152.576c1.536-1.536 3.072-1.536 4.608-1.536h0.512c1.024 0 3.072 0.512 4.608 2.56 1.024 1.024 1.536 2.56 1.536 4.096v98.816l19.968-2.048c62.464-6.656 119.296-36.864 160.256-84.992l57.856-68.096 0.512-0.512c2.048-3.072 6.656-3.584 9.216-1.024 2.048 1.536 3.072 4.608 2.048 7.168l-15.872 67.072c-24.064 103.424-111.104 179.712-217.6 189.952z"
+              fill="currentColor" />
+          </svg>
+        </button>
+      </div>
+
+      <div class="select-group" title="机场排序方式切换" style="margin-left: 20px;">
+        <select id="airport-sort-select" class="filter-select airport-sort-filter-select">
+          <option value="alert-asc">告警正序</option>
+          <option value="region-asc">区域正序</option>
+          <option value="alert-desc">告警逆序</option>
+          <option value="region-desc">区域逆序</option>
+        </select>
+      </div>
+
+      <label class="timezone-toggle-label" title="北京时/世界时切换开关" style="margin-left: 20px;">
+        <input type="checkbox" id="timezone-toggle-input" />
+        <div class="timezone-toggle-track">
+          <span class="timezone-track-label left">CST</span>
+          <span class="timezone-track-label right">UTC</span>
+          <div class="timezone-toggle-thumb"></div>
+        </div>
+      </label>
+
+      <label class="timezone-toggle-label" title="显示模式切换开关" style="margin-left: 8px;">
+        <input type="checkbox" id="view-mode-toggle-input" />
+        <div class="timezone-toggle-track view-mode-toggle-track">
+          <span class="timezone-track-label left">列表模式</span>
+          <span class="timezone-track-label right">地图模式</span>
+          <div class="timezone-toggle-thumb"></div>
+        </div>
+      </label>
+
+      <button class="action-btn margin-left" id="monitor-btn" style="display: none;">异常监控</button>
+      <button class="action-btn" id="settings-btn" style="margin-left: 30px;">设置</button>
+    </div>
+
+    <!-- 第2行：告警等级、告警裕度、时间范围、搜索、刷新 -->
+    <div class="filter-row">
+      <span class="filter-title">告警等级</span>
+      <div class="button-group">
+        <button class="filter-btn alert-all" data-group="alert" data-value="all">全部</button>
+        <button class="filter-btn alert-red" data-group="alert" data-value="red">红</button>
+        <button class="filter-btn alert-yellow" data-group="alert" data-value="yellow">黄</button>
+        <button class="filter-btn alert-green" data-group="alert" data-value="green">绿</button>
+        <button class="filter-btn alert-none" data-group="alert" data-value="none">无</button>
+      </div>
+
+      <span class="filter-title margin-left">告警裕度</span>
+      <div class="select-group">
+        <select class="filter-select margin-select" data-group="margin" id="margin-select">
+          <option value="0">0</option>
+          <option value="1">1</option>
+          <option value="2" selected>2</option>
+          <option value="3">3</option>
+          <option value="4">4</option>
+        </select>
+      </div>
+
+      <span class="filter-title margin-left">时间范围</span>
+      <div class="select-group">
+        <select class="filter-select time-range-select" data-group="time-range" id="time-range-select">
+          <option value="36" selected>36</option>
+          <option value="48">48</option>
+        </select>
+      </div>
+
+      <input type="text" class="search-input margin-left" id="search-input" placeholder="机场搜索" style="display: none;">
+      <button class="action-btn" id="search-btn" style="display: none;">搜索</button>
+      <button class="action-btn" id="nwp-btn" style="margin-left: 30px;">温度辅助</button>
+      <button class="action-btn" id="refresh-btn" style="margin-left: 8px;">刷新</button>
+    </div>
+  </div>
+</section>
+
+<!-- 5.3 内容区域 -->
+<section class="content-section">
+  <!-- 标题行区域 -->
+  <div class="title-row">
+    <!-- 机场标题 -->
+    <div class="title-airport">
+      <span class="title-text">机场</span>
+    </div>
+
+    <!-- 实况信息标题 -->
+    <div class="title-weather">
+      <span class="title-text">实况信息</span>
+    </div>
+
+    <!-- 时间轴 -->
+    <div class="title-timeline">
+      <!-- 北京时时间轴 -->
+      <div class="timeline-row beijing-time">
+        <div id="beijing-timeline" class="timeline-container"></div>
+      </div>
+      <!-- 世界时时间轴 -->
+      <div class="timeline-row utc-time">
+        <div id="utc-timeline" class="timeline-container"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 正文区域 -->
+  <div class="content-main" id="content-main">
+    <!-- 机场信息将通过JavaScript动态加载 -->
+    <div class="loading-message">正在加载数据...</div>
+  </div>
+</section>
+
+<!-- 地图模式面板（fixed，与列表区等地位，切换显示） -->
+<div id="map-alert-panel" style="display:none;">
+  <!-- 中国/世界切换开关：浮于地图顶部中央 -->
+  <div class="map-view-overlay-wrap">
+    <label class="map-view-toggle-label" title="中国/世界视图切换">
+      <input type="checkbox" id="map-view-toggle-input" />
+      <div class="map-view-toggle-track">
+        <span class="map-view-track-label left">China</span>
+        <span class="map-view-track-label right">World</span>
+        <div class="map-view-toggle-thumb"></div>
+      </div>
+    </label>
+  </div>
+  <div id="map-world" class="map-chart-pane"></div>
+</div>
+
+<!-- 搜索弹窗 -->
+<div id="search-modal" class="modal">
+  <div class="modal-content">
+    <span class="modal-close">&times;</span>
+    <div id="search-results"></div>
+  </div>
+</div>
+
+<!-- 异常监控弹窗 -->
+<div id="monitor-modal" class="modal">
+  <div class="modal-content">
+    <span class="modal-close">&times;</span>
+    <div id="monitor-content">
+      <h3>异常监控</h3>
+      <p>异常信息内容待定</p>
+    </div>
+  </div>
+</div>
+
+<!-- 机场详情弹窗 -->
+<div id="airport-detail-modal" class="modal">
+  <div class="modal-content airport-detail-content">
+    <span class="modal-close">&times;</span>
+    <div id="airport-detail-content">
+      <!-- 第1行：机场代码和名称 + 机场信息 -->
+      <div class="airport-detail-header">
+        <div class="airport-title-left">
+          <h2 id="airport-title"></h2>
+        </div>
+        <div class="airport-info-right">
+          <div class="airport-info-row-top">
+            <div class="info-item">
+              <span class="info-label">日出:</span>
+              <span class="info-value" id="sunrise-time">--:--</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">日落:</span>
+              <span class="info-value" id="sunset-time">--:--</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">跑道:</span>
+              <span class="info-value" id="runway-info">--</span><span class="airport-detail-info-hint"
+                title="日出日落时间采用外网公开数据获取的机场坐标经过计算得到，跑道号为公开数据直接获取，以上数据仅做参考，如需详细资料请参考官方数据。" aria-label="说明">&#x24D8;</span>
+            </div>
+          </div>
+          <div class="airport-info-row-bottom">
+            <div class="contact-item">
+              <span class="contact-label">区号:</span>
+              <span class="contact-value" id="area-code">N/A</span>
+            </div>
+            <div class="contact-item">
+              <span class="contact-label">预报电话:</span>
+              <span class="contact-value" id="forecast-phone">N/A</span>
+            </div>
+            <div class="contact-item">
+              <span class="contact-label">观测电话:</span>
+              <span class="contact-value" id="observation-phone">N/A</span>
+            </div>
+            <div class="contact-item">
+              <span class="contact-label">其他联系方式:</span>
+              <span class="contact-value" id="other-phone">N/A</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 第2行：机场数据展示区域（复用主页布局） -->
+      <div class="airport-data-section">
+        <!-- 标题行区域 -->
+        <div class="title-row airport-detail-title-row">
+          <!-- 实况信息标题 -->
+          <div class="title-weather">
+            <span class="title-text">实况信息</span>
+          </div>
+
+          <!-- 时间轴 -->
+          <div class="title-timeline">
+            <!-- 北京时时间轴 -->
+            <div class="timeline-row beijing-time">
+              <div id="airport-detail-beijing-timeline" class="timeline-container"></div>
+            </div>
+            <!-- 世界时时间轴 -->
+            <div class="timeline-row utc-time">
+              <div id="airport-detail-utc-timeline" class="timeline-container"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 机场数据内容 -->
+        <div class="airport-detail-main" id="airport-detail-main">
+          <!-- 机场信息将通过JavaScript动态加载 -->
+        </div>
+      </div>
+
+      <!-- 图表区域 -->
+      <div class="airport-chart-section" style="display:none;">
+        <div class="airport-chart-container">
+          <div class="airport-chart" id="airport-detail-chart"></div>
+          <div class="chart-controls-row">
+            <div class="chart-time-selector">
+              <div class="chart-time-radios">
+                <label class="chart-time-radio"><input type="radio" name="chart-time-detail" value="3"
+                    checked><span>3</span></label>
+                <label class="chart-time-radio"><input type="radio" name="chart-time-detail"
+                    value="6"><span>6</span></label>
+                <label class="chart-time-radio"><input type="radio" name="chart-time-detail"
+                    value="12"><span>12</span></label>
+                <label class="chart-time-radio"><input type="radio" name="chart-time-detail"
+                    value="24"><span>24</span></label>
+                <label class="chart-time-radio"><input type="radio" name="chart-time-detail"
+                    value="48"><span>48</span></label>
+                <label class="chart-time-radio"><input type="radio" name="chart-time-detail"
+                    value="72"><span>72</span></label>
+              </div>
+              <div class="chart-time-custom">
+                <input type="number" class="chart-time-input" id="chart-time-input-detail" placeholder="2-72小时" min="2"
+                  max="72">
+                <button class="chart-time-btn" onclick="applyCustomChartTimeForDetail()">确定</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 实况/预报报文 -->
+      <div class="airport-reports-section">
+        <h3>实况/预报报文</h3>
+        <div class="reports-content">
+          <!-- 报文内容 -->
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 登录界面（仅current模式显示） -->
+<div id="login-modal" class="modal login-modal" style="display: none;">
+  <div class="modal-content login-content">
+    <div class="login-container">
+      <h3>请使用丰声扫码登录</h3>
+      <div class="qrcode-container" id="qrcode-container">
+        <img id="qrcode-image" src="" alt="二维码" style="width: 200px; height: auto;">
+      </div>
+      <div class="login-status" id="login-status">正在获取二维码...</div>
+    </div>
+  </div>
+</div>
+
+<!-- 登出确认弹窗 -->
+<div id="logout-confirm-modal" class="modal">
+  <div class="modal-content logout-confirm-content">
+    <h3>确认登出</h3>
+    <p>确认要登出系统吗？</p>
+    <div class="modal-actions">
+      <button class="action-btn" id="logout-confirm-btn">确认</button>
+      <button class="action-btn" id="logout-cancel-btn">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- 传递时间模式到前端 -->
+<script>
+  window.timeMode = '{{ time_mode }}';
+  window.carriers = {{ carriers | safe }};
+  window.chartDefaultHours = {{ chart_default_hours }};
+  {% load static %}
+  window.staticUrl = '{% static "" %}';
+  {% if test_time_iso %}
+  window.testTimeISO = '{{ test_time_iso }}';
+  {% endif %}
+</script>
+{% endblock %}
+
+{% block extra_js %}
+{% load static %}
+<script src="{% static 'js/NWP.js' %}"></script>
+<script src="{% static 'js/airport_detail.js' %}"></script>
+<script src="{% static 'js/popup.js' %}"></script>
+<script src="{% static 'js/import_alert.js' %}"></script>
+<script src="{% static 'js/map.js' %}"></script>
+{% endblock %}

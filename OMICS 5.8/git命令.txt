@@ -1,0 +1,17 @@
+台式主机命令：
+cd "W:\预报质量评分表相关材料\预报质量评定工具5.6(测试版)"
+git add -A
+git commit -m "这次改了啥,简短写一句"
+git push
+
+其他电脑命令
+git clone https://github.com/littlewuxiao-ux/-.git
+
+持续更新：
+cd Desktop
+git pull
+
+改动上传
+git add -A
+git commit -m "改动说明"
+git push

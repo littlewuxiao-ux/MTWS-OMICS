@@ -6,27 +6,51 @@ __pycache__/
 venv/
 env/
 
-# ==== PyInstaller 打包产物 ====
+# ==== PyInstaller / build artifacts ====
 build/
 dist/
 *.manifest
+*.spec.tmp
 
-# ==== 运行时日志 ====
+# ==== Runtime logs / caches ====
 logs/
 *.log
+runtime/
+*.tmp
+*.bak
 
-# ==== 本地备份 ====
+# ==== Local backups ====
 backup/
 
-# ==== 编辑器/IDE ====
+# ==== Local machine config ====
+launcher_config.json
+OMICS 5.8/launcher_config.json
+MTWS/launcher_config.json
+config.json
+OMICS 5.8/config.json
+MTWS/config.json
+
+# ==== Local / sensitive runtime data ====
+personnel_mapping.json
+OMICS 5.8/personnel_mapping.json
+MTWS/data/sqlite_database/*.db
+MTWS/data/sqlite_database/*.sqlite
+MTWS/data/sqlite_database/*.sqlite3
+MTWS/logs/
+MTWS/mtws_django/response.json
+
+# ==== IDE / OS ====
 .vscode/
 .idea/
-
-# ==== 系统文件 ====
 Thumbs.db
 Desktop.ini
 .DS_Store
 
-# ==== 临时/数据(按需放开) ====
-*.tmp
-*.bak
+# ==== Nginx runtime files (portable binary/config templates may be tracked explicitly if needed) ====
+**/tools/nginx/logs/
+**/tools/nginx/temp/
+
+# ==== MTWS generated/runtime data ====
+MTWS/data/raw/
+MTWS/mtws_django/staticfiles/
+

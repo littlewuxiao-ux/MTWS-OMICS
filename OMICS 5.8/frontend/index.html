@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>预报发布及质量评定系统</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/zh.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+</head>
+<body>
+    <div id="unconfirm-menu" style="padding:8px 15px; cursor:pointer; color:#dc2626; background:#fff; font-weight:bold; font-size:13px; position:fixed; border:1px solid #ccc; box-shadow:2px 2px 8px rgba(0,0,0,0.2); display:none; z-index:9999;">
+        <span style="margin-right:5px;">⚠️</span>撤销确认编发
+    </div>
+
+    <div class="container">
+        <style>
+            #admin-only-section { background: white; border: 1px solid #ccc; border-radius: 6px; padding: 10px; margin-bottom: 10px; transition: all 0.3s; }
+            #admin-only-section[open] { background-color: #fffaf0; border: 1px dashed #ff9800; }
+            .admin-sub-title { color: #e65100; font-weight: bold; font-size: 13px; margin: 15px 0 10px 0; border-bottom: 1px dotted #ffb74d; padding-bottom: 5px; }
+            .admin-pill-btn { border: none; border-radius: 12px; color: white; padding: 4px 12px; font-size: 12px; cursor: pointer; font-weight: bold; }
+            .admin-block-btn { display: block; width: 100%; border: none; border-radius: 4px; color: white; padding: 8px; font-size: 13px; font-weight: bold; cursor: pointer; margin-bottom: 10px; }
+        </style>
+        <div id="global-settings-modal" class="modal" style="display:none; z-index:9999;">
+            <div style="display:flex; width:950px; height: 85vh; background:#fff; border-radius:10px; overflow:hidden; box-shadow:0 20px 50px rgba(0,0,0,0.3);">
+                <div style="width: 170px; background: #1e293b; color: white; display: flex; flex-direction: column; flex-shrink: 0;">
+                    <div style="padding: 20px; font-weight: bold; font-size: 16px; border-bottom: 1px solid #334155; text-align: center;">⚙️ 系统设置</div>
+                    <div class="set-nav active" data-target="pane-pb" style="padding: 15px 20px; cursor: pointer; border-bottom: 1px solid #334155;">预报发布设置</div>
+                    <div class="set-nav" data-target="pane-qa" style="padding: 15px 20px; cursor: pointer; border-bottom: 1px solid #334155;">质量评定设置</div>
+                    <div class="set-nav" data-target="pane-ap" style="padding: 15px 20px; cursor: pointer; border-bottom: 1px solid #334155; color: #fde047;">机场字典配置</div>
+                    <div class="set-nav" data-target="pane-admin" style="padding: 15px 20px; cursor: pointer; border-bottom: 1px solid #334155; color: #f97316; font-weight:bold;">高级管理员配置</div>
+                </div>
+                <div style="flex: 1; display: flex; flex-direction: column; background: #f8f9fa; position: relative;">
+                    <div style="position: sticky; top: 0; background: #1e293b; height: 55px; display: flex; justify-content: flex-end; align-items: center; padding: 0 20px; flex-shrink: 0; z-index: 10; box-shadow: 0 2px 5px rgba(0,0,0,0.3);">
+                        <button id="close-global-settings" class="mini-btn" style="background:#dc2626; color:white; border-radius: 4px; border:none; padding:6px 15px; cursor:pointer; font-weight:bold; font-size:14px;">✖ 关 闭 面 板</button>
+                    </div>
+                    
+                    <div style="flex: 1; padding: 20px; overflow-y: auto;">
+                        
+                        <div id="pane-pb" class="set-pane" style="display:block;">
+                            <h3 style="color:#1e40af; margin-top:0; border-bottom: 2px solid #c8d5e5; padding-bottom: 10px;">⚙ 预报产品参数与过滤</h3>
+                            <div style="display: flex; gap: 15px; margin-bottom: 15px;">
+                                <div style="flex: 1; border: 1px solid #ccc; padding: 15px; border-radius: 6px; background: white; font-size: 13px;">
+                                    <b style="color:#005A9C; display:block; margin-bottom:12px;">自定义时间基准</b>
+                                    <div style="display:flex; flex-direction:column; gap:10px;">
+                                        <div style="display:flex; align-items:center;"><span style="width:110px;">开始日期(UTC):</span><input type="date" id="cfg-start-date" style="flex:1; padding:4px; border:1px solid #ccc; border-radius:4px;"></div>
+                                        <div style="display:flex; align-items:center;"><span style="width:110px;">开始时次(UTC):</span><input type="number" id="cfg-start-hour" style="width:60px; padding:4px; border:1px solid #ccc; border-radius:4px;"><span style="margin-left:5px;">时</span></div>
+                                        <div style="display:flex; align-items:center;"><span style="width:110px;">预报总时长:</span><input type="number" id="cfg-validity" style="width:60px; padding:4px; border:1px solid #ccc; border-radius:4px;"><span style="margin-left:5px;">小时</span></div>
+                                    </div>
+                                </div>
+                                <div style="flex: 1; border: 1px solid #ccc; padding: 15px; border-radius: 6px; background: white; font-size: 13px;">
+                                    <b style="color:#005A9C; display:block; margin-bottom:12px;">要素过滤及自动采纳阈值</b>
+                                    <div style="display:flex; flex-direction:column; gap:10px;">
+                                        <div style="display:flex; align-items:center;"><span style="width:110px;">风速低于(隐藏):</span><input type="number" id="filter-wind-threshold" style="width:60px; padding:4px; border:1px solid #ccc; border-radius:4px;"><span style="margin-left:5px;">m/s</span></div>
+                                        <div style="display:flex; align-items:center;"><span style="width:110px;">能见度高于(隐藏):</span><input type="number" id="filter-vis-threshold" style="width:60px; padding:4px; border:1px solid #ccc; border-radius:4px;"><span style="margin-left:5px;">m</span></div>
+                                        <div style="display:flex; align-items:center;"><span style="width:110px;">气温展示区间:</span><input type="number" id="filter-temp-low" style="width:45px; padding:4px; border:1px solid #ccc; border-radius:4px;"><span style="margin:0 5px;">~</span><input type="number" id="filter-temp-high" style="width:45px; padding:4px; border:1px solid #ccc; border-radius:4px;"><span style="margin-left:5px;">℃</span></div>
+                                        <div style="font-weight:bold; color:#d9534f; margin-top:5px; margin-bottom:2px; font-size:12px;">自动采纳 EC 阈值 (无天气也追加):</div>
+                                        <div style="display:flex; align-items:center;"><span style="width:110px;">积冰温度 &lt;:</span><input type="number" id="cfg-ice-temp" value="10" style="width:60px; padding:4px; border:1px solid #ccc; border-radius:4px;"><span style="margin-left:5px;">℃</span></div>
+                                        <div style="display:flex; align-items:center;"><span style="width:110px;">积冰温露差 &lt;:</span><input type="number" id="cfg-ice-dew" value="1" style="width:60px; padding:4px; border:1px solid #ccc; border-radius:4px;"><span style="margin-left:5px;">℃</span></div>
+                                        <div style="display:flex; align-items:center;"><span style="width:110px;">积冰能见度 &lt;:</span><input type="number" id="cfg-ice-vis" value="1500" style="width:60px; padding:4px; border:1px solid #ccc; border-radius:4px;"><span style="margin-left:5px;">m</span></div>
+                                        <div style="display:flex; align-items:center;"><span style="width:110px;">极寒温度 &lt;:</span><input type="number" id="cfg-ext-cold-temp" value="-30" style="width:60px; padding:4px; border:1px solid #ccc; border-radius:4px;"><span style="margin-left:5px;">℃</span></div>
+                                    </div>
+                                    <label style="display:block; margin-top:12px; cursor:pointer; color:#dc2626; font-weight:bold;"><input type="checkbox" id="filter-hide-empty-airports"> 无要素时自动隐藏该机场</label>
+                                </div>
+                            </div>
+                            
+                            <div style="border: 1px solid #ccc; padding: 15px; border-radius: 6px; background: white; margin-bottom: 15px; font-size: 13px;">
+                                <b style="color:#005A9C;">展示与要素控制</b><br><br>
+                                <div style="margin-bottom:10px;">📋 展示模式: <label style="cursor:pointer;"><input type="radio" name="cfg-display-mode" value="merged" checked>合并显示</label> <label style="margin-left:15px; cursor:pointer;"><input type="radio" name="cfg-display-mode" value="split">分行展示</label></div>
+                                <div style="margin-bottom:10px;">📊 启用要素: <label style="cursor:pointer;"><input type="checkbox" id="cfg-wind" checked>风</label> <label style="margin-left:10px; cursor:pointer;"><input type="checkbox" id="cfg-vis" checked>能见度</label> <label style="margin-left:10px; cursor:pointer;"><input type="checkbox" id="cfg-wx" checked>天气</label> <label style="margin-left:10px; cursor:pointer;"><input type="checkbox" id="cfg-temp" checked>气温</label> <label style="margin-left:10px; cursor:pointer;"><input type="checkbox" id="cfg-pressure">气压</label></div>
+                                
+                                <div style="margin-top: 12px; border: 1px solid #eee; padding: 10px; border-radius: 4px; background:#f8fbff;">
+                                    <b>天气现象过滤 (勾选则显示)</b>
+                                    <div id="filter-wx-grid" style="margin-top:8px; max-height: 100px; overflow-y: auto;"></div>
+                                </div>
+                                
+                                <div style="margin-top: 12px; border: 1px solid #eee; padding: 10px; border-radius: 4px; background:#f8fbff;">
+                                    <b>✈ 批量激活区域 (恢复大表时的备选库)</b>
+                                    <div style="margin-top:8px; max-height: 100px; overflow-y: auto;">
+                                        <div id="region-list-domestic"></div><div id="region-list-international"></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <h3 style="color:#1e40af; border-bottom: 2px solid #c8d5e5; padding-bottom: 10px; margin-top:25px;">✈️ 机场性质组与常驻管理</h3>
+                            <div style="font-size: 12px; color: #666; margin-bottom: 15px;">提示：自定义任意机场组，若勾选【常驻显示】，则无论是否有恶劣天气都会强制固定在表格最上方。（用空格分隔四字码）</div>
+                            <div id="pb-airport-groups-container"></div>
+                            <button id="add-pb-group-btn" class="mini-btn" style="background:#16a34a; color:white; margin-top:10px;">+ 新增分组</button>
+
+                            <div style="text-align: right; margin-top: 25px; border-top: 1px solid #ccc; padding-top: 15px;">
+                                <button id="filter-reset-btn" class="mini-btn" style="margin-right:15px; padding: 8px 15px;">恢复默认参数</button>
+                                <button id="pb-settings-save-btn" class="step-button" style="padding: 10px 30px; margin:0;">💾 立即保存并刷新预报</button>
+                            </div>
+                        </div>
+
+                        <div id="pane-qa" class="set-pane" style="display:none;">
+                            <h3 style="color:#1e40af; margin-top:0; border-bottom: 2px solid #c8d5e5; padding-bottom: 10px;">质量评定系统配置</h3>
+                            
+                            <div style="display: flex; gap: 20px; justify-content: center; background: #f1f3f5; padding: 8px 20px; border-radius: 20px; margin-bottom: 15px; font-size: 13px; width: fit-content; margin-left: auto; margin-right: auto;">
+                                <label style="cursor: pointer; display: flex; align-items: center; gap: 5px; color: #d9534f; font-weight: 900;"><input type="radio" name="storage-mode" value="regular" checked style="margin:0;"> 常规储存</label>
+                                <label style="cursor: pointer; display: flex; align-items: center; gap: 5px; color: #d9534f; font-weight: 900;"><input type="radio" name="storage-mode" value="desktop" style="margin:0;"> 桌面储存</label>
+                            </div>
+                            
+                            <div class="standards-container-vertical">
+                                <details class="settings-group" style="background: white; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 6px; padding: 10px;">
+                                    <summary style="font-weight:bold; cursor:pointer;">⛈️ 天气现象量级配置</summary>
+                                    <div id="phenomena-settings-container" class="settings-group-content" style="margin-top: 10px;"></div>
+                                    <button id="reset-phenomena-btn" class="mini-btn" style="margin-top:5px; background:#f44336; color:white;">重置默认</button>
+                                </details>
+
+                                <details class="settings-group" style="background: white; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 6px; padding: 10px;" open>
+                                    <summary style="font-weight:bold; cursor:pointer;">📏 天气要素阈值配置</summary>
+                                    <div class="settings-group-content" style="margin-top: 10px;">
+                                        <div style="font-size: 11px; color: #555; background: #f8f9fa; padding: 10px; border-radius: 4px; margin-bottom: 12px; line-height: 1.6; border-left: 3px solid #005A9C;">
+                                            <strong>【详细评分标准】</strong><br>
+                                            <span style="color:#005A9C;">● 能见度：</span>等级(起飞/落地/预警)一致为完美，差一级为优秀。实况低而预报高为<strong>漏报</strong>，实况高而预报低为<strong>空报</strong>。<br>
+                                            <span style="color:#005A9C;">● 云底高：</span>实况BKN/OVC且等级一致为完美，差一级或实况SCT报出低云为优秀。实况有而未报/跨预警线为<strong>漏报</strong>，实况无而误报为<strong>空报</strong>。<br>
+                                            <span style="color:#005A9C;">● 大风：</span>误差&lt;15%完美，15%~25%优秀，偏大≥25%为空报，偏小≥25%为漏报。
+                                        </div>
+
+                                        <div style="border:1px solid #b8daff; background:#f1f8ff; padding:10px; border-radius:6px; margin-bottom:12px;">
+                                            <div style="font-weight:bold; color:#005A9C; margin-bottom:8px; font-size:12px;">⌨️ 阈值参数调整区</div>
+                                            <div style="display: flex; flex-direction: column; gap: 8px; font-size: 11px;">
+                                                <div style="display: flex; align-items: center;">
+                                                    <label style="width: 85px; font-weight: bold; color: #005A9C;">能见度 (米) :</label>
+                                                    起飞<input type="number" id="vis_takeoff" style="width: 50px; padding: 2px; margin-right:5px;">
+                                                    落地<input type="number" id="vis_landing" style="width: 50px; padding: 2px; margin-right:5px;">
+                                                    预警<input type="number" id="vis_warning" style="width: 50px; padding: 2px;">
+                                                </div>
+                                                <div style="display: flex; align-items: center;">
+                                                    <label style="width: 85px; font-weight: bold; color: #005A9C;">云底高 (米) :</label>
+                                                    起飞<input type="number" id="cld_takeoff" style="width: 50px; padding: 2px; margin-right:5px;">
+                                                    落地<input type="number" id="cld_landing" style="width: 50px; padding: 2px; margin-right:5px;">
+                                                    预警<input type="number" id="cld_warning" style="width: 50px; padding: 2px;">
+                                                </div>
+                                                <div style="display: flex; align-items: center;">
+                                                    <label style="width: 85px; font-weight: bold; color: #005A9C;">大风 (m/s) :</label>
+                                                    评分基准<input type="number" id="wind_warning" style="width: 50px; padding: 2px; border-color:#005A9C;">
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div style="border:1px solid #ffeeba; background:#fff8e6; padding:10px; border-radius:6px;">
+                                            <div id="global-thresholds-display" style="border:1px solid #005A9C; background:#fff; padding:6px; margin-bottom:10px; border-radius:4px;"></div>
+                                            <div style="font-weight:bold; color:#005A9C; margin-bottom:8px; font-size:12px;">特定机场专属配置</div>
+                                            <div id="custom-airport-thresholds-list" style="max-height: 100px; overflow-y: auto; margin-bottom: 8px;"></div>
+                                            <div style="display: flex; gap: 5px; align-items: center;">
+                                                <input type="text" id="custom-thresh-ap" placeholder="ICAO" style="width: 70px; padding: 4px; font-size:11px;">
+                                                <button id="add-custom-thresh-btn" class="mini-btn" style="background:#28a745; color:white; font-size:11px;">+ 录入专属</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </details>
+                            </div>
+                        </div>
+                        
+                        <div id="pane-ap" class="set-pane" style="display:none;">
+                            <h3 style="color:#1e40af; margin-top:0; border-bottom: 2px solid #c8d5e5; padding-bottom: 10px;">机场全局参数与名称配置</h3>
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 15px;">
+                                <input type="text" id="dict-search-input" placeholder="🔍 搜索四字码或中文名..." style="padding: 8px; width: 250px; border: 1px solid #ccc; border-radius: 4px;">
+                                <button id="dict-add-new-btn" class="mini-btn" style="background:#0f766e; color:white; padding:8px 15px;">➕ 新增机场</button>
+                            </div>
+                            <div id="dict-loading" style="display:none; text-align:center; color:#0f766e; font-weight:bold; padding:20px;">⏳ 正在极速加载全局字典，请稍候...</div>
+                            <div style="max-height: 50vh; overflow-y: auto; border: 1px solid #c8d5e5; border-radius: 6px;">
+                                <table id="dict-table" style="width: 100%; border-collapse: collapse; text-align: center; font-size: 13px;">
+                                    <thead style="background: #e2e8f0; position: sticky; top: 0; z-index: 1;">
+                                        <tr>
+                                            <th style="padding:10px; border-bottom:1px solid #cbd5e1;">ICAO四字码</th>
+                                            <th style="padding:10px; border-bottom:1px solid #cbd5e1;">中文名称</th>
+                                            <th style="padding:10px; border-bottom:1px solid #cbd5e1;">纬度 (Lat)</th>
+                                            <th style="padding:10px; border-bottom:1px solid #cbd5e1;">经度 (Lon)</th>
+                                            <th style="padding:10px; border-bottom:1px solid #cbd5e1;">操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="dict-tbody" style="background: white;"></tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div id="pane-admin" class="set-pane" style="display:none;">
+                            <h3 style="color:#e65100; margin-top:0; border-bottom: 2px solid #ffcc80; padding-bottom: 10px;">👑 高级管理员配置</h3>
+                            <div style="margin-top: 10px; padding: 0 5px;">
+                                <div class="admin-sub-title" style="margin-top:5px;">安全与权限设置</div>
+                                <style>
+                                    .amd-switch { position: relative; display: inline-block; width: 36px; height: 20px; margin-right: 10px; }
+                                    .amd-switch input { opacity: 0; width: 0; height: 0; }
+                                    .amd-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 20px; }
+                                    .amd-slider:before { position: absolute; content: ""; height: 14px; width: 14px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
+                                    .amd-switch input:checked + .amd-slider { background-color: #28a745; }
+                                    .amd-switch input:checked + .amd-slider:before { transform: translateX(16px); }
+                                </style>
+                                <div style="display:flex; align-items:center; margin-bottom: 15px; justify-content: space-between; background: #fff; padding: 8px 10px; border: 1px solid #ffcc80; border-radius: 6px;">
+                                    <label style="font-size: 12px; font-weight: bold; color: #005A9C;">识别并拆分 AMD 报文:</label>
+                                    <label class="amd-switch"><input type="checkbox" id="admin-recognize-amd"><span class="amd-slider"></span></label>
+                                </div>
+                                <div style="display:flex; align-items:center; margin-bottom: 15px; gap: 10px;">
+                                    <label style="font-size: 12px; color: #333; width:80px; text-align:right;">离线登录密码:</label>
+                                    <input type="password" id="admin-pwd-input" style="flex:1; padding:4px; border:1px solid #ccc; border-radius:4px;">
+                                    <button id="save-pwd-btn" class="admin-pill-btn" style="background: #28a745;">保存密码</button>
+                                </div>
+
+                                <div class="admin-sub-title">云盘路径配置</div>
+                                <div style="display:flex; align-items:center; margin-bottom: 10px; gap: 10px;">
+                                    <label style="font-size: 12px; color: #333; width:80px; text-align:right;">机场预报:</label>
+                                    <input type="text" id="taf-excel-path" readonly style="flex:1; padding:4px; border:1px solid #ccc; border-radius:4px;">
+                                    <button id="browse-taf-btn" class="admin-pill-btn" style="background: #005A9C;">浏览</button>
+                                </div>
+                                <div style="display:flex; align-items:center; margin-bottom: 10px; gap: 10px;">
+                                    <label style="font-size: 12px; color: #333; width:80px; text-align:right;">席位预报:</label>
+                                    <input type="text" id="manual-excel-path" readonly style="flex:1; padding:4px; border:1px solid #ccc; border-radius:4px;">
+                                    <button id="browse-manual-btn" class="admin-pill-btn" style="background: #005A9C;">浏览</button>
+                                </div>
+                                <div style="display:flex; align-items:center; margin-bottom: 15px; gap: 10px;">
+                                    <label style="font-size: 12px; color: #333; width:80px; text-align:right;">JSON 备份:</label>
+                                    <input type="text" id="backup-save-path" style="flex:1; padding:4px; border:1px solid #ccc; border-radius:4px;">
+                                </div>
+                                <div style="display:flex; align-items:center; margin-bottom: 15px; gap: 10px;">
+                                    <label style="font-size: 12px; color: #333; width:80px; text-align:right;">图表导出云盘:</label>
+                                    <input type="text" id="publish-export-path" placeholder="留空则存至桌面 SF预报发布导出" style="flex:1; padding:4px; border:1px solid #ccc; border-radius:4px;">
+                                </div>
+                                <button id="sync-excel-btn" class="admin-block-btn" style="background: #e65100;">🔄 从云盘 Excel 逆向同步</button>
+
+                                <div class="admin-sub-title">默认数据及字典配置</div>
+                                <div style="display:flex; gap:10px; margin-bottom:10px; background:#f1f8ff; padding:8px; border-radius:4px; border:1px solid #b8daff;">
+                                    <label style="font-weight:bold; font-size:12px; color:#005A9C;"><input type="checkbox" id="cfg-default-taf" checked> 默认开启 TAF</label>
+                                    <label style="font-weight:bold; font-size:12px; color:#005A9C;"><input type="checkbox" id="cfg-default-ec" checked> 默认开启 EC</label>
+                                </div>
+                                <div style="display:flex; align-items:center; margin-bottom: 10px; gap: 10px;">
+                                    <label style="font-size: 12px; color: #333; width:80px; text-align:right;">席位预报默认:</label>
+                                    <input type="text" id="admin-default-manual" style="flex:1; padding:4px; border:1px solid #ccc; border-radius:4px;">
+                                </div>
+                                <div style="display:flex; align-items:center; margin-bottom: 15px; gap: 10px;">
+                                    <label style="font-size: 12px; color: #333; width:80px; text-align:right;">机场预报默认:</label>
+                                    <input type="text" id="admin-default-taf" style="flex:1; padding:4px; border:1px solid #ccc; border-radius:4px;">
+                                </div>
+                                <button id="save-default-aps-btn" class="admin-block-btn" style="background: #28a745;">保存配置</button>
+
+                                <div class="admin-sub-title">人员映射管理</div>
+                                <ul id="personnel-list" class="personnel-list" style="max-height: 100px; overflow-y: auto; border:1px dashed #ccc; padding:5px; background:white;"></ul>
+                                <div style="display: flex; gap: 5px; margin-top: 10px;">
+                                    <input type="text" id="new-emp-id" placeholder="工号" style="width: 80px; padding:4px; border:1px solid #ccc; border-radius:4px;">
+                                    <input type="text" id="new-emp-name" placeholder="姓名" style="width: 80px; padding:4px; border:1px solid #ccc; border-radius:4px;">
+                                    <button id="add-emp-btn" class="admin-pill-btn" style="background: #f8f9fa; color: #333; border: 1px solid #ccc;">添加</button>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <header class="top-bar">
+            <h1 class="app-title">预报发布及质量评定系统</h1>
+            <div class="top-controls">
+                <button id="settings-toggle-btn" class="mini-btn">⚙️ 系统设置</button>
+                <div id="user-info" class="user-info hidden">
+                    <span id="user-id-display"></span>
+                    <button id="logout-btn" class="mini-btn">注销</button>
+                </div>
+                <button id="login-btn" class="mini-btn">登录 SF App</button>
+                <button id="exit-app-btn" class="mini-btn" style="background-color: #dc3545; color: white; margin-left: 10px;">退出系统</button>
+            </div>
+        </header>
+
+        <main class="main-grid">
+            <div class="input-area">
+                <div class="card no-padding-top">
+                    <div class="mode-switcher">
+                        <div class="mode-option"><input type="radio" id="mode-publish" name="forecast-mode" value="publish" checked><label for="mode-publish">预报发布</label></div>
+                        <div class="mode-option"><input type="radio" id="mode-manual" name="forecast-mode" value="manual"><label for="mode-manual">席位预报</label></div>
+                        <div class="mode-option"><input type="radio" id="mode-taf" name="forecast-mode" value="taf"><label for="mode-taf">机场预报</label></div>
+                        <div class="mode-option"><input type="radio" id="mode-stats" name="forecast-mode" value="stats"><label for="mode-stats">统计查询</label></div>
+                    </div>
+                    
+                    <div id="publish-workspace">
+                        
+                        <div class="publish-toolbar" style="display: flex; gap: 12px; align-items: center; margin-bottom: 12px; padding: 10px 15px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; flex-wrap: wrap; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+                            <div style="font-weight: bold; color: #1e40af; display: flex; align-items: center; gap: 8px;">
+                                📊 数据视图:
+                                <label style="cursor: pointer;"><input type="checkbox" id="global-toggle-taf" checked> TAF</label>
+                                <button id="global-expand-taf" class="mini-btn" style="background: #64748b; color: white; border: none; padding: 2px 8px; border-radius: 4px; font-size: 11px;">合并</button>
+                                
+                                <span style="border-left:1px solid #cbd5e1; height:16px; margin: 0 4px;"></span>
+                                
+                                <label style="cursor: pointer;"><input type="checkbox" id="global-toggle-ec" checked> EC</label>
+                                <button id="global-expand-ec" class="mini-btn" style="background: #64748b; color: white; border: none; padding: 2px 8px; border-radius: 4px; font-size: 11px;">合并</button>
+                            </div>
+                            
+                            <button id="global-toggle-mode" class="mini-btn" style="background: #0f766e; color: white; border: none; padding: 4px 10px; border-radius: 4px; font-weight: bold; font-size: 12px; margin-left: 5px;">一键全展开</button>
+                            <button id="global-refresh-btn" class="mini-btn" style="background: #2563eb; color: white; border: none; padding: 4px 10px; border-radius: 4px; font-weight: bold; cursor: pointer;">🔄 刷新</button>
+                            
+                            <button id="global-export-text-btn" class="mini-btn" style="background: #d97706; color: white; border: none; padding: 4px 10px; border-radius: 4px; font-weight: bold; cursor: pointer;">📤 导出文本</button>
+                            <button id="global-export-excel-btn" class="mini-btn" style="background: #10b981; color: white; border: none; padding: 4px 10px; border-radius: 4px; font-weight: bold; cursor: pointer;">📊 导出图表/Excel</button>
+                            
+                            <div style="flex-grow: 1;"></div>
+                        </div>
+
+                        <div style="background: #4b5563; color: white; padding: 20px; border-radius: 8px 8px 0 0;">
+                            <select id="pb-main-title-select" style="appearance: none; -webkit-appearance: none; background: transparent; border: none; color: white; font-size: 44px; font-weight: bold; letter-spacing: 2px; text-align: center; display: block; margin: 0 auto 20px auto; cursor: pointer; outline: none; text-align-last: center;">
+                                <option value="24" style="color: black; font-size: 18px;">24小时天气预报</option>
+                                <option value="12" style="color: black; font-size: 18px;">12小时天气预报</option>
+                                <option value="8" style="color: black; font-size: 18px;">8小时天气预报</option>
+                                <option value="4" style="color: black; font-size: 18px;">4小时天气预报</option>
+                                <option value="48" style="color: black; font-size: 18px;">48小时天气预报</option>
+                                <option value="custom" style="color: black; font-size: 18px;">⚙️ 自定义参数预报</option>
+                            </select>
+                            
+                            <div style="display: flex; justify-content: space-between; flex-wrap: nowrap; gap: 8px; margin: 0 auto 20px auto; width: 75%;">
+                                <div style="background: #dc2626; color: white; padding: 6px 0; text-align: center; flex: 1; border-radius: 4px;">
+                                    <div style="font-size: 11px; margin-bottom: 2px;">雷暴</div><div id="count-ts" style="font-size: 16px; font-weight: bold;">0</div>
+                                </div>
+                                <div style="background: #2563eb; color: white; padding: 6px 0; text-align: center; flex: 1; border-radius: 4px;">
+                                    <div style="font-size: 11px; margin-bottom: 2px;">大风</div><div id="count-wind" style="font-size: 16px; font-weight: bold;">0</div>
+                                </div>
+                                <div style="background: #64748b; color: white; padding: 6px 0; text-align: center; flex: 1; border-radius: 4px;">
+                                    <div style="font-size: 11px; margin-bottom: 2px;">降雪</div><div id="count-snow" style="font-size: 16px; font-weight: bold;">0</div>
+                                </div>
+                                <div style="background: #0f766e; color: white; padding: 6px 0; text-align: center; flex: 1; border-radius: 4px;">
+                                    <div style="font-size: 11px; margin-bottom: 2px;">强降水</div><div id="count-hvy-rain" style="font-size: 16px; font-weight: bold;">0</div>
+                                </div>
+                                <div style="background: #fde047; color: black; padding: 6px 0; text-align: center; flex: 1; border-radius: 4px;">
+                                    <div style="font-size: 11px; margin-bottom: 2px;">低能见度</div><div id="count-vis" style="font-size: 16px; font-weight: bold;">0</div>
+                                </div>
+                                <div style="background: #f59e0b; color: white; padding: 6px 0; text-align: center; flex: 1; border-radius: 4px;">
+                                    <div style="font-size: 11px; margin-bottom: 2px;">低云</div><div id="count-cld" style="font-size: 16px; font-weight: bold;">0</div>
+                                </div>
+                                <div style="background: #bae6fd; color: black; padding: 6px 0; text-align: center; flex: 1; border-radius: 4px;">
+                                    <div style="font-size: 11px; margin-bottom: 2px;">其他</div><div id="count-other" style="font-size: 16px; font-weight: bold;">0</div>
+                                </div>
+                            </div>
+
+                            <div style="display: flex; justify-content: space-between; align-items: flex-end; border-top: 1px solid #6b7280; padding-top: 12px;">
+                                <div style="font-size: 13px; font-weight: bold;">
+                                    日期（北京时）&nbsp;&nbsp;<input type="datetime-local" id="pb-datetime" style="padding: 4px 8px; border-radius: 4px; border: none; background: #374151; color: white; outline: none;">
+                                </div>
+                                <div style="font-size: 13px; font-weight: bold;">
+                                    预报员：<input type="text" id="pb-forecaster" style="width: 80px; padding: 4px; border-radius: 4px; border: none; background: #374151; color: white; text-align: center;">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="publish-loading-indicator" style="display:none; text-align:center; padding:30px; color:#d9534f; font-weight:bold; font-size:16px; background:#fff; border:1px solid #ccc; border-radius:6px; margin: 10px 0;">
+                            <span class="spinner"></span> 正在读取及分析预报数据，请稍候...
+                        </div>
+
+                        <div id="top-scrollbar" style="overflow-x: auto; overflow-y: hidden; height: 14px; position: sticky; top: 0; z-index: 50; background: #fff; border-bottom: 1px solid #ccc; margin-bottom: 2px;">
+                            <div id="top-scroll-content" style="height: 1px;"></div>
+                        </div>
+
+                        <div id="table-wrapper" style="overflow-x: auto; overflow-y: visible; border: 1px solid #c8d5e5; margin-bottom: 0;">
+                            <table id="forecast-table" style="width: 100%; border-collapse: collapse; text-align: center; border-bottom: 2px solid #5D6D7E;"></table>
+                        </div>
+
+                        <div style="background: white; border: 1px solid #c8d5e5; border-top: none; font-size: 13px;">
+                            <div style="display: flex; align-items: stretch; border-bottom: 1px solid #e9ecef;">
+                                <div style="font-weight: bold; width: 150px; padding: 10px; background: #f8f9fa; border-right: 1px solid #e9ecef; display:flex; align-items:center;">地面结冰/极寒机场</div>
+                                <div style="flex: 1; padding: 10px;"><input type="text" value="无" style="width: 100%; padding: 4px; border: 1px dashed #ccc; outline:none; font-weight:bold; color:#005A9C;"></div>
+                            </div>
+                            <div style="display: flex; align-items: stretch; border-bottom: 1px solid #e9ecef;">
+                                <div style="font-weight: bold; width: 150px; padding: 10px; background: #f8f9fa; border-right: 1px solid #e9ecef; display:flex; align-items:center;">颜色说明</div>
+                                <div style="flex: 1; padding: 10px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; font-size: 12px;">
+                                    <span style="display:flex; align-items:center; gap:4px;"><span style="width:20px; height:12px; background:#dc2626; border-radius:2px;"></span> 雷暴</span>
+                                    <span style="display:flex; align-items:center; gap:4px;"><span style="width:20px; height:12px; background:#2563eb; border-radius:2px;"></span> 大风</span>
+                                    <span style="display:flex; align-items:center; gap:4px;"><span style="width:20px; height:12px; background:#64748b; border-radius:2px;"></span> 降雪</span>
+                                    <span style="display:flex; align-items:center; gap:4px;"><span style="width:20px; height:12px; background:#fde047; border-radius:2px; border:1px solid #d1d5db;"></span> 低能见度</span>
+                                    <span style="display:flex; align-items:center; gap:4px;"><span style="width:20px; height:12px; background:#f59e0b; border-radius:2px;"></span> 低云</span>
+                                    <span style="display:flex; align-items:center; gap:4px;"><span style="width:20px; height:12px; background:#0f766e; border-radius:2px;"></span> 强降水</span>
+                                    <span style="display:flex; align-items:center; gap:4px;"><span style="width:20px; height:12px; background:#bae6fd; border-radius:2px;"></span> 其他</span>
+                                </div>
+                            </div>
+                            <div style="display: flex; align-items: stretch;">
+                                <div style="font-weight: bold; width: 150px; padding: 10px; background: #f8f9fa; border-right: 1px solid #e9ecef; display:flex; align-items:center;">发布说明</div>
+                                <div style="flex: 1; padding: 10px; color: #555; line-height: 1.6; font-size: 12px;">
+                                    1. 本表结论依据数值预报和运行机场TAF报文综合分析，如有疑问咨询AOC气象服务席。<br>
+                                    2. 能见度和云高单位为“米”、风速单位为“米/秒”。<br>
+                                    3. 大风表示该时次预期最大阵风值，格式"dddf"，举例: NNE18即东北偏北风18米/秒。
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="evaluation-workspace" style="display: none;">
+                        <div id="eval-person-container" style="display: none; margin-bottom: 12px; text-align: left;">
+                            <label for="eval-person-select" style="font-weight: bold; color: #DA251D;">评定对象：</label>
+                            <select id="eval-person-select" style="padding: 5px; border-radius: 4px; min-width: 120px;">
+                                <option value="">请选择人员</option>
+                            </select>
+                        </div>
+
+                        <div class="time-selection-row" style="display: flex; align-items: center; justify-content: flex-start; flex-wrap: nowrap; gap: 15px; margin-bottom: 10px;">
+                            <div class="date-picker-group" style="white-space: nowrap;">
+                                <label style="font-weight: bold;">评定日期：</label>
+                                <input type="text" id="base-date-picker" class="date-input" style="width: 110px;" placeholder="选择日期" readonly>
+                            </div>
+
+                            <div id="manual-time-options" class="time-options-group" style="margin: 0; display: flex; gap: 10px; align-items: center;">
+                                <label class="checkbox-label"><input type="radio" name="time-range" value="24" checked> 未来24小时</label>
+                                <label class="checkbox-label"><input type="radio" name="time-range" value="8"> 未来8小时</label>
+                                <label class="checkbox-label"><input type="radio" name="time-range" value="4"> 未来4小时</label>
+                                <label class="checkbox-label"><input type="radio" name="time-range" value="12"> 未来12小时</label>
+                                <label class="checkbox-label"><input type="radio" name="time-range" value="custom"> 自定义</label>
+                                
+                                <div id="custom-time-inputs" class="custom-time-group" style="display: none; align-items: center; gap: 5px; margin-left: 5px;">
+                                    <input type="number" id="custom-start-time" style="width: 45px; padding: 2px; font-size: 12px; border: 1px solid #ccc; border-radius: 4px;" placeholder="00"> 至
+                                    <input type="number" id="custom-end-time" style="width: 45px; padding: 2px; font-size: 12px; border: 1px solid #ccc; border-radius: 4px;" placeholder="08"> 时
+                                </div>
+                            </div>
+                        </div>
+
+                        <input type="hidden" id="start-time"><input type="hidden" id="end-time">
+
+                        <div class="download-section">
+                            <div class="download-row-top">
+                                <label>目标机场代码：</label>
+                                <input type="text" id="download-airports" class="airport-input-small" placeholder="如 ZBAA ZGSZ">
+                            </div>
+                            <div class="download-row-bottom">
+                                <button id="fetch-manual-btn" class="mini-btn primary" style="font-size: 14px; padding: 8px 20px;">下载实况并填入</button>
+                                <button id="fetch-taf-list-btn" class="mini-btn primary hidden" style="font-size: 14px; padding: 8px 20px;">查询预报报文</button>
+                            </div>
+                        </div>
+                        
+                        <div id="forecast-input-group">
+                            <div id="manual-forecast-input-area">
+                                <div class="grid-actions" style="margin-top: 10px;">
+                                    <button id="generate-grid-btn" class="mini-btn">生成预报表格</button>
+                                    <button id="paste-excel-btn" class="mini-btn hidden">从 Excel 粘贴</button>
+                                </div>
+                                <div id="manual-forecast-grid-container" class="manual-grid-wrapper"></div>
+                            </div>
+                            
+                            <div id="taf-forecast-input-area" class="hidden">
+                                <div class="manual-group" id="forecast-manual-group" style="margin-bottom: 15px;">
+                                    <button id="toggle-forecast-input-btn" class="step-button" onclick="const box = document.getElementById('manual-forecast-text-group'); box.classList.remove('hidden'); box.style.display = (box.style.display === 'none' || box.style.display === '') ? 'block' : 'none';" style="background-color: #6c757d; font-size: 14px; padding: 8px;">➕ 手动补充/粘贴 TAF</button>
+                                    <div id="manual-forecast-text-group" class="hidden" style="display: none; margin-top: 10px;">
+                                        <textarea id="taf-input" rows="4" style="width: 100%; border-radius: 8px; padding: 10px;" placeholder="在此粘贴 TAF 报文 (确认添加后会进入下方列表)..."></textarea>
+                                        <button id="add-taf-btn" class="step-button" style="margin-top: 5px; padding: 5px 10px; font-size: 14px;">确认添加 TAF</button>
+                                    </div>
+                                </div>
+
+                                <div id="taf-selection-area" class="hidden">
+                                    <div class="taf-list-container">
+                                        <h4>选择用于评定的预报报文</h4>
+                                        <div id="taf-list-items" class="taf-items"></div>
+                                    </div>
+                                    <div id="import-taf-metar-container" class="hidden">
+                                        <button id="import-taf-metar-btn" class="mini-btn primary">导入选中预报有效期的实况</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="manual-input-container" style="margin-bottom: 20px;">
+                            <div class="manual-group" id="metar-manual-group" style="margin-bottom: 10px;">
+                                <button id="toggle-metar-input-btn" class="step-button" onclick="const box = document.getElementById('metar-collapsible-content'); box.classList.remove('hidden'); box.style.display = (box.style.display === 'none' || box.style.display === '') ? 'block' : 'none';" style="background-color: #6c757d; font-size: 14px; padding: 8px;">➕ 手动输入/粘贴实况</button>
+                                <div id="metar-collapsible-content" class="hidden" style="display: none; margin-top: 10px;">
+                                    <textarea id="metar-input" rows="4" style="width: 100%; border-radius: 8px; padding: 10px;" placeholder="在此粘贴 METAR 报文..."></textarea>
+                                    <button id="add-metar-btn" class="step-button" style="margin-top: 5px; padding: 5px 10px; font-size: 14px;">确认添加</button>
+                                </div>
+                                <div id="dynamic-airport-buttons-container" style="display: none; margin-top: 10px;"></div>
+                            </div>
+                        </div>
+                        
+                        <div class="action-section" style="margin-top: 20px; display: flex; flex-direction: column; gap: 10px;">
+                            <button id="score-button" class="step-button full-width" style="margin: 0;">开始评定</button>
+                            <button id="manual-save-btn" class="step-button full-width" style="margin: 0; background-color: #28a745; border: none; display: none;">💾 保存评定结论到文件</button>
+                            <div id="loader" class="loader" style="display: none; margin: 0 auto;"></div>
+                        </div>
+                        
+                    </div> <div id="stats-workspace" style="display: none; padding: 10px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                            <h3 style="margin: 0; color: #005A9C;">历史评定数据统计</h3>
+                        </div>
+                        
+                        <div style="background: #f1f8ff; padding: 15px; border-radius: 8px; border: 1px solid #cce5ff;">
+                            <div style="display: flex; gap: 15px; margin-bottom: 10px;">
+                                <div>
+                                    <label style="font-weight: bold; font-size: 13px;">类型：</label>
+                                    <select id="stats-type-select" style="padding: 4px;">
+                                        <option value="manual">席位预报</option>
+                                        <option value="taf">机场预报</option>
+                                    </select>
+                                </div>
+                                <div id="stats-person-wrapper">
+                                    <label style="font-weight: bold; font-size: 13px;">人员：</label>
+                                    <select id="stats-person-select" style="padding: 4px;"><option value="ALL">全部人员</option></select>
+                                </div>
+                                <div>
+                                    <label style="font-weight: bold; font-size: 13px;">机场：</label>
+                                    <input type="text" id="stats-airport-input" placeholder="默认全部机场" style="width: 100px; padding: 4px;">
+                                </div>
+                            </div>
+                            <div style="display: flex; gap: 10px; border-top: 1px dashed #b8daff; padding-top: 10px;">
+                                <button id="btn-query-raw-day" class="mini-btn">查询日数据</button>
+                                <button id="btn-stats-day" class="mini-btn">查询日统计</button>
+                                <button id="btn-stats-month" class="mini-btn">查询月度汇总</button>
+                                <button id="btn-stats-year" class="mini-btn">查询年度汇总</button>
+                            </div>
+                        </div>
+                        <div id="stats-save-container" style="display: none; margin-top: 15px; text-align: center;">
+                            <button id="stats-save-btn" class="step-button" style="background-color: #6c757d; width: 60%;">💾 导出统计结果 Excel</button>
+                        </div>
+                    </div>
+                </div> <div class="results-wrapper" style="margin-top: 20px;">
+                    <div id="results-manual" class="result-tab-container"></div>
+                    <div id="results-taf" class="result-tab-container" style="display: none;"></div>
+                    <div id="results-stats" class="result-tab-container" style="display: none;"></div>
+                </div>
+            </div>
+        </main>
+        
+        <div id="metar-modal" class="modal">
+            <div class="modal-content"><span class="close-button" id="close-metar-modal">&times;</span><h3 id="modal-title"></h3><div id="modal-metar-display"></div></div>
+        </div>
+    
+        <div id="login-modal" class="modal">
+            <div class="modal-content login-content">
+                <span class="close-button" id="close-login-modal">&times;</span>
+                <h3>扫码登录 CAS</h3>
+                <div class="qr-container">
+                    <img id="qr-image" alt="QR Code" />
+                    <p id="qr-status-text">正在加载二维码...</p>
+                </div>
+            </div>
+        </div> 
+
+        <div id="export-text-modal" class="modal" style="display:none; z-index:10000;">
+            <div class="modal-content" style="width: 600px; padding: 25px;">
+                <span class="close-button" id="close-export-modal">&times;</span>
+                <h3 style="color:#1e40af; margin-top:0; border-bottom: 2px solid #c8d5e5; padding-bottom: 10px;">📝 预报导出文本</h3>
+                <div style="font-size: 12px; color: #666; margin-bottom: 10px;">已确认编发的机场会自动进行时段合并与文本提取。</div>
+                <textarea id="export-text-content" rows="15" style="width:100%; border:1px solid #ccc; border-radius:4px; padding:10px; font-family:monospace; font-size:14px; line-height:1.6; resize:vertical; background: #fdfdfd; outline:none;"></textarea>
+                <div style="text-align:right; margin-top:15px; border-top: 1px solid #eee; padding-top: 15px;">
+                    <button id="copy-export-text-btn" class="step-button" style="padding:10px 25px; margin:0; font-size: 14px; background: #28a745;">📋 一键复制到剪贴板</button>
+                </div>
+            </div>
+        </div>
+    </div> 
+
+    <div id="floating-ball" style="position:fixed;right:22px;bottom:22px;width:46px;height:46px;background:#dc2626;color:white;border-radius:50%;display:none;align-items:center;justify-content:center;cursor:pointer;z-index:800;font-size:24px;box-shadow:0 4px 10px rgba(0,0,0,0.3);">⚙</div>
+    
+    <div id="delete-confirm-popup" style="position:fixed;background:#fff;border:1px solid #fca5a5;padding:10px;display:none;z-index:3000;">
+        <div id="delete-confirm-msg" style="color:#dc2626;margin-bottom:8px;">确认删除？</div>
+        <button id="delete-confirm-yes" class="mini-btn" style="background:#dc2626;color:white;">确认</button> <button id="delete-confirm-no" class="mini-btn">取消</button>
+    </div>
+    
+    <div id="drag-indicator" style="position:fixed;left:0;right:0;height:3px;background:#dc2626;display:none;z-index:500;"></div>
+    
+    <div id="airport-ctx-menu" style="position:fixed;background:#fff;border:1px solid #ccc;display:none;z-index:2000;padding:5px; box-shadow: 2px 2px 8px rgba(0,0,0,0.2);">
+        <div class="ctx-item" id="ctx-copy-airport" style="cursor:pointer;padding:6px 14px; color:#333;">复制新增一行要素</div>
+        <div class="ctx-item" id="ctx-add-blank" style="cursor:pointer;padding:6px 14px; color:#333;">插入新机场</div>
+        <div class="ctx-item" id="ctx-delete-row" style="cursor:pointer;padding:6px 14px;color:#333;display:none;border-top:1px solid #eee;">删除此空行</div>
+    </div>
+    
+    <script src="airports.js"></script>
+    <script src="publish.js"></script>
+    <script src="script.js"></script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const tw = document.getElementById('table-wrapper');
+            const ts = document.getElementById('top-scrollbar');
+            const tsc = document.getElementById('top-scroll-content');
+            
+            if (tw && ts && tsc) {
+                tw.addEventListener('scroll', () => ts.scrollLeft = tw.scrollLeft);
+                ts.addEventListener('scroll', () => tw.scrollLeft = ts.scrollLeft);
+                const observer = new MutationObserver(() => {
+                    const table = tw.querySelector('table');
+                    if (table) tsc.style.width = table.scrollWidth + 'px';
+                });
+                observer.observe(tw, { childList: true, subtree: true });
+            }
+
+            document.getElementById('global-export-excel-btn')?.addEventListener('click', async () => {
+                const table = document.getElementById('forecast-table');
+                if (!table || table.innerHTML.trim() === '') return alert('当前没有可导出的数据！');
+                
+                if (typeof html2canvas !== 'function') return alert('导出组件 html2canvas 未加载，请检查网络或本地依赖。');
+                const btn = document.getElementById('global-export-excel-btn');
+                btn.textContent = "⏳ 正在导出...";
+                btn.style.opacity = "0.7";
+                btn.disabled = true;
+                
+                try {
+                    const canvas = await html2canvas(table, { scale: 2, backgroundColor: '#ffffff' });
+                    const base64Image = canvas.toDataURL('image/png');
+                    const rows = [];
+                    table.querySelectorAll('tr').forEach(tr => {
+                        if (tr.style.display === 'none') return;
+                        const rowData = [];
+                        tr.querySelectorAll('th, td').forEach(td => rowData.push(td.innerText.trim()));
+                        rows.push(rowData);
+                    });
+                    const publishRows = [];
+                    table.querySelectorAll('tbody tr.tr-edit').forEach(tr => {
+                        if (tr.style.display === 'none') return;
+                        const name = tr.querySelector('.td-airport')?.childNodes?.[0]?.textContent?.trim() || '';
+                        const type = tr.querySelector('.td-airport')?.nextElementSibling?.textContent?.trim() || '普通';
+                        const values = [];
+                        for (let i = 0; i < 24; i++) {
+                            const td = tr.querySelector(`td.td-data[data-c="${i}"]`);
+                            values.push(td ? td.textContent.trim() : '');
+                        }
+                        if (name && (values.some(Boolean) || tr.dataset.confirmed === 'true')) publishRows.push({ name, type, values });
+                    });
+                    
+                    const exportPath = document.getElementById('publish-export-path')?.value || '';
+                    const res = await fetch('/api/export_publish', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            image: base64Image,
+                            data: rows,
+                            publish_rows: publishRows,
+                            export_path: exportPath,
+                            start_date: window.pbState?.startDate,
+                            start_hour: window.pbState?.startHour,
+                            validity_hours: window.pbState?.validityHours || 24
+                        })
+                    });
+                    const result = await res.json();
+                    if(result.success) alert('✅ 导出成功！\n保存目录:\n' + result.path + (result.files ? '\n文件:\n' + result.files.join('\n') : ''));
+                    else alert('❌ 导出失败: ' + result.error);
+                } catch(e) {
+                    alert('导出发生异常: ' + e.message);
+                } finally {
+                    btn.textContent = "📊 导出图表/Excel";
+                    btn.style.opacity = "1";
+                    btn.disabled = false;
+                }
+            });
+
+            const savedExportPath = localStorage.getItem('publish_export_path');
+            if(savedExportPath && document.getElementById('publish-export-path')) {
+                document.getElementById('publish-export-path').value = savedExportPath;
+            }
+            document.getElementById('publish-export-path')?.addEventListener('change', (e) => {
+                localStorage.setItem('publish_export_path', e.target.value.trim());
+            });
+        });
+    </script>
+</body>
+</html>
