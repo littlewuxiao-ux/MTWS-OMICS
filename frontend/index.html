@@ -551,15 +551,9 @@
     <div id="drag-indicator" style="position:fixed;left:0;right:0;height:3px;background:#dc2626;display:none;z-index:500;"></div>
     
     <div id="airport-ctx-menu" style="position:fixed;background:#fff;border:1px solid #ccc;display:none;z-index:2000;padding:5px; box-shadow: 2px 2px 8px rgba(0,0,0,0.2);">
-        <div class="ctx-item" id="ctx-mark-red" style="cursor:pointer;padding:5px;"><span style="display:inline-block;width:20px;text-align:center;">★</span>红色标记</div>
-        <div class="ctx-item" id="ctx-mark-yellow" style="cursor:pointer;padding:5px;"><span style="display:inline-block;width:20px;text-align:center;">★</span>黄色标记</div>
-        <div class="ctx-item" id="ctx-mark-green" style="cursor:pointer;padding:5px;"><span style="display:inline-block;width:20px;text-align:center;">★</span>绿色标记</div>
-        <div class="ctx-item" id="ctx-mark-clear" style="cursor:pointer;padding:5px;border-top:1px solid #eee;"><span style="display:inline-block;width:20px;text-align:center;">✕</span>删除标记</div>
-        <div class="ctx-item" id="ctx-expand-airport" style="cursor:pointer;padding:5px;border-top:1px solid #eee; color:#005A9C;"><span style="display:inline-block;width:20px;text-align:center;">↕️</span>展开/收起该机场</div>
-        <div class="ctx-item" id="ctx-copy-airport" style="cursor:pointer;padding:5px; color:#28a745;"><span style="display:inline-block;width:20px;text-align:center;">📄</span>复制新增一行要素</div>
-        <div class="ctx-item" id="ctx-add-blank" style="cursor:pointer;padding:5px; color:#2563eb;"><span style="display:inline-block;width:20px;text-align:center;">➕</span>插入新机场</div>
-        <div class="ctx-item" id="ctx-delete-row" style="cursor:pointer;padding:5px;color:#d97706;display:none;"><span style="display:inline-block;width:20px;text-align:center;">✂️</span>删除此空行</div>
-        <div class="ctx-item" id="ctx-delete-airport" style="cursor:pointer;padding:5px;color:red;"><span style="display:inline-block;width:20px;text-align:center;">🗑</span>删除该机场</div>
+        <div class="ctx-item" id="ctx-copy-airport" style="cursor:pointer;padding:6px 14px; color:#333;">复制新增一行要素</div>
+        <div class="ctx-item" id="ctx-add-blank" style="cursor:pointer;padding:6px 14px; color:#333;">插入新机场</div>
+        <div class="ctx-item" id="ctx-delete-row" style="cursor:pointer;padding:6px 14px;color:#333;display:none;border-top:1px solid #eee;">删除此空行</div>
     </div>
     
     <script src="airports.js"></script>
@@ -586,6 +580,7 @@
                 const table = document.getElementById('forecast-table');
                 if (!table || table.innerHTML.trim() === '') return alert('当前没有可导出的数据！');
                 
+                if (typeof html2canvas !== 'function') return alert('导出组件 html2canvas 未加载，请检查网络或本地依赖。');
                 const btn = document.getElementById('global-export-excel-btn');
                 btn.textContent = "⏳ 正在导出...";
                 btn.style.opacity = "0.7";
@@ -609,7 +604,7 @@
                         body: JSON.stringify({ image: base64Image, data: rows, export_path: exportPath })
                     });
                     const result = await res.json();
-                    if(result.success) alert('✅ 导出成功！\n文件已保存至:\n' + result.path);
+                    if(result.success) alert('✅ 导出成功！\n保存目录:\n' + result.path + (result.files ? '\n文件:\n' + result.files.join('\n') : ''));
                     else alert('❌ 导出失败: ' + result.error);
                 } catch(e) {
                     alert('导出发生异常: ' + e.message);

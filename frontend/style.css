@@ -251,6 +251,33 @@ textarea:focus { border-color: var(--sf-red); outline: none; background: white; 
 
 .td-data.selected { outline: 2px solid #2563eb; outline-offset: -1px; background-color: rgba(37,99,235,0.2) !important; z-index: 1; }
 
+/* 机场名单元格右上角删除 X：默认隐藏，鼠标移入机场格才显示 */
+.airport-delete-x {
+    position: absolute;
+    top: 2px;
+    right: 3px;
+    width: 15px;
+    height: 15px;
+    line-height: 13px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: #dc2626;
+    color: #fff;
+    font-size: 12px;
+    font-weight: bold;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+    z-index: 20;
+}
+.td-airport:hover .airport-delete-x { opacity: 1; }
+.airport-delete-x:hover { background: #b91c1c; }
+
+/* 右键菜单统一为普通文字，不再使用颜色/图标强调 */
+#airport-ctx-menu .ctx-item { color: #333 !important; min-width: 120px; }
+#airport-ctx-menu .ctx-item:hover { background: #f1f5f9; }
+
 /* 🌟 彻底清除悬停导致单元格变白/变灰的问题 */
 #forecast-table tbody tr:hover td.td-data { filter: none !important; opacity: 1 !important; }
 #forecast-table tbody tr.tr-edit:hover, 

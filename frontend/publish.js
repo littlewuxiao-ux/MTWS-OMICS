@@ -249,7 +249,10 @@ window.initPublishModule = async function() {
     // 🌟 修复 Bug 4：全局事件委托监听所有删除按钮，永不失效
     document.getElementById('forecast-table')?.addEventListener('click', e => {
         if (e.target.classList.contains('btn-delete-extra')) {
-            e.target.closest('tr').remove();
+            const tr = e.target.closest('tr');
+            const hasContent = Array.from(tr.querySelectorAll('.edit-cell')).some(td => td.textContent.trim());
+            if (hasContent && !confirm('这一行已有内容，确认删除此行吗？')) return;
+            tr.remove();
             if (window.updateAllRowspans) window.updateAllRowspans();
         }
     });
@@ -398,26 +401,43 @@ function setupGlobalToolbar() {
                 let curVal = mainCells[0].text.trim();
                 let startIdx = 0;
                 
-                const formatHour = (offset) => {
+                const formatEndpoint = (offset, withMonth = false) => {
                     const totalH = startH + offset + 8;
                     const dayOffset = Math.floor(totalH / 24);
                     const h = String(totalH % 24).padStart(2, '0');
                     const d = new Date(pbState.startDate + 'T00:00:00Z');
                     d.setUTCDate(d.getUTCDate() + dayOffset);
-                    return `${d.getUTCMonth()+1}月${d.getUTCDate()}日${h}时`;
+                    return {
+                        month: d.getUTCMonth() + 1,
+                        day: d.getUTCDate(),
+                        hour: h,
+                        label: `${withMonth ? (d.getUTCMonth()+1) + '月' : ''}${d.getUTCDate()}日${h}`
+                    };
+                };
+                const hasCrossMonth = (() => {
+                    const first = formatEndpoint(0, true);
+                    const last = formatEndpoint(mainCells.length - 1, true);
+                    return first.month !== last.month;
+                })();
+                const formatRange = (a, b) => {
+                    const start = formatEndpoint(a, hasCrossMonth);
+                    const end = formatEndpoint(b, hasCrossMonth);
+                    // 同一天只写一次日期：5日04-07时；跨天：5日22时-6日02时；跨月自动带月。
+                    if (start.month === end.month && start.day === end.day) return `${start.label}-${end.hour}时`;
+                    return `${start.label}时-${end.label}时`;
                 };
                 
                 for (let i = 1; i <= mainCells.length; i++) {
-                    let val = i < mainCells.length ? mainCells[i].text.trim() : null;
+                    let val = i < mainCells.length ? (mainCells[i].text || '').trim() : null;
                     if (val !== curVal) {
                         if (curVal !== '' && curVal !== '—' && curVal !== '适航') {
-                            timeRanges.push(`${formatHour(startIdx)}-${formatHour(i-1)}时有${curVal}`);
+                            timeRanges.push(`${formatRange(startIdx, i-1)}有${curVal}`);
                         }
                         curVal = val;
                         startIdx = i;
                     }
                 }
-                // 🌟 需求A：优化导出文本排版
+                // 导出文本排版：同日合并日期，不跨月不写月份。
                 let timeStr = timeRanges.length > 0 ? timeRanges.join('，') : '预计天气适航';
                 let apName = window.GLOBAL_AIRPORT_NAME_MAP[icao];
                 let displayName = apName ? apName : icao; // 优先中文名，没有则用四字码
@@ -1291,7 +1311,7 @@ function renderPublishTableTriRow(apAnalysis) {
     const startMs = new Date(`${pbState.startDate}T${String(pbState.startHour).padStart(2, '0')}:00:00Z`).getTime();
     
     const filteredAnalysis = apAnalysis.filter(apInfo => {
-        let apType = (apInfo.icao === 'ZGGG') ? '备选' : '普通';
+        let apType = '普通';
         let isAlwaysShow = false; // 🌟 新增：标记该机场是否具备常驻属性
         
         for (let g of pbState.airportGroups) { 
@@ -1348,7 +1368,7 @@ function renderPublishTableTriRow(apAnalysis) {
         }
 
         trEdit.innerHTML = `
-            <td class="col-airport td-airport" rowspan="1" draggable="true" data-icao="${icao}" title="${tafRaw || '无TAF报文'}" style="font-weight:bold; vertical-align:middle; cursor:move; ${isGray?'color:#94a3b8;':''}">${apName}</td>
+            <td class="col-airport td-airport" rowspan="1" draggable="true" data-icao="${icao}" title="${tafRaw || '无TAF报文'}" style="font-weight:bold; vertical-align:middle; cursor:move; position:sticky; ${isGray?'color:#94a3b8;':''}">${apName}<button class="airport-delete-x" data-icao="${icao}" title="删除该机场">×</button></td>
             <td rowspan="1" style="vertical-align:middle; border-right:2px solid #cbd5e1;">${apType}</td>
             ${srcOpHTML}
         `;
@@ -1409,10 +1429,10 @@ function renderPublishTableTriRow(apAnalysis) {
                 tW = ext.w; if(ext.noteStr) ext.noteStr.split(' ').forEach(n => allTafNotes.add(n));
             }
             let tStyle = getMultiCellStyle(tW);
-            tafCellsHtml += `<td class="col-time taf-cell" style="${cellStyle} background:${tStyle.bg}; color:${tStyle.fg}; text-shadow:${tStyle.ts}; font-size:11px; font-weight:bold;">${tW}</td>`;
-            tafWxHtml += `<td class="col-time" style="${cellStyle}">${tWxRaw}</td>`;
-            tafWindHtml += `<td class="col-time" style="${cellStyle}">${tWindRaw}</td>`;
-            tafVisHtml += `<td class="col-time" style="${cellStyle}">${tVisRaw}</td>`;
+            tafCellsHtml += `<td class="col-time td-data taf-cell" data-c="${i}" style="${cellStyle} background:${tStyle.bg}; color:${tStyle.fg}; text-shadow:${tStyle.ts}; font-size:11px; font-weight:bold;">${tW}</td>`;
+            tafWxHtml += `<td class="col-time td-data" data-c="${i}" style="${cellStyle}">${tWxRaw}</td>`;
+            tafWindHtml += `<td class="col-time td-data" data-c="${i}" style="${cellStyle}">${tWindRaw}</td>`;
+            tafVisHtml += `<td class="col-time td-data" data-c="${i}" style="${cellStyle}">${tVisRaw}</td>`;
 
             let eW = '', eWxRaw = '—', eWindRaw = '—', eVisRaw = '—', eTempRaw = '—', ePressRaw = '—';
             if (nwp) {
@@ -1429,12 +1449,12 @@ function renderPublishTableTriRow(apAnalysis) {
                 eW = ext.w; if(ext.noteStr) ext.noteStr.split(' ').forEach(n => allEcNotes.add(n));
             }
             let eStyle = getMultiCellStyle(eW);
-            ecCellsHtml += `<td class="col-time nwp-cell" style="${cellStyle} background:${eStyle.bg}; color:${eStyle.fg}; text-shadow:${eStyle.ts}; font-size:11px; font-weight:bold;">${eW}</td>`;
-            ecWxHtml += `<td class="col-time" style="${cellStyle}">${eWxRaw}</td>`;
-            ecWindHtml += `<td class="col-time" style="${cellStyle}">${eWindRaw}</td>`;
-            ecVisHtml += `<td class="col-time" style="${cellStyle}">${eVisRaw}</td>`;
-            ecTempHtml += `<td class="col-time" style="${cellStyle}">${eTempRaw}</td>`;
-            ecPressHtml += `<td class="col-time" style="${cellStyle}">${ePressRaw}</td>`;
+            ecCellsHtml += `<td class="col-time td-data nwp-cell" data-c="${i}" style="${cellStyle} background:${eStyle.bg}; color:${eStyle.fg}; text-shadow:${eStyle.ts}; font-size:11px; font-weight:bold;">${eW}</td>`;
+            ecWxHtml += `<td class="col-time td-data" data-c="${i}" style="${cellStyle}">${eWxRaw}</td>`;
+            ecWindHtml += `<td class="col-time td-data" data-c="${i}" style="${cellStyle}">${eWindRaw}</td>`;
+            ecVisHtml += `<td class="col-time td-data" data-c="${i}" style="${cellStyle}">${eVisRaw}</td>`;
+            ecTempHtml += `<td class="col-time td-data" data-c="${i}" style="${cellStyle}">${eTempRaw}</td>`;
+            ecPressHtml += `<td class="col-time td-data" data-c="${i}" style="${cellStyle}">${ePressRaw}</td>`;
         }
 
         const trTaf = document.createElement('tr');
@@ -1590,10 +1610,8 @@ function renderPublishTableTriRow(apAnalysis) {
                 cNotes.push(note);
             });
 
-            let isPerm = false;
-            pbState.airportGroups.forEach(g => { if(g.alwaysShow && g.airports.includes(icao)) isPerm = true; });
             
-            if (allClear && isPerm) {
+            if (allClear) {
                 cNotes[0] = "适航"; 
                 for(let i=1; i<cNotes.length; i++) cNotes[i] = "";
                 cRows.forEach(r => r.forEach(c => { c.text=""; c.bg="transparent"; c.fg="#1e293b"; c.ts="none"; }));
@@ -1614,7 +1632,9 @@ function renderPublishTableTriRow(apAnalysis) {
 }
 
 document.getElementById('forecast-table')?.addEventListener('contextmenu', (e) => {
-    let tr = e.target.closest('tr');
+    const noteCell = e.target.closest('td.col-desc');
+    if (!noteCell) return;
+    let tr = noteCell.closest('tr');
     if (!tr) return;
     
     let icao = tr.dataset.icao;
@@ -1630,18 +1650,40 @@ document.getElementById('forecast-table')?.addEventListener('contextmenu', (e) =
         unconfirmMenu.style.left = e.clientX + 'px';
         unconfirmMenu.style.top = e.clientY + 'px';
         unconfirmMenu.style.display = 'block';
+        unconfirmMenu.onmouseleave = () => { unconfirmMenu.style.display = 'none'; };
         
         unconfirmMenu.onclick = () => {
             delete pbState.confirmedData[icao];
             window.saveConfirmedDataToLocal();
             const tw = document.getElementById('table-wrapper');
-            const sx = tw.scrollLeft, sy = tw.scrollTop;
+            const sx = tw ? tw.scrollLeft : 0, sy = tw ? tw.scrollTop : 0;
             renderPublishTableTriRow(window.currentApAnalysis); 
-            tw.scrollLeft = sx; tw.scrollTop = sy;
+            if (tw) { tw.scrollLeft = sx; tw.scrollTop = sy; }
             unconfirmMenu.style.display = 'none';
         };
     }
 });
+
+document.addEventListener('mousemove', (e) => {
+    const menu = document.getElementById('unconfirm-menu');
+    if (!menu || menu.style.display !== 'block') return;
+    if (!e.target.closest('#unconfirm-menu') && !e.target.closest('td.col-desc')) menu.style.display = 'none';
+});
+
+function removeAirportFromPublish(icao) {
+    if (!icao) return;
+    _cachedAirports = _cachedAirports.filter(a => a !== icao);
+    if (Array.isArray(window.currentApAnalysis)) {
+        window.currentApAnalysis = window.currentApAnalysis.filter(a => a.icao !== icao);
+    }
+    pbState.forceShowAirports.delete(icao);
+    delete pbState.customCoords[icao];
+    if (pbState.confirmedData[icao]) {
+        delete pbState.confirmedData[icao];
+        window.saveConfirmedDataToLocal();
+    }
+    renderPublishTableTriRow(window.currentApAnalysis || []);
+}
 
 function updateRowActiveStyle(tr) {
     if (!tr) return;
@@ -1715,7 +1757,7 @@ function setupTableInteraction() {
   const sel = { active: false, r1: -1, c1: -1, r2: -1, c2: -1 };
   
   function getAllInteractiveRows() {
-      return Array.from(table.querySelectorAll('.tr-edit, .tr-edit-extra, .tr-taf, .tr-nwp')).filter(tr => tr.style.display !== 'none');
+      return Array.from(table.querySelectorAll('.tr-edit, .tr-edit-extra, .tr-taf, .tr-taf-detail, .tr-nwp, .tr-nwp-detail')).filter(tr => tr.style.display !== 'none');
   }
   
   function highlightSelection() {
@@ -1786,7 +1828,7 @@ function setupTableInteraction() {
           if (e.key.length === 1 || e.key === 'Enter' || e.key === 'Backspace') {
               e.preventDefault();
               const firstTd = selected[0]; 
-              let initialVal = e.key.length === 1 ? e.key : '';
+              let initialVal = '';
               if (e.key === 'Backspace') initialVal = '';
               if (e.key === 'Enter') initialVal = firstTd.textContent === '—' ? '' : firstTd.textContent;
 
@@ -1978,13 +2020,12 @@ function setupAirportInteraction() {
       let tr = e.target.closest('tr');
       if (!tr) return;
 
-      // 🌟 修复 Bug 3：全行穿透寻找 ICAO，不论你点在时间、备注还是操作按钮上，永远定位准确！
+      // 已确认数据的撤销菜单只在备注列处理；这里处理未确认状态下的普通右键菜单。
+      if (pbState.confirmedData[tr.dataset.icao] || e.target.closest('td.col-desc')) return;
+
       let tempTr = tr;
-      while (tempTr && !tempTr.dataset.icao) {
-          tempTr = tempTr.previousElementSibling;
-      }
+      while (tempTr && !tempTr.dataset.icao) tempTr = tempTr.previousElementSibling;
       if (tempTr) selectedIcao = tempTr.dataset.icao;
-      
       if (!selectedIcao) return;
       e.preventDefault();
       
@@ -1994,39 +2035,32 @@ function setupAirportInteraction() {
 
       const delRowBtn = document.getElementById('ctx-delete-row');
       if (delRowBtn) {
-          if (tr.classList.contains('tr-edit-extra')) {
-              delRowBtn.style.display = 'block';
-              // 🌟 修复 Bug 4：全局代理移除行
-              delRowBtn.onclick = () => { tr.remove(); if(window.updateAllRowspans) window.updateAllRowspans(); };
-          } else {
-              delRowBtn.style.display = 'none';
-          }
+          const isExtraRow = tr.classList.contains('tr-edit-extra');
+          delRowBtn.style.display = isExtraRow ? 'block' : 'none';
+          delRowBtn.onclick = () => {
+              if (!isExtraRow) return;
+              const hasContent = Array.from(tr.querySelectorAll('.edit-cell')).some(td => td.textContent.trim());
+              if (hasContent && !confirm('这一行已有内容，确认删除此行吗？')) return;
+              tr.remove();
+              if(window.updateAllRowspans) window.updateAllRowspans();
+          };
       }
       ctxMenu.style.left = e.clientX + 'px';
       ctxMenu.style.top = e.clientY + 'px';
       ctxMenu.style.display = 'block';
   });
 
-  const markAirport = (icao, color) => {
-      document.querySelectorAll(`.td-airport[data-icao="${icao}"]`).forEach(td => {
-          if (color) { td.dataset.mark = color; td.style.borderLeft = `4px solid ${color}`; }
-          else { delete td.dataset.mark; td.style.borderLeft = ''; }
-      });
-  };
-
-  document.getElementById('ctx-mark-red')?.addEventListener('click', () => markAirport(selectedIcao, 'red'));
-  document.getElementById('ctx-mark-yellow')?.addEventListener('click', () => markAirport(selectedIcao, 'yellow'));
-  document.getElementById('ctx-mark-green')?.addEventListener('click', () => markAirport(selectedIcao, 'green'));
-  document.getElementById('ctx-mark-clear')?.addEventListener('click', () => markAirport(selectedIcao, ''));
-
-  document.getElementById('ctx-expand-airport')?.addEventListener('click', () => {
-      const mainTr = document.querySelector(`.tr-edit[data-icao="${selectedIcao}"]`);
-      if(!mainTr || mainTr.dataset.confirmed === "true") return;
-      const trTaf = mainTr.nextElementSibling;
-      const trNwp = trTaf ? trTaf.nextElementSibling : null;
-      if (trTaf && trTaf.classList.contains('tr-taf')) trTaf.querySelector('.col-source')?.dispatchEvent(new MouseEvent('dblclick'));
-      if (trNwp && trNwp.classList.contains('tr-nwp')) trNwp.querySelector('.col-source')?.dispatchEvent(new MouseEvent('dblclick'));
+  table.addEventListener('click', e => {
+      const btn = e.target.closest('.airport-delete-x');
+      if (!btn) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const icao = btn.dataset.icao;
+      if (icao && confirm(`确认删除 ${window.GLOBAL_AIRPORT_NAME_MAP[icao] || icao} 吗？`)) {
+          removeAirportFromPublish(icao);
+      }
   });
+
 
   document.getElementById('ctx-add-blank')?.addEventListener('click', () => {
       if(!selectedIcao) return;
@@ -2073,15 +2107,9 @@ function setupAirportInteraction() {
               const icao = inp.value.trim().toUpperCase();
               if(icao.length !== 4 || !window.AIRPORT_COORDS[icao]) return alert("无效的四字码或系统未收录！");
               
-              const insertIndex = window.currentApAnalysis.findIndex(a => a.icao === selectedIcao) + 1;
-              const newApInfo = { icao: icao, hasAlert: false, nwp: null, tafRaw: '', tafHourly: null, _apType: '普通' };
-              
-              _cachedAirports.splice(insertIndex, 0, icao);
-              window.currentApAnalysis.splice(insertIndex, 0, newApInfo);
               pbState.customCoords[icao] = window.AIRPORT_COORDS[icao]; 
               pbState.forceShowAirports.add(icao); 
-              
-              renderPublishTableTriRow(window.currentApAnalysis);
+              await loadForecastData(true);
           }
       });
   });
@@ -2125,16 +2153,5 @@ function setupAirportInteraction() {
       
       if(window.updateAllRowspans) window.updateAllRowspans();
   });
-  
-  document.getElementById('ctx-delete-airport')?.addEventListener('click', () => {
-      _cachedAirports = _cachedAirports.filter(a => a !== selectedIcao);
-      window.currentApAnalysis = window.currentApAnalysis.filter(a => a.icao !== selectedIcao);
-      pbState.forceShowAirports.delete(selectedIcao);
-      
-      if (pbState.confirmedData[selectedIcao]) {
-          delete pbState.confirmedData[selectedIcao];
-          window.saveConfirmedDataToLocal();
-      }
-      renderPublishTableTriRow(window.currentApAnalysis);
-  });
+
 }
