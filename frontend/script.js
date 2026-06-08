@@ -88,6 +88,27 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    async function syncPersonnelMappingToServer() {
+        try {
+            await fetch('/api/personnel_mapping', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mapping: personnelDict })
+            });
+        } catch (e) { console.warn('人员映射同步到后端失败', e); }
+    }
+
+    async function loadPersonnelMappingFromServer() {
+        try {
+            const res = await fetch('/api/personnel_mapping');
+            const data = await res.json();
+            if (data.success && data.data) {
+                personnelDict = { ...DEFAULT_PERSONNEL, ...data.data, ...personnelDict };
+                localStorage.setItem('personnel_dict', JSON.stringify(personnelDict));
+            }
+        } catch (e) { console.warn('人员映射从后端加载失败', e); }
+    }
+
     function renderPersonnelList() {
         const listEl = document.getElementById('personnel-list');
         if (!listEl) return;
@@ -132,6 +153,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (newId && newName) {
             personnelDict[newId] = newName;
             localStorage.setItem('personnel_dict', JSON.stringify(personnelDict));
+            syncPersonnelMappingToServer();
             renderPersonnelList();
             document.getElementById('new-emp-id').value = '';
             document.getElementById('new-emp-name').value = '';
@@ -144,6 +166,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (confirm(`确定要删除工号 ${empId} 的人员映射吗？`)) {
             delete personnelDict[empId];
             localStorage.setItem('personnel_dict', JSON.stringify(personnelDict));
+            syncPersonnelMappingToServer();
             renderPersonnelList();
             updateDisplayUserName();
         }
@@ -159,18 +182,13 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // 🌟 清理了重复嵌套的函数
-    function updateDisplayUserName(userCode = null, isOffline = false) {
+    function updateDisplayUserName(userCode = null, isOffline = false, displayName = null) {
         const currentUserId = userCode || localStorage.getItem('sf_userId') || ''; 
         const pbForecaster = document.getElementById('pb-forecaster'); 
 
         if (currentUserId) {
-            const chineseName = personnelDict[currentUserId] || (isOffline ? "离线模式" : "未知");
-
-            if (personnelDict[currentUserId]) {
-                userIdDisplay.textContent = `当前账号: ${chineseName}`;
-            } else {
-                userIdDisplay.textContent = `当前账号: ${currentUserId} (${chineseName})`;
-            }
+            const chineseName = displayName || personnelDict[currentUserId] || (isOffline ? "离线模式" : "未知");
+            userIdDisplay.textContent = `当前账号: ${chineseName}`;
 
             localStorage.setItem('sf_userId', currentUserId);
 
@@ -237,7 +255,12 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         evalPersonSelect.value = currentVal;
     }
-    renderEvalPersonSelect();
+    loadPersonnelMappingFromServer().then(() => {
+        renderPersonnelList();
+        renderEvalPersonSelect();
+        updateDisplayUserName();
+        syncPersonnelMappingToServer();
+    });
 
     const adminDefManual = document.getElementById('admin-default-manual');
     const adminDefTaf = document.getElementById('admin-default-taf');
@@ -404,7 +427,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await res.json();
             if (data.logged_in) {
                 if (data.token) { apiToken = data.token; localStorage.setItem('sf_weather_token', apiToken); }
-                updateDisplayUserName(data.userCode, data.isOffline); 
+                updateDisplayUserName(data.userCode, data.isOffline, data.displayName); 
                 loginBtn.classList.add('hidden'); 
                 userInfoDiv.classList.remove('hidden');
             } else {
@@ -652,7 +675,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const statusRes = await fetch('/api/auth/status');
                     const statusData = await statusRes.json();
                     if(statusData.userCode) {
-                        updateDisplayUserName(statusData.userCode);
+                        updateDisplayUserName(statusData.userCode, statusData.isOffline, statusData.displayName);
                     }
                 } else {
                     qrStatusText.textContent = "验证失败: " + valData.message;

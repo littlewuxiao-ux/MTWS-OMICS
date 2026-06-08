@@ -544,7 +544,7 @@ class LauncherApp(ctk.CTk):
         self._ipc_sock = ipc_sock
         self._quitting = False
         self.tray_icon = None
-        self.auth_state = {"logged_in": False, "token": None, "userCode": None, "login_time": None}
+        self.auth_state = {"logged_in": False, "token": None, "userCode": None, "displayName": None, "login_time": None}
         self.auth_broker = None
 
         self.mtws = ServicePanel(self, "mtws", self.cfg["mtws"])
@@ -597,6 +597,11 @@ class LauncherApp(ctk.CTk):
                       font=ctk.CTkFont(size=12), fg_color=COLOR_BLUE, hover_color="#007aff",
                       text_color="#fff", corner_radius=8, height=32)
         self.login_btn.pack(side="right", padx=(8, 0))
+        self.logout_btn = ctk.CTkButton(right, text="退出登录", width=80, command=self.logout_auth,
+                      font=ctk.CTkFont(size=12), fg_color=BG_TERTIARY, hover_color=BG_GROUPED,
+                      text_color=COLOR_LABEL2, corner_radius=8, height=32)
+        self.logout_btn.pack(side="right", padx=(8, 0))
+        self.logout_btn.configure(state="disabled")
         ctk.CTkButton(right, text="退出服务", width=80, command=self._quit_app,
                       font=ctk.CTkFont(size=12), fg_color="#3a1f1f", hover_color="#5a2a2a",
                       text_color="#ff6b6b", corner_radius=8, height=32).pack(side="right", padx=(8, 0))
@@ -730,17 +735,45 @@ class LauncherApp(ctk.CTk):
             return
         TokenLoginDialog(self, self.omics.home_url.rstrip('/'))
 
-    def set_auth_state(self, token, user_code=None):
+    def resolve_display_name(self, user_code):
+        if not user_code or user_code == "--" or requests is None or not self.omics.running:
+            return user_code or "账号"
+        try:
+            res = requests.get(f"{self.omics.home_url.rstrip('/')}/api/personnel_mapping", timeout=2)
+            data = res.json()
+            if data.get("success") and isinstance(data.get("data"), dict):
+                return data["data"].get(str(user_code), str(user_code))
+        except Exception:
+            pass
+        return str(user_code)
+
+    def set_auth_state(self, token, user_code=None, display_name=None):
+        name = display_name or self.resolve_display_name(user_code)
         self.auth_state = {
             "logged_in": bool(token),
             "token": token,
             "userCode": user_code or "--",
+            "displayName": name,
             "login_time": datetime.now().isoformat(timespec="seconds")
         }
-        name = user_code or "账号"
         if hasattr(self, "login_btn") and self.login_btn:
             self.login_btn.configure(text=f"{name} 登录成功", fg_color=COLOR_GREEN, hover_color="#27a846")
+        if hasattr(self, "logout_btn") and self.logout_btn:
+            self.logout_btn.configure(state="normal")
         self.omics.log(f"控制台登录成功：{name}。登录态已由控制台统一中转。", "success")
+
+    def logout_auth(self):
+        self.auth_state = {"logged_in": False, "token": None, "userCode": None, "displayName": None, "login_time": None}
+        if hasattr(self, "login_btn") and self.login_btn:
+            self.login_btn.configure(text="扫码登录", fg_color=COLOR_BLUE, hover_color="#007aff")
+        if hasattr(self, "logout_btn") and self.logout_btn:
+            self.logout_btn.configure(state="disabled")
+        try:
+            if requests is not None and self.omics.running:
+                requests.post(f"{self.omics.home_url.rstrip('/')}/api/auth/logout", timeout=2)
+        except Exception:
+            pass
+        self.omics.log("控制台已退出登录，登录态中转已清空。", "info")
 
     def get_auth_state(self, include_token=False):
         state = dict(self.auth_state)
@@ -936,7 +969,8 @@ class TokenLoginDialog(ctk.CTkToplevel):
                     except Exception:
                         pass
                 self.parent.set_auth_state(token, user)
-                self.after(0, lambda: self.status.configure(text=f"{user} 登录成功，已写入控制台登录态。", text_color=COLOR_GREEN))
+                display = self.parent.get_auth_state().get('displayName') or user
+                self.after(0, lambda: self.status.configure(text=f"{display} 登录成功，已写入控制台登录态。", text_color=COLOR_GREEN))
             else:
                 msg = data.get('message') or '登录确认失败'
                 self.after(0, lambda: self.status.configure(text=msg, text_color=COLOR_RED))

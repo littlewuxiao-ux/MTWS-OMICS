@@ -36,6 +36,41 @@ def resolve_auth_token(provided_token=None):
         return broker.get('token')
     return provided_token
 
+PERSONNEL_MAP_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'personnel_mapping.json'))
+DEFAULT_PERSONNEL_MAP = {"41060711": "吴霄"}
+
+
+def load_personnel_mapping():
+    data = dict(DEFAULT_PERSONNEL_MAP)
+    try:
+        if os.path.exists(PERSONNEL_MAP_PATH):
+            with open(PERSONNEL_MAP_PATH, 'r', encoding='utf-8') as f:
+                saved = json.load(f)
+            if isinstance(saved, dict):
+                data.update({str(k): str(v) for k, v in saved.items() if str(k).strip() and str(v).strip()})
+    except Exception as exc:
+        LOG.warning("读取人员映射失败: %s", exc)
+    return data
+
+
+def save_personnel_mapping(mapping):
+    data = dict(DEFAULT_PERSONNEL_MAP)
+    if isinstance(mapping, dict):
+        data.update({str(k).strip(): str(v).strip() for k, v in mapping.items() if str(k).strip() and str(v).strip()})
+    try:
+        with open(PERSONNEL_MAP_PATH, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception as exc:
+        LOG.warning("保存人员映射失败: %s", exc)
+        raise
+    return data
+
+
+def resolve_person_name(user_code):
+    if not user_code:
+        return ""
+    return load_personnel_mapping().get(str(user_code), str(user_code))
+
 # ==========================================
 # 🌟 运行日志：复用 main.py 建立的 'forecast' logger；若独立跑 app.py 则自建
 # ==========================================
@@ -822,6 +857,18 @@ def run_evaluation(forecasts, final_obs, standards, obs_reports_raw, custom_phen
 # === 🌟 离线登录状态管理 ===
 offline_session = {"logged_in": False, "userCode": "OFFLINE", "role": "user", "isOffline": True}
 
+@app.route('/api/personnel_mapping', methods=['GET', 'POST'])
+def personnel_mapping_api():
+    if request.method == 'GET':
+        return jsonify({"success": True, "data": load_personnel_mapping()})
+    data = request.get_json() or {}
+    mapping = data.get('mapping', data)
+    try:
+        saved = save_personnel_mapping(mapping)
+        return jsonify({"success": True, "data": saved})
+    except Exception as exc:
+        return jsonify({"success": False, "error": str(exc)}), 200
+
 @app.route('/api/auth/offline_login', methods=['POST'])
 def offline_login_api():
     global offline_session
@@ -835,9 +882,11 @@ def offline_login_api():
     if password == "000":
         # 🌟 核心修改：认准工号 41060711，给予吴霄最高权限标识！
         is_admin = (username == "41060711")
+        display_name = resolve_person_name(username)
         offline_session = {
             "logged_in": True,
             "userCode": username,
+            "displayName": display_name,
             "role": "admin" if is_admin else "user",
             "isOffline": True
         }
@@ -860,11 +909,13 @@ def get_auth_status():
     # 优先使用统一启动器控制台登录态，避免 OMICS/MTWS 各自扫码互相挤下线
     broker_status = get_console_auth_status()
     if broker_status:
+        user_code = broker_status.get("userCode") or "--"
         return jsonify({
             "logged_in": True,
             "token": broker_status.get("token"),
-            "userCode": broker_status.get("userCode") or "--",
-            "role": "admin" if broker_status.get("userCode") == '41060711' else "user",
+            "userCode": user_code,
+            "displayName": broker_status.get("displayName") or resolve_person_name(user_code),
+            "role": "admin" if user_code == '41060711' else "user",
             "isOffline": False,
             "source": "console"
         })
@@ -875,6 +926,8 @@ def get_auth_status():
     # 否则返回实际的扫码状态，加上 isOffline 标记为 false
     status = sf_client_instance.get_session_status()
     status["isOffline"] = False
+    if status.get("userCode"):
+        status["displayName"] = resolve_person_name(status.get("userCode"))
     # 如果扫码的是管理员账号，赋予 admin
     if status.get("userCode") == '41060711':
         status["role"] = "admin"
@@ -1248,16 +1301,20 @@ def _resolve_desktop_dir():
 
 @app.route('/api/export_publish', methods=['POST'])
 def export_publish_api():
-    """预报发布界面导出：把前端 html2canvas 截图(base64 PNG)与表格数据(二维数组)
-    分别保存为 PNG 图片和 Excel。export_path 留空则存桌面 SF预报发布导出 文件夹。"""
+    """预报发布界面导出：保存 PNG 截图，并按“未来24小时天气预报”宏模板生成 xlsm。"""
     import base64
+    import shutil
+    from copy import copy
     try:
         data = request.json or {}
         image_b64 = data.get('image', '')
         rows = data.get('data', []) or []
+        publish_rows = data.get('publish_rows', []) or []
         export_path = (data.get('export_path') or '').strip()
+        start_date = (data.get('start_date') or '').strip()
+        start_hour = data.get('start_hour')
+        validity_hours = int(data.get('validity_hours') or 24)
 
-        # 1. 确定导出目录：优先用户配置路径，否则桌面专属文件夹
         if export_path:
             target_dir = export_path
         else:
@@ -1270,10 +1327,9 @@ def export_publish_api():
 
         ts = datetime.now().strftime('%Y%m%d_%H%M%S')
         png_path = os.path.join(target_dir, f'预报发布_{ts}.png')
-        xlsx_path = os.path.join(target_dir, f'预报发布_{ts}.xlsx')
+        xlsm_path = os.path.join(target_dir, f'未来24小时天气预报_{ts}.xlsm')
         saved = []
 
-        # 2. 保存 PNG 截图
         if image_b64:
             try:
                 if ',' in image_b64:
@@ -1284,20 +1340,83 @@ def export_publish_api():
             except Exception as e:
                 LOG.exception("保存预报发布图片失败: %s", e)
 
-        # 3. 保存 Excel
-        if rows:
+        if rows or publish_rows:
             try:
                 import openpyxl
-                wb = openpyxl.Workbook()
-                ws = wb.active
-                ws.title = '预报发布'
-                for row in rows:
-                    ws.append([("" if c is None else str(c)) for c in row])
-                wb.save(xlsx_path)
-                saved.append(xlsx_path)
+                from openpyxl.styles import PatternFill
+                from openpyxl.cell.cell import MergedCell
+                base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+                template_path = os.path.join(base_dir, '未来24小时天气预报20260507（模版）（如提示宏已被禁用，点击【启用内容】）.xlsm')
+                if not os.path.exists(template_path):
+                    template_path = os.path.join(os.path.dirname(base_dir), '未来24小时天气预报20260507（模版）（如提示宏已被禁用，点击【启用内容】）.xlsm')
+                if not os.path.exists(template_path):
+                    return jsonify({"success": False, "error": f"找不到24小时天气预报模板: {template_path}"}), 200
+
+                shutil.copyfile(template_path, xlsm_path)
+                wb = openpyxl.load_workbook(xlsm_path, keep_vba=True)
+                ws = wb['24小时天气预报'] if '24小时天气预报' in wb.sheetnames else wb.active
+
+                # 起报时间：前端为 UTC startDate/startHour，这里转北京时间写入 C6；模板 D8 起公式引用 C6。
+                try:
+                    if start_date and start_hour is not None:
+                        bjt = datetime.strptime(f"{start_date} {int(start_hour):02d}", '%Y-%m-%d %H') + timedelta(hours=8)
+                        ws['C3'] = bjt.date()
+                        ws['C6'] = bjt
+                except Exception:
+                    pass
+
+                # 清空模板数据区 A9:AB27；保留样式。
+                for r in range(9, 28):
+                    for c in range(1, 29):
+                        cell = ws.cell(r, c)
+                        if isinstance(cell, MergedCell):
+                            continue
+                        cell.value = None
+                        if c >= 4:
+                            cell.fill = PatternFill(fill_type=None)
+
+                # 从前端 HTML 表格二维数组提取“编辑/确认主行”，跳过表头、TAF、EC、附加空行。
+                data_rows = []
+                if publish_rows:
+                    for item in publish_rows:
+                        if not isinstance(item, dict):
+                            continue
+                        name = str(item.get('name') or '').strip()
+                        ap_type = str(item.get('type') or '普通').strip()
+                        vals = [str(v or '').strip() for v in (item.get('values') or [])[:24]]
+                        if name:
+                            data_rows.append((name, ap_type or '普通', vals))
+                else:
+                    for row in rows:
+                        if not row or len(row) < 4:
+                            continue
+                        name = str(row[0] or '').strip()
+                        ap_type = str(row[1] or '').strip()
+                        marker = str(row[2] or '').strip()
+                        if name in ('名称', '影响机场') or ap_type in ('性质', ''):
+                            continue
+                        if name in ('TAF', 'EC', '天气', '风', '能见度', '温度', '气压') or marker in ('TAF', 'EC'):
+                            continue
+                        vals = [str(v or '').strip() for v in row[4:4+24]]
+                        if not any(vals) and marker not in ('适航', '/'):
+                            continue
+                        data_rows.append((name, ap_type or '普通', vals))
+
+                # 模板第9-27行最多19个机场；导出只取24小时列 D:AA（模板 AB 是第24小时端点，保留公式/空列）。
+                for idx, (name, ap_type, vals) in enumerate(data_rows[:19], start=9):
+                    ws.cell(idx, 1).value = name
+                    ws.cell(idx, 2).value = ap_type
+                    for j in range(min(24, len(vals))):
+                        cell = ws.cell(idx, 4 + j)
+                        if isinstance(cell, MergedCell):
+                            continue
+                        cell.value = '' if vals[j] in ('—', '/') else vals[j]
+
+                wb.save(xlsm_path)
+                saved.append(xlsm_path)
             except Exception as e:
-                LOG.exception("保存预报发布 Excel 失败: %s", e)
-                return jsonify({"success": False, "error": f"Excel 写入失败: {e}"}), 200
+                LOG.exception("保存预报发布模板 Excel 失败: %s", e)
+                return jsonify({"success": False, "error": f"模板 Excel 写入失败: {e}"}), 200
 
         if not saved:
             return jsonify({"success": False, "error": "没有可导出的图片或表格数据"}), 200

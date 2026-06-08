@@ -1612,6 +1612,12 @@ function renderPublishTableTriRow(apAnalysis) {
 
             
             if (allClear) {
+                let isAlwaysShow = false;
+                pbState.airportGroups.forEach(g => { if(g.alwaysShow && g.airports.includes(icao)) isAlwaysShow = true; });
+                if (!isAlwaysShow) {
+                    removeAirportFromPublish(icao);
+                    return;
+                }
                 cNotes[0] = "适航"; 
                 for(let i=1; i<cNotes.length; i++) cNotes[i] = "";
                 cRows.forEach(r => r.forEach(c => { c.text=""; c.bg="transparent"; c.fg="#1e293b"; c.ts="none"; }));
@@ -2056,9 +2062,7 @@ function setupAirportInteraction() {
       e.preventDefault();
       e.stopPropagation();
       const icao = btn.dataset.icao;
-      if (icao && confirm(`确认删除 ${window.GLOBAL_AIRPORT_NAME_MAP[icao] || icao} 吗？`)) {
-          removeAirportFromPublish(icao);
-      }
+      if (icao) removeAirportFromPublish(icao);
   });
 
 

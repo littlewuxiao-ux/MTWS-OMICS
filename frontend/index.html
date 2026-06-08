@@ -596,12 +596,32 @@
                         tr.querySelectorAll('th, td').forEach(td => rowData.push(td.innerText.trim()));
                         rows.push(rowData);
                     });
+                    const publishRows = [];
+                    table.querySelectorAll('tbody tr.tr-edit').forEach(tr => {
+                        if (tr.style.display === 'none') return;
+                        const name = tr.querySelector('.td-airport')?.childNodes?.[0]?.textContent?.trim() || '';
+                        const type = tr.querySelector('.td-airport')?.nextElementSibling?.textContent?.trim() || '普通';
+                        const values = [];
+                        for (let i = 0; i < 24; i++) {
+                            const td = tr.querySelector(`td.td-data[data-c="${i}"]`);
+                            values.push(td ? td.textContent.trim() : '');
+                        }
+                        if (name && (values.some(Boolean) || tr.dataset.confirmed === 'true')) publishRows.push({ name, type, values });
+                    });
                     
                     const exportPath = document.getElementById('publish-export-path')?.value || '';
                     const res = await fetch('/api/export_publish', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ image: base64Image, data: rows, export_path: exportPath })
+                        body: JSON.stringify({
+                            image: base64Image,
+                            data: rows,
+                            publish_rows: publishRows,
+                            export_path: exportPath,
+                            start_date: window.pbState?.startDate,
+                            start_hour: window.pbState?.startHour,
+                            validity_hours: window.pbState?.validityHours || 24
+                        })
                     });
                     const result = await res.json();
                     if(result.success) alert('✅ 导出成功！\n保存目录:\n' + result.path + (result.files ? '\n文件:\n' + result.files.join('\n') : ''));
