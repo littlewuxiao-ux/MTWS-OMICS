@@ -610,7 +610,8 @@
                     });
                     
                     const exportPath = document.getElementById('publish-export-path')?.value || '';
-                    const res = await fetch('/api/export_publish', {
+                    const apiBase = window.location.pathname.startsWith('/omics') ? '/omics/api' : '/api';
+                    const res = await fetch(`${apiBase}/export_publish`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -623,7 +624,12 @@
                             validity_hours: window.pbState?.validityHours || 24
                         })
                     });
-                    const result = await res.json();
+                    const contentType = res.headers.get('content-type') || '';
+                    const responseText = await res.text();
+                    if (!contentType.includes('application/json')) {
+                        throw new Error(`导出接口返回了非 JSON 内容 (HTTP ${res.status})：${responseText.slice(0, 120)}`);
+                    }
+                    const result = JSON.parse(responseText);
                     if(result.success) alert('✅ 导出成功！\n保存目录:\n' + result.path + (result.files ? '\n文件:\n' + result.files.join('\n') : ''));
                     else alert('❌ 导出失败: ' + result.error);
                 } catch(e) {
