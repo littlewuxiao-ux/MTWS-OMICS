@@ -11,6 +11,30 @@ import threading
 import copy
 import json
 import logging
+import requests
+
+CONSOLE_AUTH_BROKER_URL = os.environ.get('CONSOLE_AUTH_BROKER_URL', 'http://127.0.0.1:19529/auth/status')
+
+
+def get_console_auth_status():
+    """从统一启动器控制台获取登录态；失败时返回 None，保持独立运行兼容。"""
+    try:
+        r = requests.get(CONSOLE_AUTH_BROKER_URL, timeout=1.5)
+        if r.ok:
+            data = r.json()
+            if data.get('success') and data.get('logged_in') and data.get('token'):
+                return data
+    except Exception:
+        pass
+    return None
+
+
+def resolve_auth_token(provided_token=None):
+    """业务接口优先使用控制台 token，避免多个程序各自登录互相挤下线。"""
+    broker = get_console_auth_status()
+    if broker and broker.get('token'):
+        return broker.get('token')
+    return provided_token
 
 # ==========================================
 # 🌟 运行日志：复用 main.py 建立的 'forecast' logger；若独立跑 app.py 则自建
@@ -833,6 +857,18 @@ def validate_token():
 
 @app.route('/api/auth/status', methods=['GET'])
 def get_auth_status():
+    # 优先使用统一启动器控制台登录态，避免 OMICS/MTWS 各自扫码互相挤下线
+    broker_status = get_console_auth_status()
+    if broker_status:
+        return jsonify({
+            "logged_in": True,
+            "token": broker_status.get("token"),
+            "userCode": broker_status.get("userCode") or "--",
+            "role": "admin" if broker_status.get("userCode") == '41060711' else "user",
+            "isOffline": False,
+            "source": "console"
+        })
+
     # 优先检查离线登录状态
     if offline_session["logged_in"]:
         return jsonify(offline_session)
@@ -856,7 +892,8 @@ def fetch_weather_data():
     print(f"[DEBUG] 收到下载请求: {request.get_json()}")
     try:
         d = request.get_json()
-        token = d.get('token'); start = d.get('start_time'); end = d.get('end_time'); aps = d.get('airports', ""); wtypes = d.get('wtypes', ["SA","SP"])
+        token = resolve_auth_token(d.get('token'))
+        start = d.get('start_time'); end = d.get('end_time'); aps = d.get('airports', ""); wtypes = d.get('wtypes', ["SA","SP"])
         now = datetime.now(timezone.utc)
         try:
             if '-' in start: fmt = "%Y-%m-%d"
@@ -894,7 +931,7 @@ def fetch_weather_data():
 @app.route('/api/fetch_flights', methods=['POST'])
 def api_fetch_flights():
     data = request.json
-    token = data.get('token')
+    token = resolve_auth_token(data.get('token'))
     flight_date = data.get('flight_date')
     
     if not token or not flight_date:

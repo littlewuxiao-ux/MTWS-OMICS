@@ -77,6 +77,14 @@
 
 ## 二、更新日志
 
+### v5.6-dev · 2026-06-08（统一控制台登录态中转与启动器交互修复）
+- **新增** 统一控制台本地登录态中转接口：`launcher.py` 启动仅监听 `127.0.0.1:19529` 的 `/auth/status`，控制台作为唯一 token 持有方；扫码成功后顶部按钮由「扫码登录」更新为「工号 登录成功」，避免多个业务程序重复扫码导致账号互相挤下线。
+- **调整** OMICS 后端登录/取数流程：`backend/app.py` 的 `/api/auth/status`、`/api/fetch_data`、`/api/fetch_flights` 优先读取控制台中转 token；即使前端仍传旧 token，后端也优先使用控制台 token，降低 OMICS 与 MTWS 并行时的登录冲突。
+- **增强** MTWS 路径与启动体验：默认识别与 OMICS 项目目录平级的 `../MTWS/mtws_django/manage.py`；路径配置保存后自动启动未运行服务；外部接管服务被误关后自动恢复为可点击「启动」状态。
+- **调整** 统一启动器双栏布局：MTWS / OMICS 面板改为 grid uniform 等宽布局，避免 MTWS 因多一个「数据库管理工具」按钮导致框体比 OMICS 更宽。
+- **说明** MTWS 本体未改动；后续如需接入统一登录，只需在 MTWS 业务请求前读取 `http://127.0.0.1:19529/auth/status` 获取 `token/userCode/login_time`，不要再独立扫码登录。
+- **验证** `launcher.py` 与 `backend/app.py` 均通过 `py_compile`。
+
 ### v5.6-dev · 2026-06-08（统一启动器修复与 MTWS 根目录适配）
 - **修复** `统一服务器启动器.bat` 通过 `cmd start` 启动时在中文/特殊字符路径下会把 `launcher.py` 截断为 0 字节的问题；改为 PowerShell `Start-Process` 数组参数启动，规避批处理路径解析坑，并实测启动后 `launcher.py` 不再被清空。
 - **调整** 扫码登录窗口：删除 token 文本框与「复制Token」按钮，不再展示/复制一次性 token；扫码后只完成控制台服务登录态写入，避免多个程序重复登录导致账号互相下线。

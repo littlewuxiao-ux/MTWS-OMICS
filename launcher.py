@@ -27,6 +27,8 @@ import os
 import json
 import queue
 import socket
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import urlparse
 from datetime import datetime
 from pathlib import Path
 
@@ -46,6 +48,8 @@ except ImportError:
 SCRIPT_DIR  = Path(__file__).parent
 CONFIG_PATH = SCRIPT_DIR / "launcher_config.json"
 IPC_PORT    = 19528          # 单实例 IPC（与 MTWS 的 19527 错开）
+AUTH_BROKER_PORT = 19529     # 控制台登录态中转接口（仅 127.0.0.1）
+DEFAULT_MTWS_DIR = SCRIPT_DIR.parent / "MTWS"
 
 # ── macOS 深色系统配色（沿用 server_gui.py 同款）────────────────────────────────
 BG_PRIMARY        = "#1c1c1e"
@@ -73,7 +77,7 @@ OMICS_INLINE_CODE = 'import os, sys, argparse, logging\ntry:\n    sys.stdout.rec
 DEFAULT_CONFIG = {
     "mtws": {
         "name": "MTWS 监控系统",
-        "work_dir": "",           # 指向 MTWS 程序根目录；兼容旧配置 manage_py
+        "work_dir": str(DEFAULT_MTWS_DIR) if DEFAULT_MTWS_DIR.exists() else "",  # 指向 MTWS 程序根目录；兼容旧配置 manage_py
         "host": "127.0.0.1",
         "port": 8000,
         "home_path": "/current/",
@@ -128,22 +132,41 @@ def is_port_in_use(port: int) -> bool:
 
 
 def resolve_mtws_manage_py(path):
-    """MTWS 配置既可指向 manage.py，也可指向 server_gui.py 所在的程序根目录。"""
-    if not path:
-        return None
-    p = Path(path)
-    if p.is_file() and p.name.lower() == "manage.py":
-        return p
-    if p.is_file() and p.name.lower() == "server_gui.py":
-        p = p.parent
-    if p.is_dir():
-        candidates = [
-            p / "mtws_django" / "manage.py",  # server_gui.py 的标准布局
-            p / "manage.py",
-        ]
-        for c in candidates:
-            if c.exists():
-                return c
+    """MTWS 配置既可指向 manage.py，也可指向 server_gui.py 所在的程序根目录。
+
+    兼容交付目录结构：OMICS 项目目录与 MTWS 目录平级摆放时，即使未手动配置
+    MTWS 路径，也会自动尝试 ../MTWS/mtws_django/manage.py。
+    """
+    raw = (path or "").strip()
+    paths = []
+    if raw:
+        paths.append(Path(raw))
+    # 默认交付结构：预报质量评定工具5.6(测试版) 与 MTWS 在同一上级目录
+    paths.append(DEFAULT_MTWS_DIR)
+
+    seen = set()
+    for p in paths:
+        try:
+            key = str(p.resolve())
+        except Exception:
+            key = str(p)
+        if key in seen:
+            continue
+        seen.add(key)
+
+        if p.is_file() and p.name.lower() == "manage.py":
+            return p
+        if p.is_file() and p.name.lower() == "server_gui.py":
+            p = p.parent
+        if p.is_dir():
+            candidates = [
+                p / "mtws_django" / "manage.py",  # server_gui.py 的标准布局
+                p / "manage.py",
+                p.parent / "MTWS" / "mtws_django" / "manage.py",  # 配到 OMICS 目录时自动找平级 MTWS
+            ]
+            for c in candidates:
+                if c.exists():
+                    return c
     return None
 
 
@@ -321,6 +344,14 @@ class ServicePanel:
         else:
             self.start()
 
+    def check_external_health(self):
+        """外部接管的服务被关闭后，恢复为可重新启动状态。"""
+        if self.attached and self.running and not is_port_in_use(self.port):
+            self.attached = False
+            self.running = False
+            self.log(f"检测到端口 {self.port} 的外部服务已退出，可重新启动。", "warn")
+            self.app.after(0, self._ui_stopped)
+
     def kill_port_listeners(self):
         """退出时清理监听本服务端口的残留进程。"""
         if sys.platform != "win32":
@@ -448,6 +479,60 @@ class ServicePanel:
             self.log(f"启动数据库管理工具失败：{exc}", "error")
 
 
+class AuthBrokerServer:
+    """控制台登录态中转：统一持有 token，只监听本机 127.0.0.1。"""
+
+    def __init__(self, app, host="127.0.0.1", port=AUTH_BROKER_PORT):
+        self.app = app
+        self.host = host
+        self.port = port
+        self.httpd = None
+
+    def start(self):
+        broker = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, fmt, *args):
+                return
+
+            def _send_json(self, payload, status=200):
+                body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Access-Control-Allow-Origin", "http://127.0.0.1")
+                self.end_headers()
+                self.wfile.write(body)
+
+            def do_GET(self):
+                if self.client_address[0] not in ("127.0.0.1", "::1"):
+                    self._send_json({"success": False, "error": "forbidden"}, 403); return
+                path = urlparse(self.path).path
+                if path == "/auth/status":
+                    state = broker.app.get_auth_state(include_token=True)
+                    self._send_json({"success": True, **state}); return
+                self._send_json({"success": False, "error": "not found"}, 404)
+
+        try:
+            self.httpd = ThreadingHTTPServer((self.host, self.port), Handler)
+            threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
+            return True
+        except OSError as exc:
+            try:
+                self.app.omics.log(f"控制台登录态中转接口启动失败：{exc}", "warn")
+            except Exception:
+                pass
+            return False
+
+    def stop(self):
+        if self.httpd:
+            try:
+                self.httpd.shutdown()
+                self.httpd.server_close()
+            except Exception:
+                pass
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 #  主窗口
 # ══════════════════════════════════════════════════════════════════════════════
@@ -459,6 +544,8 @@ class LauncherApp(ctk.CTk):
         self._ipc_sock = ipc_sock
         self._quitting = False
         self.tray_icon = None
+        self.auth_state = {"logged_in": False, "token": None, "userCode": None, "login_time": None}
+        self.auth_broker = None
 
         self.mtws = ServicePanel(self, "mtws", self.cfg["mtws"])
         self.omics = ServicePanel(self, "omics", self.cfg["omics"])
@@ -471,10 +558,13 @@ class LauncherApp(ctk.CTk):
         self._build_ui()
         self._configure_log_tags(self.mtws)
         self._configure_log_tags(self.omics)
+        self.auth_broker = AuthBrokerServer(self)
+        self.auth_broker.start()
         self._setup_tray()
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.after(100, self._poll_logs)
+        self.after(1500, self._monitor_services)
         self.after(300, self._autostart)
 
         threading.Thread(target=self._ipc_listener, daemon=True).start()
@@ -486,9 +576,12 @@ class LauncherApp(ctk.CTk):
         self._build_titlebar()
         body = ctk.CTkFrame(self, fg_color=BG_PRIMARY, corner_radius=0)
         body.pack(fill="both", expand=True, padx=14, pady=14)
+        body.grid_columnconfigure(0, weight=1, uniform="service_columns")
+        body.grid_columnconfigure(1, weight=1, uniform="service_columns")
+        body.grid_rowconfigure(0, weight=1)
         # 双屏：左 MTWS / 右 OMICS
-        self._build_service_column(body, self.mtws, side="left")
-        self._build_service_column(body, self.omics, side="right")
+        self._build_service_column(body, self.mtws, col_index=0)
+        self._build_service_column(body, self.omics, col_index=1)
 
     def _build_titlebar(self):
         bar = ctk.CTkFrame(self, fg_color=BG_SECONDARY, corner_radius=0, height=52)
@@ -500,9 +593,10 @@ class LauncherApp(ctk.CTk):
         ctk.CTkLabel(left, text="MTWS 监控 + OMICS 评定发布", font=ctk.CTkFont(size=11),
                      text_color="#636366").pack(side="left", padx=(8, 0), pady=(2, 0))
         right = ctk.CTkFrame(bar, fg_color="transparent"); right.pack(side="right", padx=18)
-        ctk.CTkButton(right, text="扫码登录", width=92, command=self._open_token_login,
+        self.login_btn = ctk.CTkButton(right, text="扫码登录", width=116, command=self._open_token_login,
                       font=ctk.CTkFont(size=12), fg_color=COLOR_BLUE, hover_color="#007aff",
-                      text_color="#fff", corner_radius=8, height=32).pack(side="right", padx=(8, 0))
+                      text_color="#fff", corner_radius=8, height=32)
+        self.login_btn.pack(side="right", padx=(8, 0))
         ctk.CTkButton(right, text="退出服务", width=80, command=self._quit_app,
                       font=ctk.CTkFont(size=12), fg_color="#3a1f1f", hover_color="#5a2a2a",
                       text_color="#ff6b6b", corner_radius=8, height=32).pack(side="right", padx=(8, 0))
@@ -514,10 +608,10 @@ class LauncherApp(ctk.CTk):
                       text_color="#fff", corner_radius=8, height=32).pack(side="right", padx=(8, 0))
         ctk.CTkFrame(self, fg_color=COLOR_SEPARATOR, height=1, corner_radius=0).pack(fill="x")
 
-    def _build_service_column(self, parent, svc, side):
+    def _build_service_column(self, parent, svc, col_index):
         col = ctk.CTkFrame(parent, fg_color=BG_SECONDARY, corner_radius=12)
-        col.pack(side=side, fill="both", expand=True,
-                 padx=(0, 7) if side == "left" else (7, 0))
+        col.grid(row=0, column=col_index, sticky="nsew",
+                 padx=(0, 7) if col_index == 0 else (7, 0))
 
         # 头部：服务名 + 状态灯
         header = ctk.CTkFrame(col, fg_color="transparent"); header.pack(fill="x", padx=14, pady=(12, 6))
@@ -602,6 +696,12 @@ class LauncherApp(ctk.CTk):
         self.omics.drain_logs()
         self.after(80, self._poll_logs)
 
+    def _monitor_services(self):
+        if not self._quitting:
+            self.mtws.check_external_health()
+            self.omics.check_external_health()
+            self.after(1500, self._monitor_services)
+
     # ── 启动控制 ──────────────────────────────────────────────────────────
     def _autostart(self):
         # 初始各服务显示未启动状态提示
@@ -621,7 +721,7 @@ class LauncherApp(ctk.CTk):
         PathConfigDialog(self)
 
     def _open_token_login(self):
-        """通用扫码登录入口：当前调用右侧服务接口获取 token，但界面不绑定具体程序名称。"""
+        """通用扫码登录入口：当前调用右侧服务接口获取 token，但 token 统一保存到控制台。"""
         if requests is None:
             self.omics.log("缺少 requests 库，无法打开扫码登录。", "error")
             return
@@ -630,11 +730,31 @@ class LauncherApp(ctk.CTk):
             return
         TokenLoginDialog(self, self.omics.home_url.rstrip('/'))
 
-    def apply_config(self, new_cfg):
+    def set_auth_state(self, token, user_code=None):
+        self.auth_state = {
+            "logged_in": bool(token),
+            "token": token,
+            "userCode": user_code or "--",
+            "login_time": datetime.now().isoformat(timespec="seconds")
+        }
+        name = user_code or "账号"
+        if hasattr(self, "login_btn") and self.login_btn:
+            self.login_btn.configure(text=f"{name} 登录成功", fg_color=COLOR_GREEN, hover_color="#27a846")
+        self.omics.log(f"控制台登录成功：{name}。登录态已由控制台统一中转。", "success")
+
+    def get_auth_state(self, include_token=False):
+        state = dict(self.auth_state)
+        if not include_token:
+            state.pop("token", None)
+        return state
+
+    def apply_config(self, new_cfg, autostart=False):
         self.cfg = new_cfg
         self.mtws.cfg = new_cfg["mtws"]
         self.omics.cfg = new_cfg["omics"]
         save_config(new_cfg)
+        if autostart:
+            self.after(100, self._start_all)
 
     # ── 托盘 ──────────────────────────────────────────────────────────────
     def _setup_tray(self):
@@ -689,6 +809,8 @@ class LauncherApp(ctk.CTk):
                 self.tray_icon.stop()
             except Exception:
                 pass
+        if self.auth_broker:
+            self.auth_broker.stop()
         try:
             self._ipc_sock.close()
         except Exception:
@@ -787,6 +909,7 @@ class TokenLoginDialog(ctk.CTkToplevel):
             if status == 'SCANNED':
                 self.ticket = data.get('ticket'); self.scan_id = data.get('scan_id')
                 user = data.get('userCode') or '--'
+                self.user_code = user
                 self.after(0, lambda: self.status.configure(text=f"已扫码：{user}，正在完成登录…", text_color=COLOR_GREEN))
                 self._validate_login(); return
             elif status == 'WAITING':
@@ -803,8 +926,17 @@ class TokenLoginDialog(ctk.CTkToplevel):
             data = requests.post(self.api_url('/api/auth/validate'), json={'ticket': self.ticket, 'scan_id': self.scan_id}, timeout=10).json()
             if data.get('success'):
                 self.polling = False
-                self.after(0, lambda: self.status.configure(text="登录成功，已写入控制台服务登录态。", text_color=COLOR_GREEN))
-                self.parent.omics.log("扫码登录成功，登录态已写入服务端。", "success")
+                token = data.get('token')
+                user = data.get('userCode') or data.get('user_code') or getattr(self, 'user_code', None) or '--'
+                # OMICS validate 接口旧版只返回 token；工号优先用扫码阶段拿到的 user。
+                if user == '--':
+                    try:
+                        status = requests.get(self.api_url('/api/auth/status'), timeout=5).json()
+                        user = status.get('userCode') or user
+                    except Exception:
+                        pass
+                self.parent.set_auth_state(token, user)
+                self.after(0, lambda: self.status.configure(text=f"{user} 登录成功，已写入控制台登录态。", text_color=COLOR_GREEN))
             else:
                 msg = data.get('message') or '登录确认失败'
                 self.after(0, lambda: self.status.configure(text=msg, text_color=COLOR_RED))
@@ -922,8 +1054,8 @@ class PathConfigDialog(ctk.CTkToplevel):
         self.cfg["mtws"].pop("manage_py", None)
         self.cfg["omics"]["work_dir"] = omics_path or str(SCRIPT_DIR)
         self.cfg["omics"].pop("run_server", None)
-        self.app.apply_config(self.cfg)
-        self.hint.configure(text="✓ 已保存。对未启动的服务点「启动」生效。", text_color=COLOR_GREEN)
+        self.app.apply_config(self.cfg, autostart=True)
+        self.hint.configure(text="✓ 已保存，正在启动未运行的服务。", text_color=COLOR_GREEN)
         self.after(900, self.destroy)
 
 
