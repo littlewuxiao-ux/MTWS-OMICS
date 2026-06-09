@@ -223,6 +223,8 @@ http {{
     access_log    logs/access.log;
     sendfile      on;
     keepalive_timeout  65;
+    client_max_body_size 50m;
+    client_body_buffer_size 8m;
 
     server {{
         listen {nginx_host}:{nginx_port};
