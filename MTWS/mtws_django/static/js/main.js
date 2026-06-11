@@ -3732,20 +3732,66 @@ function updateAirportGridForModal(airportElement) {
 
 // ============== 鉴权相关函数 ==============
 
+const UNIFIED_AUTH_STATUS_URL = '/auth/status';
+const UNIFIED_AUTH_UPDATE_URL = '/auth/update';
+const UNIFIED_AUTH_CLEAR_URL = '/auth/clear';
+
+async function fetchUnifiedAuthStatus() {
+    try {
+        const response = await fetch(UNIFIED_AUTH_STATUS_URL, { cache: 'no-store' });
+        const data = await response.json();
+        return data.success ? data : null;
+    } catch (error) {
+        console.warn('读取 Nginx 统一登录态失败', error);
+        return null;
+    }
+}
+
+async function updateUnifiedAuth(token, userCode) {
+    if (!token) return;
+    try {
+        await fetch(UNIFIED_AUTH_UPDATE_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token, userCode, source: 'MTWS' })
+        });
+    } catch (error) {
+        console.warn('同步 MTWS 登录态到 Nginx 失败', error);
+    }
+}
+
+async function clearUnifiedAuth() {
+    try {
+        await fetch(UNIFIED_AUTH_CLEAR_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ source: 'MTWS' })
+        });
+    } catch (error) {
+        console.warn('清空 Nginx 统一登录态失败', error);
+    }
+}
+
 // 初始化current模式的鉴权
-function initCurrentModeAuth() {
-    // 先检查localStorage中的token
-    const savedToken = localStorage.getItem('mtws_token') || localStorage.getItem('sf_weather_token');
-    const savedUserCode = localStorage.getItem('mtws_userCode') || localStorage.getItem('sf_userId');
+async function initCurrentModeAuth() {
+    const unified = await fetchUnifiedAuthStatus();
+    const savedToken = (unified && unified.logged_in && unified.token)
+        ? unified.token
+        : (localStorage.getItem('mtws_token') || localStorage.getItem('sf_weather_token'));
+    const savedUserCode = (unified && unified.logged_in && unified.userCode)
+        ? unified.userCode
+        : (localStorage.getItem('mtws_userCode') || localStorage.getItem('sf_userId'));
 
     if (savedToken && savedUserCode) {
-        // 如果有保存的token，直接使用
         currentToken = savedToken;
         currentUserCode = savedUserCode;
+        localStorage.setItem('mtws_token', currentToken);
+        localStorage.setItem('mtws_userCode', currentUserCode);
+        localStorage.setItem('sf_weather_token', currentToken);
+        localStorage.setItem('sf_userId', currentUserCode);
         showUserInfo();
         loadInitialData();
     } else {
-        // 没有保存的token，显示登录界面
         showLoginModal();
     }
 }
@@ -3908,6 +3954,7 @@ function startLoginCheck() {
                     // 同源部署下同步给 OMICS，避免两个程序重复扫码互相挤下线
                     localStorage.setItem('sf_weather_token', currentToken);
                     localStorage.setItem('sf_userId', currentUserCode);
+                    updateUnifiedAuth(currentToken, currentUserCode);
 
                     hideLoginModal();
                     showUserInfo();
@@ -4031,6 +4078,8 @@ function logout() {
 function clearAuthState() {
     currentToken = null;
     currentUserCode = null;
+
+    clearUnifiedAuth();
 
     // 清除localStorage
     localStorage.removeItem('mtws_token');

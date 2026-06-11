@@ -46,6 +46,66 @@ document.addEventListener('DOMContentLoaded', () => {
     const resetPhenomenaBtn = document.getElementById('reset-phenomena-btn');
     
     let apiToken = null;
+
+    const UNIFIED_AUTH_STATUS_URL = '/auth/status';
+    const UNIFIED_AUTH_UPDATE_URL = '/auth/update';
+    const UNIFIED_AUTH_CLEAR_URL = '/auth/clear';
+
+    async function fetchUnifiedAuthStatus() {
+        try {
+            const res = await fetch(UNIFIED_AUTH_STATUS_URL, { cache: 'no-store' });
+            const data = await res.json();
+            return data.success ? data : null;
+        } catch (e) {
+            console.warn('读取 Nginx 统一登录态失败', e);
+            return null;
+        }
+    }
+
+    async function updateUnifiedAuth(token, userCode, displayName = null) {
+        if (!token) return;
+        try {
+            await fetch(UNIFIED_AUTH_UPDATE_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token, userCode, displayName, source: 'OMICS' })
+            });
+        } catch (e) {
+            console.warn('同步 OMICS 登录态到 Nginx 失败', e);
+        }
+    }
+
+    async function clearUnifiedAuth() {
+        try {
+            await fetch(UNIFIED_AUTH_CLEAR_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ source: 'OMICS' })
+            });
+        } catch (e) {
+            console.warn('清空 Nginx 统一登录态失败', e);
+        }
+    }
+
+    function saveTokenForBothApps(token, userCode = null) {
+        apiToken = token || null;
+        if (token) {
+            localStorage.setItem('sf_weather_token', token);
+            localStorage.setItem('mtws_token', token);
+        }
+        if (userCode) {
+            localStorage.setItem('sf_userId', userCode);
+            localStorage.setItem('mtws_userCode', userCode);
+        }
+    }
+
+    function clearLocalAuthState() {
+        apiToken = null;
+        localStorage.removeItem('sf_weather_token');
+        localStorage.removeItem('sf_userId');
+        localStorage.removeItem('mtws_token');
+        localStorage.removeItem('mtws_userCode');
+    }
     let pollTimer = null;
     let currentMode = 'manual';
     let baseDate = new Date(); 
@@ -423,30 +483,31 @@ document.addEventListener('DOMContentLoaded', () => {
     initSession();
     async function initSession() {
         try {
-            const res = await fetch('/api/auth/status'); 
-            const data = await res.json();
-            if (data.logged_in) {
-                if (data.token) {
-                    apiToken = data.token;
-                    localStorage.setItem('sf_weather_token', apiToken);
-                    localStorage.setItem('mtws_token', apiToken);
+            const unified = await fetchUnifiedAuthStatus();
+            let data = null;
+            if (unified && unified.logged_in && unified.token) {
+                data = unified;
+            } else {
+                const res = await fetch('/api/auth/status');
+                data = await res.json();
+                // Nginx 统一态为空时，允许 OMICS 前端继续使用自己保存的登录信息。
+                const localToken = localStorage.getItem('sf_weather_token') || localStorage.getItem('mtws_token');
+                const localUserCode = localStorage.getItem('sf_userId') || localStorage.getItem('mtws_userCode');
+                if ((!data || !data.logged_in) && localToken && localUserCode) {
+                    data = { logged_in: true, token: localToken, userCode: localUserCode, isOffline: false };
                 }
-                if (data.userCode) {
-                    localStorage.setItem('sf_userId', data.userCode);
-                    localStorage.setItem('mtws_userCode', data.userCode);
-                }
-                updateDisplayUserName(data.userCode, data.isOffline, data.displayName); 
-                loginBtn.classList.add('hidden'); 
+            }
+
+            if (data && data.logged_in) {
+                if (data.token) saveTokenForBothApps(data.token, data.userCode);
+                updateDisplayUserName(data.userCode, data.isOffline, data.displayName);
+                loginBtn.classList.add('hidden');
                 userInfoDiv.classList.remove('hidden');
             } else {
-                apiToken = null; 
-                localStorage.removeItem('sf_weather_token'); 
-                localStorage.removeItem('sf_userId'); 
-                localStorage.removeItem('mtws_token'); 
-                localStorage.removeItem('mtws_userCode'); 
-                loginBtn.classList.remove('hidden'); 
+                clearLocalAuthState();
+                loginBtn.classList.remove('hidden');
                 userInfoDiv.classList.add('hidden');
-                
+
                 const adminSection = document.getElementById('admin-only-section');
                 if (adminSection) {
                     adminSection.classList.add('hidden');
@@ -536,11 +597,8 @@ document.addEventListener('DOMContentLoaded', () => {
     loginBtn.addEventListener('click', startLogin);
     logoutBtn.addEventListener('click', async () => {
         try { await fetch('/api/auth/logout', { method: 'POST' }); } catch(e) {}
-        apiToken = null; 
-        localStorage.removeItem('sf_weather_token'); 
-        localStorage.removeItem('sf_userId'); 
-        localStorage.removeItem('mtws_token'); 
-        localStorage.removeItem('mtws_userCode'); 
+        await clearUnifiedAuth();
+        clearLocalAuthState();
         userInfoDiv.classList.add('hidden'); 
         loginBtn.classList.remove('hidden'); 
         
@@ -675,8 +733,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const valData = await valRes.json();
                 if (valData.success) {
                     apiToken = valData.token;
-                    localStorage.setItem('sf_weather_token', apiToken);
-                    localStorage.setItem('mtws_token', apiToken);
+                    saveTokenForBothApps(apiToken);
                     hideModal(loginModal);
                     loginBtn.classList.add('hidden');
                     userInfoDiv.classList.remove('hidden');
@@ -688,8 +745,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     const statusRes = await fetch('/api/auth/status');
                     const statusData = await statusRes.json();
                     if(statusData.userCode) {
-                        localStorage.setItem('sf_userId', statusData.userCode);
-                        localStorage.setItem('mtws_userCode', statusData.userCode);
+                        saveTokenForBothApps(apiToken, statusData.userCode);
+                        await updateUnifiedAuth(apiToken, statusData.userCode, statusData.displayName);
                         updateDisplayUserName(statusData.userCode, statusData.isOffline, statusData.displayName);
                     }
                 } else {

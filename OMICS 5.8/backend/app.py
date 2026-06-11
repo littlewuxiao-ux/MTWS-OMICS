@@ -13,27 +13,11 @@ import json
 import logging
 import requests
 
-CONSOLE_AUTH_BROKER_URL = os.environ.get('CONSOLE_AUTH_BROKER_URL', 'http://127.0.0.1:19529/auth/status')
-
-
-def get_console_auth_status():
-    """从统一启动器控制台获取登录态；失败时返回 None，保持独立运行兼容。"""
-    try:
-        r = requests.get(CONSOLE_AUTH_BROKER_URL, timeout=1.5)
-        if r.ok:
-            data = r.json()
-            if data.get('success') and data.get('logged_in') and data.get('token'):
-                return data
-    except Exception:
-        pass
-    return None
+# Nginx 统一登录态由前端通过 /auth/status 管理；后端只使用前端请求传入的 token。
 
 
 def resolve_auth_token(provided_token=None):
-    """业务接口优先使用控制台 token，避免多个程序各自登录互相挤下线。"""
-    broker = get_console_auth_status()
-    if broker and broker.get('token'):
-        return broker.get('token')
+    """OMICS 后端不再保存/读取统一登录态；业务接口使用前端传入的 token。"""
     return provided_token
 
 PERSONNEL_MAP_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'personnel_mapping.json'))
@@ -906,20 +890,7 @@ def validate_token():
 
 @app.route('/api/auth/status', methods=['GET'])
 def get_auth_status():
-    # 优先使用统一启动器控制台登录态，避免 OMICS/MTWS 各自扫码互相挤下线
-    broker_status = get_console_auth_status()
-    if broker_status:
-        user_code = broker_status.get("userCode") or "--"
-        return jsonify({
-            "logged_in": True,
-            "token": broker_status.get("token"),
-            "userCode": user_code,
-            "displayName": broker_status.get("displayName") or resolve_person_name(user_code),
-            "role": "admin" if user_code == '41060711' else "user",
-            "isOffline": False,
-            "source": "console"
-        })
-
+    # OMICS 后端不再作为统一登录态来源；统一 token 由前端 localStorage + Nginx /auth/status 管理。
     # 优先检查离线登录状态
     if offline_session["logged_in"]:
         return jsonify(offline_session)

@@ -12,8 +12,9 @@
 
 ### 运行方式
 - 统一启动器（推荐）：从交付根目录 `MTWS+OMICS` 双击 `统一服务器启动器.bat`，或双击同目录的 `统一服务器启动器.lnk`。启动器同时管理 MTWS、OMICS 与后台 Nginx：MTWS 内部监听 `127.0.0.1:8001`，OMICS 内部监听 `127.0.0.1:8002`，Nginx 对外提供统一入口 `127.0.0.1:8000`。
-- 访问地址：MTWS 使用 `http://127.0.0.1:8000/mtws/`，OMICS 使用 `http://127.0.0.1:8000/omics/`。两个前端同源，LocalStorage 登录态可互通，减少重复扫码互相挤下线。
+- 访问地址：MTWS 使用 `http://127.0.0.1:8000/mtws/`，OMICS 使用 `http://127.0.0.1:8000/omics/`。两个前端同源；扫码仍从各软件页面发起，但登录成功后的 token 统一交由 Nginx 管理，任一软件登录后其他软件可复用同一 token，减少不同 IP/入口重复登录导致的掉线。
 - 启动器界面只显示两个业务面板：左侧 MTWS / 右侧 OMICS，各自状态灯 + 独立日志。Nginx 是基础设施服务，已隐藏单独监控面板，但仍会随「全部启动」「退出服务」和托盘右键退出一起启动/停止。
+- 中控台不再提供扫码登录功能；原登录入口改为说明框，只展示当前统一登录状态（目前谁登录、用户标识、登录来源/时间等）。
 - portable Nginx 随 OMICS 携带在 `OMICS 5.8/tools/nginx/nginx.exe`，目标电脑不需要额外安装 Nginx；运行时配置生成到 `%LOCALAPPDATA%/MTWS_OMICS_Nginx`，避免 Windows Nginx 中文路径问题。
 - 开发调试（会出黑框）：`python main.py`（旧单 OMICS 开发入口，端口 56789；不经过统一 Nginx 入口）
 - 生产发布：PyInstaller 打包为 `ForecastTool.exe`（console=False），托盘常驻
@@ -59,7 +60,7 @@
 | Excel 导出/逆向同步 | openpyxl 生成格式化 Excel；winreg 穿透 OneDrive 写入物理桌面 `SF预报评定导出` 文件夹；支持 Excel→系统双向同步 |
 | 预报发布 | publish.js 独立模块；拉取 NWP 数值预报（open-meteo ECMWF IFS）；管理发布字典表 |
 | 事中监控 | 轮询航班数据 + METAR/TAF 实时解析；7要素红黄绿弹窗告警 |
-| SF平台登录 | 扫码登录获取 token，拉取数字填图气象数据（sf_client.py） |
+| SF平台登录 | 各软件端口/页面发起扫码登录；登录成功 token 统一由 Nginx 管理并供 MTWS/OMICS 复用，OMICS 前端保存登录信息用于页面状态和请求携带，后端不再作为统一登录态来源。 |
 | 运行日志 | 后端 RotatingFileHandler + 前端 PBLOG() 批量上报 `/api/log`；一键复制 copyPublishLog() |
 
 ### 主要依赖库
@@ -80,6 +81,14 @@
 ---
 
 ## 二、更新日志
+
+### v5.8-dev · 2026-06-11（扫码登录调整为 Nginx 统一 Token 管理）
+- **调整** 扫码登录入口：登录动作仍在各业务软件自己的页面/端口触发，MTWS 和 OMICS 均可独立发起扫码。
+- **调整** token 归属：扫码成功后的 token 统一由 Nginx 管理，不再由统一中控台或 OMICS 后端作为跨系统唯一持有方。
+- **增强** token 复用：不管从 MTWS 还是 OMICS 登录，其他软件都应复用 Nginx 当前 token，避免不同 IP、不同入口或重复扫码导致账号互相挤下线。
+- **取消** 中控台扫码登录功能：统一启动器/中控台原登录区域改为说明框，只显示当前谁已登录、用户标识、登录来源和登录时间等状态信息。
+- **调整** OMICS 登录态：OMICS 的登录信息不再放在后端作为统一状态来源，改为由前端保存；业务请求需要 token 时通过前端携带或通过 Nginx 统一登录态获取。
+- **说明** LocalStorage 仍可用于前端页面展示、兼容旧 key 和刷新后恢复 UI，但跨 MTWS/OMICS 的 token 权威来源是 Nginx。
 
 ### v5.8-dev · 2026-06-09（MTWS+OMICS 交付目录、Nginx 同源入口与启动器精简）
 - **调整** 交付目录统一为 `MTWS+OMICS`：顶层放置 `launcher.py`、`launcher_config.json`、`统一服务器启动器.bat/.lnk`，业务目录为 `MTWS/` 与 `OMICS 5.8/`。

@@ -1,4 +1,4 @@
-"""
+﻿"""
 统一服务启动器 (Unified Launcher)
 深色 macOS 风格 · CustomTkinter · 双服务双屏日志 + 后台 Nginx 统一入口
 
@@ -50,7 +50,7 @@ except ImportError:
 SCRIPT_DIR  = Path(__file__).parent
 CONFIG_PATH = SCRIPT_DIR / "launcher_config.json"
 IPC_PORT    = 19528          # 单实例 IPC（与 MTWS 的 19527 错开）
-AUTH_BROKER_PORT = 19529     # 控制台登录态中转接口（仅 127.0.0.1）
+AUTH_BROKER_PORT = 19529     # Nginx 统一登录态接口后端（仅 127.0.0.1，由 Nginx /auth/ 反代）
 DEFAULT_MTWS_DIR = SCRIPT_DIR / "MTWS"
 DEFAULT_OMICS_DIR = SCRIPT_DIR / "OMICS 5.8"
 ICON_PATH = SCRIPT_DIR / "图标.png" if (SCRIPT_DIR / "图标.png").exists() else SCRIPT_DIR.parent / "图标.png"
@@ -263,6 +263,15 @@ http {{
             proxy_set_header X-Forwarded-Proto $scheme;
             proxy_redirect ~^(/.*)$ /omics$1;
             proxy_redirect http://{omics_host}:{omics_port}/ /omics/;
+        }}
+
+        location /auth/ {{
+            proxy_pass http://127.0.0.1:{AUTH_BROKER_PORT}/auth/;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host:$server_port;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
         }}
 
         location /api/ {{
@@ -682,7 +691,7 @@ class ServicePanel:
 
 
 class AuthBrokerServer:
-    """控制台登录态中转：统一持有 token，只监听本机 127.0.0.1。"""
+    """Nginx 统一登录态后端：保存各业务页面扫码后的 token，只监听本机 127.0.0.1。"""
 
     def __init__(self, app, host="127.0.0.1", port=AUTH_BROKER_PORT):
         self.app = app
@@ -702,9 +711,38 @@ class AuthBrokerServer:
                 self.send_response(status)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
                 self.send_header("Content-Length", str(len(body)))
-                self.send_header("Access-Control-Allow-Origin", "http://127.0.0.1")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+                self.send_header("Access-Control-Allow-Headers", "Content-Type")
                 self.end_headers()
                 self.wfile.write(body)
+
+            def do_OPTIONS(self):
+                self._send_json({"success": True})
+
+            def do_POST(self):
+                if self.client_address[0] not in ("127.0.0.1", "::1"):
+                    self._send_json({"success": False, "error": "forbidden"}, 403); return
+                path = urlparse(self.path).path
+                try:
+                    length = int(self.headers.get("Content-Length", "0") or 0)
+                    raw = self.rfile.read(length).decode("utf-8") if length else "{}"
+                    data = json.loads(raw or "{}")
+                except Exception:
+                    data = {}
+                if path == "/auth/update":
+                    token = data.get("token")
+                    user_code = data.get("userCode") or data.get("user_code") or data.get("user") or "--"
+                    display_name = data.get("displayName") or data.get("display_name")
+                    source = data.get("source") or "unknown"
+                    if not token:
+                        self._send_json({"success": False, "error": "missing token"}, 400); return
+                    broker.app.set_auth_state(token, user_code, display_name, source=source)
+                    self._send_json({"success": True, **broker.app.get_auth_state(include_token=False)}); return
+                if path == "/auth/clear":
+                    broker.app.clear_auth_state(source=data.get("source") or "unknown")
+                    self._send_json({"success": True}); return
+                self._send_json({"success": False, "error": "not found"}, 404)
 
             def do_GET(self):
                 if self.client_address[0] not in ("127.0.0.1", "::1"):
@@ -721,7 +759,7 @@ class AuthBrokerServer:
             return True
         except OSError as exc:
             try:
-                self.app.omics.log(f"控制台登录态中转接口启动失败：{exc}", "warn")
+                self.app.omics.log(f"Nginx统一登录态接口启动失败：{exc}", "warn")
             except Exception:
                 pass
             return False
@@ -746,7 +784,7 @@ class LauncherApp(ctk.CTk):
         self._ipc_sock = ipc_sock
         self._quitting = False
         self.tray_icon = None
-        self.auth_state = {"logged_in": False, "token": None, "userCode": None, "displayName": None, "login_time": None}
+        self.auth_state = {"logged_in": False, "token": None, "userCode": None, "displayName": None, "login_time": None, "source": None}
         self.auth_broker = None
 
         self.mtws = ServicePanel(self, "mtws", self.cfg["mtws"])
@@ -797,15 +835,17 @@ class LauncherApp(ctk.CTk):
         ctk.CTkLabel(left, text="统一入口 8000 · MTWS 8001 · OMICS 8002", font=ctk.CTkFont(size=11),
                      text_color="#636366").pack(side="left", padx=(8, 0), pady=(2, 0))
         right = ctk.CTkFrame(bar, fg_color="transparent"); right.pack(side="right", padx=18)
-        self.login_btn = ctk.CTkButton(right, text="扫码登录", width=116, command=self._open_token_login,
-                      font=ctk.CTkFont(size=12), fg_color=COLOR_BLUE, hover_color="#007aff",
-                      text_color="#fff", corner_radius=8, height=32)
-        self.login_btn.pack(side="right", padx=(8, 0))
-        self.logout_btn = ctk.CTkButton(right, text="退出登录", width=80, command=self.logout_auth,
-                      font=ctk.CTkFont(size=12), fg_color=BG_TERTIARY, hover_color=BG_GROUPED,
-                      text_color=COLOR_LABEL2, corner_radius=8, height=32)
-        self.logout_btn.pack(side="right", padx=(8, 0))
-        self.logout_btn.configure(state="disabled")
+        self.auth_info_label = ctk.CTkLabel(
+            right,
+            text="登录状态：未登录｜请在 MTWS 或 OMICS 页面扫码",
+            font=ctk.CTkFont(size=12),
+            text_color=COLOR_LABEL2,
+            fg_color=BG_TERTIARY,
+            corner_radius=8,
+            padx=12,
+            height=32,
+        )
+        self.auth_info_label.pack(side="right", padx=(8, 0))
         ctk.CTkButton(right, text="退出服务", width=80, command=self._quit_app,
                       font=ctk.CTkFont(size=12), fg_color="#3a1f1f", hover_color="#5a2a2a",
                       text_color="#ff6b6b", corner_radius=8, height=32).pack(side="right", padx=(8, 0))
@@ -943,15 +983,6 @@ class LauncherApp(ctk.CTk):
     def _open_path_config(self):
         PathConfigDialog(self)
 
-    def _open_token_login(self):
-        """通用扫码登录入口：当前调用右侧服务接口获取 token，但 token 统一保存到控制台。"""
-        if requests is None:
-            self.omics.log("缺少 requests 库，无法打开扫码登录。", "error")
-            return
-        if not self.omics.running:
-            self.omics.log("Token 服务端口未启动，请先启动右侧服务。", "warn")
-            return
-        TokenLoginDialog(self, self.omics.home_url.rstrip('/'))
 
     def resolve_display_name(self, user_code):
         if not user_code or user_code == "--" or requests is None or not self.omics.running:
@@ -965,33 +996,41 @@ class LauncherApp(ctk.CTk):
             pass
         return str(user_code)
 
-    def set_auth_state(self, token, user_code=None, display_name=None):
+    def set_auth_state(self, token, user_code=None, display_name=None, source=None):
         name = display_name or self.resolve_display_name(user_code)
         self.auth_state = {
             "logged_in": bool(token),
             "token": token,
             "userCode": user_code or "--",
             "displayName": name,
-            "login_time": datetime.now().isoformat(timespec="seconds")
+            "login_time": datetime.now().isoformat(timespec="seconds"),
+            "source": source or "unknown",
         }
-        if hasattr(self, "login_btn") and self.login_btn:
-            self.login_btn.configure(text=f"{name} 登录成功", fg_color=COLOR_GREEN, hover_color="#27a846")
-        if hasattr(self, "logout_btn") and self.logout_btn:
-            self.logout_btn.configure(state="normal")
-        self.omics.log(f"控制台登录成功：{name}。登录态已由控制台统一中转。", "success")
+        self._refresh_auth_info_label()
+        self.omics.log(f"统一登录态已更新：{name}（来源：{source or 'unknown'}）。Token 由 Nginx 统一入口复用。", "success")
 
-    def logout_auth(self):
-        self.auth_state = {"logged_in": False, "token": None, "userCode": None, "displayName": None, "login_time": None}
-        if hasattr(self, "login_btn") and self.login_btn:
-            self.login_btn.configure(text="扫码登录", fg_color=COLOR_BLUE, hover_color="#007aff")
-        if hasattr(self, "logout_btn") and self.logout_btn:
-            self.logout_btn.configure(state="disabled")
-        try:
-            if requests is not None and self.omics.running:
-                requests.post(f"{self.omics.home_url.rstrip('/')}/api/auth/logout", timeout=2)
-        except Exception:
-            pass
-        self.omics.log("控制台已退出登录，登录态中转已清空。", "info")
+    def clear_auth_state(self, source=None):
+        self.auth_state = {"logged_in": False, "token": None, "userCode": None, "displayName": None, "login_time": None, "source": source}
+        self._refresh_auth_info_label()
+        self.omics.log(f"统一登录态已清空（来源：{source or 'unknown'}）。", "info")
+
+    def _refresh_auth_info_label(self):
+        if not hasattr(self, "auth_info_label") or not self.auth_info_label:
+            return
+        state = self.get_auth_state(include_token=False)
+        if state.get("logged_in"):
+            name = state.get("displayName") or state.get("userCode") or "未知用户"
+            source = state.get("source") or "业务页面"
+            login_time = state.get("login_time") or ""
+            self.auth_info_label.configure(
+                text=f"当前登录：{name}｜来源：{source}｜{login_time}",
+                text_color=COLOR_GREEN,
+            )
+        else:
+            self.auth_info_label.configure(
+                text="登录状态：未登录｜请在 MTWS 或 OMICS 页面扫码",
+                text_color=COLOR_LABEL2,
+            )
 
     def get_auth_state(self, include_token=False):
         state = dict(self.auth_state)
@@ -1093,117 +1132,6 @@ class LauncherApp(ctk.CTk):
                 continue
             except Exception:
                 break
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  通用扫码登录弹窗
-# ══════════════════════════════════════════════════════════════════════════════
-class TokenLoginDialog(ctk.CTkToplevel):
-    """通用扫码登录窗口：只完成登录态写入，不展示/复制一次性 token。"""
-    def __init__(self, parent, base_url):
-        super().__init__(parent)
-        self.parent = parent
-        self.base_url = base_url
-        self.polling = False
-        self.ticket = None
-        self.scan_id = None
-        self.title("扫码登录")
-        self.geometry("420x450")
-        self.resizable(False, False)
-        self.configure(fg_color=BG_SECONDARY)
-        self.grab_set(); self.lift(); self.focus_force()
-        ctk.CTkLabel(self, text="扫码登录", font=ctk.CTkFont(size=15, weight="bold"),
-                     text_color=COLOR_LABEL).pack(anchor="w", padx=24, pady=(20, 4))
-        ctk.CTkLabel(self, text="登录成功后，控制台服务会保存登录态；其它程序直接读取数据库数据，不重复占用账号。",
-                     font=ctk.CTkFont(size=11), text_color="#8e8e93", wraplength=360,
-                     justify="left").pack(anchor="w", padx=24)
-        self.status = ctk.CTkLabel(self, text="正在获取二维码…", font=ctk.CTkFont(size=12), text_color="#8e8e93")
-        self.status.pack(pady=(14, 6))
-        self.qr_label = ctk.CTkLabel(self, text="", width=240, height=240, fg_color="#141416", corner_radius=10)
-        self.qr_label.pack(pady=(0, 12))
-        row = ctk.CTkFrame(self, fg_color="transparent"); row.pack(fill="x", padx=24, pady=(4, 18))
-        ctk.CTkButton(row, text="刷新二维码", command=self.load_qr, fg_color=BG_TERTIARY,
-                      hover_color=BG_GROUPED, text_color=COLOR_LABEL2, corner_radius=8, height=34).pack(side="left", expand=True, fill="x", padx=(0, 6))
-        ctk.CTkButton(row, text="关闭", command=self.close, fg_color=COLOR_RED,
-                      hover_color="#e0362d", text_color="#fff", corner_radius=8, height=34).pack(side="right", expand=True, fill="x", padx=(6, 0))
-        self.protocol("WM_DELETE_WINDOW", self.close)
-        self.after(100, self.load_qr)
-
-    def api_url(self, path):
-        return f"{self.base_url}{path}"
-
-    def load_qr(self):
-        self.polling = False
-        self.status.configure(text="正在获取二维码…", text_color="#8e8e93")
-        threading.Thread(target=self._load_qr_worker, daemon=True).start()
-
-    def _load_qr_worker(self):
-        try:
-            data = requests.get(self.api_url('/api/auth/qrcode'), timeout=10).json()
-            if not data.get('success'):
-                msg = data.get('error') or data.get('message') or '二维码获取失败'
-                self.after(0, lambda: self.status.configure(text=msg, text_color=COLOR_RED)); return
-            img64 = data.get('qr_img_base64') or data.get('img') or data.get('qrcode') or ''
-            if ',' in img64: img64 = img64.split(',', 1)[1]
-            raw = base64.b64decode(img64)
-            img = Image.open(io.BytesIO(raw)).convert('RGBA').resize((240, 240))
-            qr = ctk.CTkImage(light_image=img, dark_image=img, size=(240, 240))
-            def done():
-                self.qr_image = qr; self.qr_label.configure(image=qr, text="")
-                self.status.configure(text="请扫码登录，等待确认…", text_color=COLOR_BLUE)
-                self.polling = True; self.after(1200, self.poll_status)
-            self.after(0, done)
-        except Exception as e:
-            self.after(0, lambda: self.status.configure(text=f"二维码获取异常：{e}", text_color=COLOR_RED))
-
-    def poll_status(self):
-        if self.polling:
-            threading.Thread(target=self._poll_worker, daemon=True).start()
-
-    def _poll_worker(self):
-        try:
-            data = requests.get(self.api_url('/api/auth/check'), timeout=8).json()
-            status = data.get('status')
-            if status == 'SCANNED':
-                self.ticket = data.get('ticket'); self.scan_id = data.get('scan_id')
-                user = data.get('userCode') or '--'
-                self.user_code = user
-                self.after(0, lambda: self.status.configure(text=f"已扫码：{user}，正在完成登录…", text_color=COLOR_GREEN))
-                self._validate_login(); return
-            elif status == 'WAITING':
-                self.after(0, lambda: self.status.configure(text="等待扫码…", text_color="#8e8e93"))
-            else:
-                msg = data.get('message') or f"扫码状态：{status}"
-                self.after(0, lambda: self.status.configure(text=msg, text_color=COLOR_ORANGE))
-        except Exception as e:
-            self.after(0, lambda: self.status.configure(text=f"轮询异常：{e}", text_color=COLOR_ORANGE))
-        if self.polling: self.after(1500, self.poll_status)
-
-    def _validate_login(self):
-        try:
-            data = requests.post(self.api_url('/api/auth/validate'), json={'ticket': self.ticket, 'scan_id': self.scan_id}, timeout=10).json()
-            if data.get('success'):
-                self.polling = False
-                token = data.get('token')
-                user = data.get('userCode') or data.get('user_code') or getattr(self, 'user_code', None) or '--'
-                # OMICS validate 接口旧版只返回 token；工号优先用扫码阶段拿到的 user。
-                if user == '--':
-                    try:
-                        status = requests.get(self.api_url('/api/auth/status'), timeout=5).json()
-                        user = status.get('userCode') or user
-                    except Exception:
-                        pass
-                self.parent.set_auth_state(token, user)
-                display = self.parent.get_auth_state().get('displayName') or user
-                self.after(0, lambda: self.status.configure(text=f"{display} 登录成功，已写入控制台登录态。", text_color=COLOR_GREEN))
-            else:
-                msg = data.get('message') or '登录确认失败'
-                self.after(0, lambda: self.status.configure(text=msg, text_color=COLOR_RED))
-        except Exception as e:
-            self.after(0, lambda: self.status.configure(text=f"登录确认异常：{e}", text_color=COLOR_RED))
-
-    def close(self):
-        self.polling = False; self.destroy()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1341,3 +1269,7 @@ if __name__ == "__main__":
         sys.exit(0)
     app = LauncherApp(ipc_sock)
     app.mainloop()
+
+
+
+
