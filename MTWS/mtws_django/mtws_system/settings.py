@@ -23,6 +23,8 @@ class DailyFileHandler(logging.FileHandler):
         self.base_filename = filename
         self.backup_count = backup_count
         self.current_date = None
+        # 日志目录是运行时产物，不进 git；首次启动时必须自动创建。
+        Path(self.base_filename).parent.mkdir(parents=True, exist_ok=True)
         # 初始化时使用当前日期的文件名
         current_filename = self._get_current_filename()
         super().__init__(current_filename, mode, encoding, delay)
@@ -31,6 +33,7 @@ class DailyFileHandler(logging.FileHandler):
         """根据当前日期生成文件名"""
         today = datetime.now().strftime('%Y-%m-%d')
         base_path = Path(self.base_filename)
+        base_path.parent.mkdir(parents=True, exist_ok=True)
         return str(base_path.parent / f"{base_path.stem}.{today}{base_path.suffix}")
     
     def emit(self, record):

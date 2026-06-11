@@ -1055,9 +1055,9 @@ class LauncherApp(ctk.CTk):
         menu = pystray.Menu(
             pystray.MenuItem("显示窗口", lambda i, it: self._show_window(), default=True),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("全部启动", lambda i, it: self._start_all()),
+            pystray.MenuItem("全部启动", lambda i, it: self.after(0, self._start_all)),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("退出", lambda i, it: self._quit_app()),
+            pystray.MenuItem("退出服务", lambda i, it: self.after(0, self._quit_app)),
         )
         self.tray_icon = pystray.Icon("Launcher", icon_img, "航空气象统一启动器", menu)
 
