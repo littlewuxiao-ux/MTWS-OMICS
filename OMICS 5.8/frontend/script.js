@@ -1077,38 +1077,50 @@ document.addEventListener('DOMContentLoaded', () => {
     importTafMetarBtn.addEventListener('click', async () => {
         if (!apiToken) return alert("请先登录");
 
-        const selectedTaf = document.querySelector('#taf-list-items input:checked');
-        if (!selectedTaf) return alert('请先选择需要评定的 TAF 报文！');
+        const selectedTafs = Array.from(document.querySelectorAll('#taf-list-items input:checked'));
+        if (selectedTafs.length === 0) return alert('请先选择需要评定的 TAF 报文！');
 
-        const rawText = selectedTaf.dataset.raw || selectedTaf.getAttribute('data-raw');
-        if (!rawText) return alert("报文内容为空，请重新查询");
+        const rawTexts = selectedTafs
+            .map(cb => cb.dataset.raw || cb.getAttribute('data-raw') || '')
+            .filter(Boolean);
+        if (rawTexts.length === 0) return alert("报文内容为空，请重新查询");
 
-        const timeMatch = rawText.match(/(\d{2})(\d{2})\/(\d{2})(\d{2})/);
-        if (!timeMatch) return alert("无法从该报文中识别出有效时间段");
-        
-        const startStr = timeMatch[1] + timeMatch[2];
-        const endStr = timeMatch[3] + timeMatch[4];
-        
-        // 🌟 修复时区Bug：直接计算为北京时间的时次，绝不再二次倒退
-        function resolveTimeString(timeStr, baseDateObj, offsetHour) {
-            if (!timeStr) return '';
-            let d = parseInt(timeStr.slice(0, 2)), h = parseInt(timeStr.slice(2, 4));
+        function resolveTafUtcDate(day, hour, baseDateObj) {
+            let d = parseInt(day, 10), h = parseInt(hour, 10);
             let monthIndex = baseDateObj.getMonth();
             if (d > baseDateObj.getDate() + 5) monthIndex -= 1;
             else if (d < baseDateObj.getDate() - 5) monthIndex += 1;
-            
-            // 报文里的时次是 UTC。转北京时(BJT)只需 + 8，再加上 offsetHour
-            let utcDate = new Date(Date.UTC(baseDateObj.getFullYear(), monthIndex, d, h + 8 + offsetHour, 0));
-            let outY = utcDate.getUTCFullYear(), outM = String(utcDate.getUTCMonth() + 1).padStart(2, '0');
-            let outD = String(utcDate.getUTCDate()).padStart(2, '0'), outH = String(utcDate.getUTCHours()).padStart(2, '0');
-            return `${outY}${outM}${outD}${outH}00`;
+            return new Date(Date.UTC(baseDateObj.getFullYear(), monthIndex, d, h, 0, 0));
         }
 
-        // 🌟 修复：去除重复声明，直接使用重写后天然输出北京时间的 resolveTimeString
-        startTimeHidden.value = resolveTimeString(startStr, baseDate, 0);
-        endTimeHidden.value = resolveTimeString(endStr, baseDate, 0);
-        const fetchStartTime = resolveTimeString(startStr, baseDate, -1);
-        const fetchEndTime = resolveTimeString(endStr, baseDate, 1);
+        function formatUtcForApi(dateObj) {
+            return `${dateObj.getUTCFullYear()}${String(dateObj.getUTCMonth() + 1).padStart(2, '0')}${String(dateObj.getUTCDate()).padStart(2, '0')}${String(dateObj.getUTCHours()).padStart(2, '0')}00`;
+        }
+
+        let minValidTime = null;
+        let maxValidTime = null;
+        const tafValidityRegex = /(\d{2})(\d{2})\/(\d{2})(\d{2})/g;
+        rawTexts.forEach(rawText => {
+            let timeMatch;
+            tafValidityRegex.lastIndex = 0;
+            while ((timeMatch = tafValidityRegex.exec(rawText)) !== null) {
+                const startUtc = resolveTafUtcDate(timeMatch[1], timeMatch[2], baseDate);
+                let endUtc = resolveTafUtcDate(timeMatch[3], timeMatch[4], baseDate);
+                if (endUtc <= startUtc) endUtc = new Date(endUtc.getTime() + 24 * 3600 * 1000);
+                if (!minValidTime || startUtc < minValidTime) minValidTime = startUtc;
+                if (!maxValidTime || endUtc > maxValidTime) maxValidTime = endUtc;
+            }
+        });
+
+        if (!minValidTime || !maxValidTime) return alert("无法从选中报文中识别出有效时间段");
+
+        // 下载实况必须覆盖所有选中 TAF 的完整 UTC 有效期；允许前后扩大，不能缩小。
+        const fetchStartDate = new Date(minValidTime.getTime() - 1 * 3600 * 1000);
+        const fetchEndDate = new Date(maxValidTime.getTime() + 1 * 3600 * 1000);
+        startTimeHidden.value = formatUtcForApi(minValidTime);
+        endTimeHidden.value = formatUtcForApi(maxValidTime);
+        const fetchStartTime = formatUtcForApi(fetchStartDate);
+        const fetchEndTime = formatUtcForApi(fetchEndDate);
         const airportsInput = document.getElementById('download-airports').value;
         const aps = airportsInput.split(/[\s,]+/).filter(x => x.length > 0);
         if (aps.length === 0) return alert("请输入机场代码！");
