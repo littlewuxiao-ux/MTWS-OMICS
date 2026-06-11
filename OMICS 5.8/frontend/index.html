@@ -215,11 +215,13 @@
                                 </div>
                                 <div style="display:flex; align-items:center; margin-bottom: 15px; gap: 10px;">
                                     <label style="font-size: 12px; color: #333; width:80px; text-align:right;">JSON 备份:</label>
-                                    <input type="text" id="backup-save-path" style="flex:1; padding:4px; border:1px solid #ccc; border-radius:4px;">
+                                    <input type="text" id="backup-save-path" readonly style="flex:1; padding:4px; border:1px solid #ccc; border-radius:4px;">
+                                    <button id="browse-backup-btn" class="admin-pill-btn" style="background: #005A9C;">浏览</button>
                                 </div>
                                 <div style="display:flex; align-items:center; margin-bottom: 15px; gap: 10px;">
                                     <label style="font-size: 12px; color: #333; width:80px; text-align:right;">图表导出云盘:</label>
-                                    <input type="text" id="publish-export-path" placeholder="留空则存至桌面 SF预报发布导出" style="flex:1; padding:4px; border:1px solid #ccc; border-radius:4px;">
+                                    <input type="text" id="publish-export-path" readonly placeholder="留空则存至桌面 SF预报发布导出" style="flex:1; padding:4px; border:1px solid #ccc; border-radius:4px;">
+                                    <button id="browse-publish-export-btn" class="admin-pill-btn" style="background: #005A9C;">浏览</button>
                                 </div>
                                 <button id="sync-excel-btn" class="admin-block-btn" style="background: #e65100;">🔄 从云盘 Excel 逆向同步</button>
 
@@ -621,6 +623,7 @@
                             export_path: exportPath,
                             start_date: window.pbState?.startDate,
                             start_hour: window.pbState?.startHour,
+                            forecaster: document.getElementById('pb-forecaster')?.value || '',
                             validity_hours: window.pbState?.validityHours || 24
                         })
                     });
@@ -647,6 +650,23 @@
             }
             document.getElementById('publish-export-path')?.addEventListener('change', (e) => {
                 localStorage.setItem('publish_export_path', e.target.value.trim());
+            });
+            document.getElementById('browse-publish-export-btn')?.addEventListener('click', async (e) => {
+                e.target.textContent = '打开中...';
+                try {
+                    const apiBase = window.location.pathname.startsWith('/omics') ? '/omics/api' : '/api';
+                    const res = await fetch(`${apiBase}/select_folder`);
+                    const data = await res.json();
+                    const input = document.getElementById('publish-export-path');
+                    if (data.success && input) {
+                        input.value = data.path;
+                        localStorage.setItem('publish_export_path', data.path);
+                    }
+                } catch (err) {
+                    alert('选择目录失败: ' + err.message);
+                } finally {
+                    e.target.textContent = '浏览';
+                }
             });
         });
     </script>

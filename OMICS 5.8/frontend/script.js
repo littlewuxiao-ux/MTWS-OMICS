@@ -292,6 +292,13 @@ document.addEventListener('DOMContentLoaded', () => {
             if (data.success) { manualExcelPathInput.value = data.path; localStorage.setItem('manual_excel_path', data.path); }
         } catch (err) {} e.target.textContent = "浏览";
     });
+    document.getElementById('browse-backup-btn')?.addEventListener('click', async (e) => {
+        e.target.textContent = "打开中...";
+        try {
+            const res = await fetch('/api/select_folder'); const data = await res.json();
+            if (data.success && backupSavePathInput) { backupSavePathInput.value = data.path; localStorage.setItem('backup_save_path', data.path); }
+        } catch (err) {} e.target.textContent = "浏览";
+    });
 
     function renderEvalPersonSelect() {
         if (!evalPersonSelect) return;
@@ -494,12 +501,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 const localToken = localStorage.getItem('sf_weather_token') || localStorage.getItem('mtws_token');
                 const localUserCode = localStorage.getItem('sf_userId') || localStorage.getItem('mtws_userCode');
                 if ((!data || !data.logged_in) && localToken && localUserCode) {
-                    data = { logged_in: true, token: localToken, userCode: localUserCode, isOffline: false };
+                    data = { logged_in: true, token: localToken, userCode: localUserCode, displayName: personnelDict[localUserCode], isOffline: false, source: '浏览器缓存' };
+                    // 浏览器缓存里仍有可用 token 时，主动回灌到 Nginx 统一登录态，让启动器信息框和 MTWS 立即识别真实登录状态。
+                    await updateUnifiedAuth(localToken, localUserCode, personnelDict[localUserCode]);
                 }
             }
 
             if (data && data.logged_in) {
-                if (data.token) saveTokenForBothApps(data.token, data.userCode);
+                if (data.token) {
+                    saveTokenForBothApps(data.token, data.userCode);
+                    await updateUnifiedAuth(data.token, data.userCode, data.displayName || personnelDict[data.userCode]);
+                }
                 updateDisplayUserName(data.userCode, data.isOffline, data.displayName);
                 loginBtn.classList.add('hidden');
                 userInfoDiv.classList.remove('hidden');

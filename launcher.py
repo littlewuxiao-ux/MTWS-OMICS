@@ -53,7 +53,13 @@ IPC_PORT    = 19528          # 单实例 IPC（与 MTWS 的 19527 错开）
 AUTH_BROKER_PORT = 19529     # Nginx 统一登录态接口后端（仅 127.0.0.1，由 Nginx /auth/ 反代）
 DEFAULT_MTWS_DIR = SCRIPT_DIR / "MTWS"
 DEFAULT_OMICS_DIR = SCRIPT_DIR / "OMICS 5.8"
-ICON_PATH = SCRIPT_DIR / "图标.png" if (SCRIPT_DIR / "图标.png").exists() else SCRIPT_DIR.parent / "图标.png"
+ICON_CANDIDATES = [
+    SCRIPT_DIR / "系统图标.ico",
+    SCRIPT_DIR / "图标.png",
+    SCRIPT_DIR.parent / "系统图标.ico",
+    SCRIPT_DIR.parent / "图标.png",
+]
+ICON_PATH = next((path for path in ICON_CANDIDATES if path.exists()), ICON_CANDIDATES[0])
 NGINX_DIR = DEFAULT_OMICS_DIR / "tools" / "nginx"
 # Windows 版 Nginx 对中文路径支持很差；运行前缀必须放到纯英文路径。
 NGINX_RUNTIME_DIR = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "MTWS_OMICS_Nginx"
@@ -797,6 +803,11 @@ class LauncherApp(ctk.CTk):
         self.configure(fg_color=BG_PRIMARY)
 
         self._build_ui()
+        if ICON_PATH.exists():
+            try:
+                self.iconbitmap(str(ICON_PATH))
+            except Exception:
+                pass
         self._configure_log_tags(self.mtws)
         self._configure_log_tags(self.omics)
         self._configure_log_tags(self.nginx)

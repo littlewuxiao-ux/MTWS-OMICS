@@ -1274,8 +1274,6 @@ def _resolve_desktop_dir():
 def export_publish_api():
     """预报发布界面导出：保存 PNG 截图，并按“未来24小时天气预报”宏模板生成 xlsm。"""
     import base64
-    import shutil
-    from copy import copy
     try:
         data = request.json or {}
         image_b64 = data.get('image', '')
@@ -1297,8 +1295,8 @@ def export_publish_api():
             return jsonify({"success": False, "error": f"导出目录无法创建: {target_dir} ({e})"}), 200
 
         ts = datetime.now().strftime('%Y%m%d_%H%M%S')
-        png_path = os.path.join(target_dir, f'预报发布_{ts}.png')
-        xlsm_path = os.path.join(target_dir, f'未来24小时天气预报_{ts}.xlsm')
+        png_path = os.path.join(target_dir, f'24小时天气预报_{ts}.png')
+        xlsx_path = os.path.join(target_dir, f'24小时天气预报_{ts}.xlsx')
         saved = []
 
         if image_b64:
@@ -1314,39 +1312,78 @@ def export_publish_api():
         if rows or publish_rows:
             try:
                 import openpyxl
-                from openpyxl.styles import PatternFill
-                from openpyxl.cell.cell import MergedCell
-                base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-                template_path = os.path.join(base_dir, '未来24小时天气预报20260507（模版）（如提示宏已被禁用，点击【启用内容】）.xlsm')
-                if not os.path.exists(template_path):
-                    template_path = os.path.join(os.path.dirname(base_dir), '未来24小时天气预报20260507（模版）（如提示宏已被禁用，点击【启用内容】）.xlsm')
-                if not os.path.exists(template_path):
-                    return jsonify({"success": False, "error": f"找不到24小时天气预报模板: {template_path}"}), 200
+                from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
+                from openpyxl.utils import get_column_letter
+                wb = openpyxl.Workbook()
+                ws = wb.active
+                ws.title = '24小时天气预报'
 
-                shutil.copyfile(template_path, xlsm_path)
-                wb = openpyxl.load_workbook(xlsm_path, keep_vba=True)
-                ws = wb['24小时天气预报'] if '24小时天气预报' in wb.sheetnames else wb.active
+                # 不再依赖外部 xlsm 模板文件；直接按原模板版式生成一份可编辑 xlsx。
+                dark_fill = PatternFill('solid', fgColor='4B5563')
+                header_fill = PatternFill('solid', fgColor='5B6770')
+                label_fill = PatternFill('solid', fgColor='F8F9FA')
+                thunder_fill = PatternFill('solid', fgColor='DC2626')
+                wind_fill = PatternFill('solid', fgColor='2563EB')
+                snow_fill = PatternFill('solid', fgColor='9CA3AF')
+                vis_fill = PatternFill('solid', fgColor='FFFF00')
+                rain_fill = PatternFill('solid', fgColor='5A8F3A')
+                temp_fill = PatternFill('solid', fgColor='AFC7E8')
+                white_font = Font(color='FFFFFF')
+                bold_font = Font(bold=True)
+                title_font = Font(size=28, bold=True, color='FFFFFF')
+                thin = Side(style='thin', color='D1D5DB')
+                border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
-                # 起报时间：前端为 UTC startDate/startHour，这里转北京时间写入 C6；模板 D8 起公式引用 C6。
+                ws.merge_cells('A1:AB2')
+                ws['A1'] = '24小时天气预报'
+                ws['A1'].font = title_font
+                ws['A1'].alignment = Alignment(horizontal='center', vertical='center')
+                for row in ws['A1:AB2']:
+                    for cell in row:
+                        cell.fill = dark_fill
+
+                bjt = None
                 try:
                     if start_date and start_hour is not None:
                         bjt = datetime.strptime(f"{start_date} {int(start_hour):02d}", '%Y-%m-%d %H') + timedelta(hours=8)
-                        ws['C3'] = bjt.date()
-                        ws['C6'] = bjt
                 except Exception:
-                    pass
+                    bjt = None
+                if bjt is None:
+                    bjt = datetime.now()
+                ws['A3'] = '日期（北京时）'
+                ws['C3'] = f"{bjt.year}年{bjt.month}月{bjt.day}日"
+                ws['Z3'] = '预报员：'
+                ws['AA3'] = data.get('forecaster') or ''
+                for cell in ws[3]:
+                    cell.fill = dark_fill
+                    cell.font = white_font
 
-                # 清空模板数据区 A9:AB27；保留样式。
-                for r in range(9, 28):
-                    for c in range(1, 29):
-                        cell = ws.cell(r, c)
-                        if isinstance(cell, MergedCell):
-                            continue
-                        cell.value = None
-                        if c >= 4:
-                            cell.fill = PatternFill(fill_type=None)
+                counters = [('雷暴', 'count-ts', thunder_fill), ('大风', 'count-wind', wind_fill), ('降雪', 'count-snow', snow_fill), ('低能见度', 'count-vis', vis_fill)]
+                for idx, (label, _key, fill) in enumerate(counters, start=10):
+                    ws.cell(3, idx).value = label
+                    ws.cell(4, idx).value = 0
+                    ws.cell(3, idx).fill = fill
+                    ws.cell(4, idx).fill = fill
+                    ws.cell(3, idx).alignment = ws.cell(4, idx).alignment = Alignment(horizontal='center')
 
-                # 从前端 HTML 表格二维数组提取“编辑/确认主行”，跳过表头、TAF、EC、附加空行。
+                ws['A5'] = '起报时间'
+                ws['C5'] = f"{bjt.hour}时"
+                ws['A6'] = '影响机场'
+                ws['A7'] = '名称'
+                ws['B7'] = '性质'
+                ws['C6'] = '预报时长→'
+                ws['C7'] = '预报时刻→'
+                for c in range(4, 28):
+                    h = (bjt.hour + c - 4) % 24
+                    ws.cell(6, c).value = c - 4
+                    ws.cell(7, c).value = f'{h}时'
+                for r in range(5, 8):
+                    for c in range(1, 28):
+                        ws.cell(r, c).fill = header_fill
+                        ws.cell(r, c).font = white_font
+                        ws.cell(r, c).alignment = Alignment(horizontal='center', vertical='center')
+                        ws.cell(r, c).border = border
+
                 data_rows = []
                 if publish_rows:
                     for item in publish_rows:
@@ -1373,21 +1410,58 @@ def export_publish_api():
                             continue
                         data_rows.append((name, ap_type or '普通', vals))
 
-                # 模板第9-27行最多19个机场；导出只取24小时列 D:AA（模板 AB 是第24小时端点，保留公式/空列）。
-                for idx, (name, ap_type, vals) in enumerate(data_rows[:19], start=9):
+                # 按原模板样式输出最多19个机场、24小时预报列。
+                weather_fills = [
+                    ('雷', thunder_fill), ('大风', wind_fill), ('降雪', snow_fill), ('雪', snow_fill),
+                    ('低能见度', vis_fill), ('小雨', rain_fill), ('中雨', rain_fill), ('大雨', rain_fill), ('强降水', rain_fill),
+                    ('℃', temp_fill), ('°C', temp_fill), ('弱雷雨', thunder_fill), ('中雷雨', thunder_fill), ('强雷雨', thunder_fill),
+                ]
+                for idx, (name, ap_type, vals) in enumerate(data_rows[:19], start=8):
                     ws.cell(idx, 1).value = name
                     ws.cell(idx, 2).value = ap_type
+                    ws.cell(idx, 3).value = vals[0] if vals and vals[0] in ('适航', '晴好') else ''
+                    for c in range(1, 28):
+                        cell = ws.cell(idx, c)
+                        cell.border = border
+                        cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
                     for j in range(min(24, len(vals))):
+                        value = '' if vals[j] in ('—', '/') else vals[j]
                         cell = ws.cell(idx, 4 + j)
-                        if isinstance(cell, MergedCell):
-                            continue
-                        cell.value = '' if vals[j] in ('—', '/') else vals[j]
+                        cell.value = value
+                        for key, fill in weather_fills:
+                            if value and key in value:
+                                cell.fill = fill
+                                if fill in (thunder_fill, wind_fill, snow_fill, rain_fill):
+                                    cell.font = white_font
+                                break
+                tail_start = 8 + min(len(data_rows), 19) + 1
+                ws.cell(tail_start, 1).value = '地面结冰/极寒条件机场'
+                ws.cell(tail_start, 3).value = data.get('icing_text') or '无'
+                ws.cell(tail_start + 1, 1).value = '颜色说明'
+                legend = [('雷暴', thunder_fill), ('大风', wind_fill), ('降雪', snow_fill), ('低能见度', vis_fill), ('强降水', rain_fill), ('温度', temp_fill)]
+                for offset, (label, fill) in enumerate(legend):
+                    cell = ws.cell(tail_start + 1, 3 + offset * 3)
+                    cell.value = label
+                    cell.fill = fill
+                    cell.alignment = Alignment(horizontal='center')
+                ws.cell(tail_start + 2, 1).value = '发布说明'
+                ws.cell(tail_start + 2, 3).value = '1.本表结论依据指数预报和运行机场TAF报文综合分析。\n2.能见度和云高单位为米，风速单位为米/秒。\n3.大风表示该时次预期最大阵风值。'
+                ws.merge_cells(start_row=tail_start + 2, start_column=3, end_row=tail_start + 4, end_column=27)
 
-                wb.save(xlsm_path)
-                saved.append(xlsm_path)
+                for col in range(1, 28):
+                    ws.column_dimensions[get_column_letter(col)].width = 10 if col >= 4 else 12
+                ws.column_dimensions['A'].width = 12
+                ws.column_dimensions['B'].width = 10
+                ws.column_dimensions['C'].width = 14
+                for row in range(1, tail_start + 5):
+                    ws.row_dimensions[row].height = 22
+                    for col in range(1, 28):
+                        ws.cell(row, col).border = border
+                wb.save(xlsx_path)
+                saved.append(xlsx_path)
             except Exception as e:
-                LOG.exception("保存预报发布模板 Excel 失败: %s", e)
-                return jsonify({"success": False, "error": f"模板 Excel 写入失败: {e}"}), 200
+                LOG.exception("保存预报发布 Excel 失败: %s", e)
+                return jsonify({"success": False, "error": f"预报发布 Excel 写入失败: {e}"}), 200
 
         if not saved:
             return jsonify({"success": False, "error": "没有可导出的图片或表格数据"}), 200
