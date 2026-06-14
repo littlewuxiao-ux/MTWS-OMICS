@@ -1124,11 +1124,16 @@ function bindEvents() {
         handleTimeRangeSelectChange(e.target);
     });
 
+    function canDismissModal(modal) {
+        // 登录二维码是强制登录态入口：不能点遮罩或按 ESC 关闭，避免未登录时弹码消失。
+        return modal && modal.id !== 'login-modal';
+    }
+
     // 弹窗关闭事件
     document.querySelectorAll('.modal-close').forEach(closeBtn => {
         closeBtn.addEventListener('click', function () {
             const modal = this.closest('.modal');
-            hideModal(modal.id);
+            if (canDismissModal(modal)) hideModal(modal.id);
         });
     });
 
@@ -1136,7 +1141,7 @@ function bindEvents() {
     document.addEventListener('keydown', function (e) {
         if (e.key === 'Escape') {
             const openModal = document.querySelector('.modal[style*="display: block"]');
-            if (openModal) {
+            if (canDismissModal(openModal)) {
                 hideModal(openModal.id);
             }
         }
@@ -1151,7 +1156,7 @@ function bindEvents() {
     // 点击模态背景关闭弹窗
     document.querySelectorAll('.modal').forEach(modal => {
         modal.addEventListener('click', function (e) {
-            if (e.target === this) {
+            if (e.target === this && canDismissModal(this)) {
                 hideModal(this.id);
             }
         });
