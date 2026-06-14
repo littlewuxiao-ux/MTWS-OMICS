@@ -77,7 +77,7 @@ NGINX_DIR = DEFAULT_OMICS_DIR / "tools" / "nginx"
 NGINX_RUNTIME_DIR = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "MTWS_OMICS_Nginx"
 NGINX_CONF_DIR = NGINX_RUNTIME_DIR / "conf"
 NGINX_LOG_DIR = NGINX_RUNTIME_DIR / "logs"
-# 统一登录态持久化：中控台重启后能立即恢复显示登录状态，不依赖前端刷新。
+# 旧版可能写过 token 缓存；现在仅写无 token 占位，避免中控台脱离前端默认登录。
 AUTH_STATE_FILE = NGINX_RUNTIME_DIR / "auth_state.json"
 
 # ── macOS 深色系统配色（沿用 server_gui.py 同款）────────────────────────────────
@@ -827,7 +827,7 @@ class LauncherApp(ctk.CTk):
         self.auth_state = {"logged_in": False, "token": None, "userCode": None, "displayName": None, "login_time": None, "source": None, "expired": False}
         self.auth_broker = None
         self._auth_validating = False
-        self._load_auth_state()  # 中控台重启后从磁盘恢复统一登录态
+        self._load_auth_state()  # 清理旧版磁盘 token 缓存；登录态由前端 localStorage 回灌
 
         self.mtws = ServicePanel(self, "mtws", self.cfg["mtws"])
         self.omics = ServicePanel(self, "omics", self.cfg["omics"])
@@ -839,7 +839,7 @@ class LauncherApp(ctk.CTk):
         self.configure(fg_color=BG_PRIMARY)
 
         self._build_ui()
-        self._refresh_auth_info_label()  # 恢复的登录态立即上屏
+        self._refresh_auth_info_label()
         if ICON_PATH.exists():
             try:
                 self.iconbitmap(str(ICON_PATH))
@@ -1047,32 +1047,29 @@ class LauncherApp(ctk.CTk):
         return str(user_code)
 
     def _save_auth_state(self):
-        """把统一登录态持久化到磁盘，中控台重启后可恢复（含 token，仅本机运行目录）。"""
+        """不再在中控台磁盘缓存 token；登录态由前端 localStorage 持有并回灌。"""
         try:
             AUTH_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+            # 只写一个无 token 的安全占位，用于覆盖旧版可能留下的 token 缓存。
+            snapshot = {
+                "logged_in": False,
+                "token": None,
+                "userCode": None,
+                "displayName": None,
+                "login_time": None,
+                "source": "frontend-localStorage",
+                "expired": False,
+            }
             with open(AUTH_STATE_FILE, "w", encoding="utf-8") as f:
-                json.dump(self.auth_state, f, ensure_ascii=False)
+                json.dump(snapshot, f, ensure_ascii=False)
         except Exception:
             pass
 
     def _load_auth_state(self):
-        """启动时从磁盘恢复统一登录态；下一个校验周期会验证 token 是否仍有效。"""
+        """启动时清理旧版磁盘 token 缓存；中控台不从磁盘自动登录。"""
         try:
-            if not AUTH_STATE_FILE.exists():
-                return
-            with open(AUTH_STATE_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            if isinstance(data, dict) and data.get("logged_in") and data.get("token"):
-                # 保留原始登录信息，重启后不算过期；若 token 已失效，_monitor_auth 会探测并登出。
-                self.auth_state = {
-                    "logged_in": True,
-                    "token": data.get("token"),
-                    "userCode": data.get("userCode") or "--",
-                    "displayName": data.get("displayName"),
-                    "login_time": data.get("login_time"),
-                    "source": data.get("source") or "恢复会话",
-                    "expired": False,
-                }
+            if AUTH_STATE_FILE.exists():
+                self._save_auth_state()
         except Exception:
             pass
 

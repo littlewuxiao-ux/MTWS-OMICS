@@ -107,7 +107,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     await updateUnifiedAuth(apiToken, uid, personnelDict[uid] || null);
                 }
             }
-        }, 30000);
+        }, 5000);
     }
     function stopUnifiedAuthWatch() {
         if (unifiedAuthWatchTimer) {

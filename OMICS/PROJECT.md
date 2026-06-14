@@ -84,8 +84,8 @@
 
 ### v5.8-dev · 2026-06-15（Token 过期实时监控与三端自动登出）
 - **新增** 控制台 token 实时监控：`launcher.py` 后台每 60 秒调用 SF 航班接口（与 MTWS validate-token 同源）轻量校验当前统一 token；返回 401（过期/异地登录被挤下线）时自动清空统一登录态并标记 `expired`，控制台信息框变为橙色「登录已过期｜请重新扫码登录」。网络错误等异常不误判为过期，保留登录态。
-- **新增** 统一登录态磁盘持久化：登录/登出状态写入 `%LOCALAPPDATA%/MTWS_OMICS_Nginx/auth_state.json`，中控台重启后立即从磁盘恢复并显示登录状态，**不再依赖前端刷新页面**。解决“退出重开中控台后不显示登录、需手动刷新网页才恢复”的问题。（该文件含 token，为本机用户目录，不进仓、不同步。）
-- **新增** 三端联动自动登出/回灌：MTWS 与 OMICS 前端登录后启动后台轮询（每 30 秒）`/auth/status`。区分两种统一态为空的场景：`expired:true`（真过期）则自动登出本页面（MTWS 显示「登录过期」错误页并停止自动刷新，OMICS 弹窗提示并回到未登录状态）；`expired:false`（控制台刚重启、状态丢失）则把本地 token 回灌给控制台，无需刷新页面。
+- **调整** 统一登录态保存策略：token 仍由 MTWS/OMICS 前端 localStorage 持有，中控台**不再**从本机磁盘 token 自动恢复登录，避免“前端和中控台都关闭后，再单独打开中控台却默认登录”。`%LOCALAPPDATA%/MTWS_OMICS_Nginx/auth_state.json` 只写无 token 的安全占位，用于覆盖旧版可能留下的 token 缓存。
+- **新增** 三端联动自动登出/回灌：MTWS 与 OMICS 前端登录后启动后台轮询（每 5 秒）`/auth/status`。区分两种统一态为空的场景：`expired:true`（真过期）则自动登出本页面（MTWS 显示「登录过期」错误页并停止自动刷新，OMICS 弹窗提示并回到未登录状态）；`expired:false`（控制台刚重启、状态丢失）则由仍打开的前端页面把本地 token 回灌给控制台，无需刷新页面。若前端也已关闭，中控台不会默认登录，需重新打开前端页面由 localStorage 回灌。
 - **说明** 处理了“token 在别的电脑登录或长时间未请求数据后失效”的场景：以前本地仍保存 token、显示已登录，但业务请求报 API 失败；现在由控制台主动探测失效并驱动三端登出。
 - **验证** `launcher.py` 通过 `py_compile`（无 SyntaxWarning）；`MTWS/main.js`、`OMICS/script.js` 通过 `node --check`；实测持久化：推送 token 后 kill 并重启启动器，**不动前端**的情况下 `/auth/status` 立即返回 `logged_in:true`；登出后重启保持未登录；在 SF 内网不可达的开发机上校验周期不会误登出。
 

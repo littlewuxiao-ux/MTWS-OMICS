@@ -3796,7 +3796,7 @@ function startUnifiedAuthWatch() {
                 await updateUnifiedAuth(currentToken, currentUserCode);
             }
         }
-    }, 30000);
+    }, 5000);
 }
 function stopUnifiedAuthWatch() {
     if (unifiedAuthWatchTimer) {
