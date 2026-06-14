@@ -77,6 +77,8 @@ NGINX_DIR = DEFAULT_OMICS_DIR / "tools" / "nginx"
 NGINX_RUNTIME_DIR = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "MTWS_OMICS_Nginx"
 NGINX_CONF_DIR = NGINX_RUNTIME_DIR / "conf"
 NGINX_LOG_DIR = NGINX_RUNTIME_DIR / "logs"
+# 统一登录态持久化：中控台重启后能立即恢复显示登录状态，不依赖前端刷新。
+AUTH_STATE_FILE = NGINX_RUNTIME_DIR / "auth_state.json"
 
 # ── macOS 深色系统配色（沿用 server_gui.py 同款）────────────────────────────────
 BG_PRIMARY        = "#1c1c1e"
@@ -825,6 +827,7 @@ class LauncherApp(ctk.CTk):
         self.auth_state = {"logged_in": False, "token": None, "userCode": None, "displayName": None, "login_time": None, "source": None, "expired": False}
         self.auth_broker = None
         self._auth_validating = False
+        self._load_auth_state()  # 中控台重启后从磁盘恢复统一登录态
 
         self.mtws = ServicePanel(self, "mtws", self.cfg["mtws"])
         self.omics = ServicePanel(self, "omics", self.cfg["omics"])
@@ -836,6 +839,7 @@ class LauncherApp(ctk.CTk):
         self.configure(fg_color=BG_PRIMARY)
 
         self._build_ui()
+        self._refresh_auth_info_label()  # 恢复的登录态立即上屏
         if ICON_PATH.exists():
             try:
                 self.iconbitmap(str(ICON_PATH))
@@ -1042,6 +1046,36 @@ class LauncherApp(ctk.CTk):
             pass
         return str(user_code)
 
+    def _save_auth_state(self):
+        """把统一登录态持久化到磁盘，中控台重启后可恢复（含 token，仅本机运行目录）。"""
+        try:
+            AUTH_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+            with open(AUTH_STATE_FILE, "w", encoding="utf-8") as f:
+                json.dump(self.auth_state, f, ensure_ascii=False)
+        except Exception:
+            pass
+
+    def _load_auth_state(self):
+        """启动时从磁盘恢复统一登录态；下一个校验周期会验证 token 是否仍有效。"""
+        try:
+            if not AUTH_STATE_FILE.exists():
+                return
+            with open(AUTH_STATE_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict) and data.get("logged_in") and data.get("token"):
+                # 保留原始登录信息，重启后不算过期；若 token 已失效，_monitor_auth 会探测并登出。
+                self.auth_state = {
+                    "logged_in": True,
+                    "token": data.get("token"),
+                    "userCode": data.get("userCode") or "--",
+                    "displayName": data.get("displayName"),
+                    "login_time": data.get("login_time"),
+                    "source": data.get("source") or "恢复会话",
+                    "expired": False,
+                }
+        except Exception:
+            pass
+
     def set_auth_state(self, token, user_code=None, display_name=None, source=None):
         name = display_name or self.resolve_display_name(user_code)
         self.auth_state = {
@@ -1053,11 +1087,13 @@ class LauncherApp(ctk.CTk):
             "source": source or "unknown",
             "expired": False,
         }
+        self._save_auth_state()
         self._refresh_auth_info_label()
         self.omics.log(f"统一登录态已更新：{name}（来源：{source or 'unknown'}）。Token 由 Nginx 统一入口复用。", "success")
 
     def clear_auth_state(self, source=None, expired=False):
         self.auth_state = {"logged_in": False, "token": None, "userCode": None, "displayName": None, "login_time": None, "source": source, "expired": bool(expired)}
+        self._save_auth_state()
         self._refresh_auth_info_label()
         if expired:
             self.omics.log(f"登录已过期（来源：{source or 'token校验'}），MTWS / OMICS 页面将自动登出，请重新扫码登录。", "warn")

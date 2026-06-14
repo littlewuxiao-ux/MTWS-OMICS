@@ -97,8 +97,15 @@ document.addEventListener('DOMContentLoaded', () => {
             const unified = await fetchUnifiedAuthStatus();
             if (!unified) return; // 接口异常不误判
             if (!unified.logged_in) {
-                console.warn('统一登录态已失效（控制台校验），OMICS 自动登出');
-                performAutoLogout();
+                if (unified.expired) {
+                    console.warn('统一登录态已失效（控制台校验），OMICS 自动登出');
+                    performAutoLogout();
+                } else {
+                    // 控制台重启后状态丢失（非过期）-> 回灌本地 token，无需刷新页面
+                    console.info('检测到控制台统一登录态为空（可能刚重启），回灌本地 token');
+                    const uid = localStorage.getItem('sf_userId') || null;
+                    await updateUnifiedAuth(apiToken, uid, personnelDict[uid] || null);
+                }
             }
         }, 30000);
     }

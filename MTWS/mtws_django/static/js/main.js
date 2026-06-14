@@ -3782,13 +3782,19 @@ function startUnifiedAuthWatch() {
         const unified = await fetchUnifiedAuthStatus();
         if (!unified) return; // 接口异常不误判
         if (!unified.logged_in) {
-            // 控制台已判定登录过期/异地登录，统一态被清空 -> 本页面自动登出
-            console.warn('统一登录态已失效（控制台校验），自动登出');
-            stopUnifiedAuthWatch();
-            clearAuthState();
-            window.tokenInvalidDetected = true;
-            if (typeof stopAllAutoRefresh === 'function') stopAllAutoRefresh();
-            showTokenInvalidError();
+            if (unified.expired) {
+                // 控制台判定登录过期/异地登录 -> 本页面自动登出
+                console.warn('统一登录态已失效（控制台校验），自动登出');
+                stopUnifiedAuthWatch();
+                clearAuthState();
+                window.tokenInvalidDetected = true;
+                if (typeof stopAllAutoRefresh === 'function') stopAllAutoRefresh();
+                showTokenInvalidError();
+            } else {
+                // 控制台重启后状态丢失（非过期）-> 把本地 token 回灌统一态，无需刷新页面
+                console.info('检测到控制台统一登录态为空（可能刚重启），回灌本地 token');
+                await updateUnifiedAuth(currentToken, currentUserCode);
+            }
         }
     }, 30000);
 }
