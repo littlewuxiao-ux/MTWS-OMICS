@@ -52,14 +52,23 @@ CONFIG_PATH = SCRIPT_DIR / "launcher_config.json"
 IPC_PORT    = 19528          # 单实例 IPC（与 MTWS 的 19527 错开）
 AUTH_BROKER_PORT = 19529     # Nginx 统一登录态接口后端（仅 127.0.0.1，由 Nginx /auth/ 反代）
 DEFAULT_MTWS_DIR = SCRIPT_DIR / "MTWS"
-DEFAULT_OMICS_DIR = SCRIPT_DIR / "OMICS 5.8"
-ICON_CANDIDATES = [
+DEFAULT_OMICS_DIR = SCRIPT_DIR / "OMICS"
+# 桌面/窗口图标（窗口标题栏、任务栏、桌面快捷方式）
+DESKTOP_ICON_CANDIDATES = [
+    SCRIPT_DIR / "桌面图标.ico",
+    SCRIPT_DIR / "桌面图标.png",
     SCRIPT_DIR / "系统图标.ico",
-    SCRIPT_DIR / "图标.png",
-    SCRIPT_DIR.parent / "系统图标.ico",
-    SCRIPT_DIR.parent / "图标.png",
+    SCRIPT_DIR.parent / "桌面图标.ico",
 ]
-ICON_PATH = next((path for path in ICON_CANDIDATES if path.exists()), ICON_CANDIDATES[0])
+# 系统托盘图标
+TRAY_ICON_CANDIDATES = [
+    SCRIPT_DIR / "托盘图标.ico",
+    SCRIPT_DIR / "托盘图标.png",
+    SCRIPT_DIR / "系统图标.ico",
+    SCRIPT_DIR.parent / "托盘图标.ico",
+]
+ICON_PATH = next((path for path in DESKTOP_ICON_CANDIDATES if path.exists()), DESKTOP_ICON_CANDIDATES[0])
+TRAY_ICON_PATH = next((path for path in TRAY_ICON_CANDIDATES if path.exists()), TRAY_ICON_CANDIDATES[0])
 NGINX_DIR = DEFAULT_OMICS_DIR / "tools" / "nginx"
 # Windows 版 Nginx 对中文路径支持很差；运行前缀必须放到纯英文路径。
 NGINX_RUNTIME_DIR = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "MTWS_OMICS_Nginx"
@@ -684,10 +693,17 @@ class ServicePanel:
         if self.key != "mtws":
             self.log("当前服务没有独立数据库管理工具入口。", "warn")
             return
+        # 优先用配置推导的 MTWS 根目录；推导失败时回退到随包交付的 MTWS 目录。
+        # 这样即使席位电脑的本地配置路径异常，只要仓库同步了工具文件就能找到。
         root = mtws_root_from_path(self.target_path())
-        db_tool = root / "data" / "sqlite_database" / "database_manage_allinone.py" if root else None
-        if not db_tool or not db_tool.exists():
-            self.log(f"找不到数据库管理工具：{db_tool or '未配置 MTWS 根目录'}", "error")
+        candidates = []
+        if root:
+            candidates.append(root / "data" / "sqlite_database" / "database_manage_allinone.py")
+        candidates.append(DEFAULT_MTWS_DIR / "data" / "sqlite_database" / "database_manage_allinone.py")
+        db_tool = next((c for c in candidates if c and c.exists()), None)
+        if not db_tool:
+            tried = "、".join(str(c) for c in candidates if c)
+            self.log(f"找不到数据库管理工具（已尝试：{tried or '未配置 MTWS 根目录'}）", "error")
             return
         try:
             subprocess.Popen([sys.executable, str(db_tool)], cwd=str(db_tool.parent))
@@ -1073,9 +1089,9 @@ class LauncherApp(ctk.CTk):
         self.tray_icon = pystray.Icon("Launcher", icon_img, "航空气象统一启动器", menu)
 
     def _make_tray_icon(self):
-        if ICON_PATH.exists():
+        if TRAY_ICON_PATH.exists():
             try:
-                return Image.open(ICON_PATH).convert("RGBA").resize((64, 64), Image.LANCZOS)
+                return Image.open(TRAY_ICON_PATH).convert("RGBA").resize((64, 64), Image.LANCZOS)
             except Exception:
                 pass
         size = 64

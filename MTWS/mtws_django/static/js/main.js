@@ -3775,12 +3775,14 @@ async function clearUnifiedAuth() {
 // 初始化current模式的鉴权
 async function initCurrentModeAuth() {
     const unified = await fetchUnifiedAuthStatus();
+    const localToken = localStorage.getItem('mtws_token') || localStorage.getItem('sf_weather_token');
+    const localUserCode = localStorage.getItem('mtws_userCode') || localStorage.getItem('sf_userId');
     const savedToken = (unified && unified.logged_in && unified.token)
         ? unified.token
-        : (localStorage.getItem('mtws_token') || localStorage.getItem('sf_weather_token'));
+        : localToken;
     const savedUserCode = (unified && unified.logged_in && unified.userCode)
         ? unified.userCode
-        : (localStorage.getItem('mtws_userCode') || localStorage.getItem('sf_userId'));
+        : localUserCode;
 
     if (savedToken && savedUserCode) {
         currentToken = savedToken;
@@ -3789,6 +3791,12 @@ async function initCurrentModeAuth() {
         localStorage.setItem('mtws_userCode', currentUserCode);
         localStorage.setItem('sf_weather_token', currentToken);
         localStorage.setItem('sf_userId', currentUserCode);
+        // 启动器/Nginx 统一登录态在重启后会清空（仅存内存）。
+        // 浏览器本地仍有可用 token 时，主动回灌统一登录态，
+        // 让启动器信息框和控制台立即识别为已登录，无需重新扫码。
+        if (!(unified && unified.logged_in && unified.token)) {
+            await updateUnifiedAuth(currentToken, currentUserCode);
+        }
         showUserInfo();
         loadInitialData();
     } else {

@@ -11,11 +11,11 @@
 双轨架构：**事中监控**（轮询航班+气象报文，红黄绿告警）；**事后评定**（TAF/手工双模式评分、Excel导出）。
 
 ### 运行方式
-- 统一启动器（推荐）：从交付根目录 `MTWS+OMICS` 双击 `统一服务器启动器.bat`，或双击同目录的 `统一服务器启动器.lnk`。启动器同时管理 MTWS、OMICS 与后台 Nginx：MTWS 内部监听 `127.0.0.1:8001`，OMICS 内部监听 `127.0.0.1:8002`，Nginx 对外提供统一入口 `127.0.0.1:8000`。
+- 统一启动器（推荐）：从交付根目录 `MTWS+OMICS` 双击 `MTWS+OMICS.bat`，或双击同目录的 `MTWS+OMICS.bat.lnk`。启动器同时管理 MTWS、OMICS 与后台 Nginx：MTWS 内部监听 `127.0.0.1:8001`，OMICS 内部监听 `127.0.0.1:8002`，Nginx 对外提供统一入口 `127.0.0.1:8000`。
 - 访问地址：MTWS 使用 `http://127.0.0.1:8000/mtws/`，OMICS 使用 `http://127.0.0.1:8000/omics/`。两个前端同源；扫码仍从各软件页面发起，但登录成功后的 token 统一交由 Nginx 管理，任一软件登录后其他软件可复用同一 token，减少不同 IP/入口重复登录导致的掉线。
 - 启动器界面只显示两个业务面板：左侧 MTWS / 右侧 OMICS，各自状态灯 + 独立日志。Nginx 是基础设施服务，已隐藏单独监控面板，但仍会随「全部启动」「退出服务」和托盘右键退出一起启动/停止。
 - 中控台不再提供扫码登录功能；原登录入口改为说明框，只展示当前统一登录状态（目前谁登录、用户标识、登录来源/时间等）。
-- portable Nginx 随 OMICS 携带在 `OMICS 5.8/tools/nginx/nginx.exe`，目标电脑不需要额外安装 Nginx；运行时配置生成到 `%LOCALAPPDATA%/MTWS_OMICS_Nginx`，避免 Windows Nginx 中文路径问题。
+- portable Nginx 随 OMICS 携带在 `OMICS/tools/nginx/nginx.exe`，目标电脑不需要额外安装 Nginx；运行时配置生成到 `%LOCALAPPDATA%/MTWS_OMICS_Nginx`，避免 Windows Nginx 中文路径问题。
 - 开发调试（会出黑框）：`python main.py`（旧单 OMICS 开发入口，端口 56789；不经过统一 Nginx 入口）
 - 生产发布：PyInstaller 打包为 `ForecastTool.exe`（console=False），托盘常驻
 
@@ -24,8 +24,8 @@
 ├── main.py                  # 入口：启动 Flask+Waitress，CustomTkinter 控制台，pystray 托盘
 ├── ../launcher.py            # 交付根目录统一启动器：两栏监控 MTWS + OMICS，后台静默管理 Nginx 统一入口
 ├── ../launcher_config.json   # 【运行时】统一启动器配置：MTWS/OMICS/Nginx 路径与端口
-├── ../统一服务器启动器.bat    # 交付根目录 bat：pythonw 启动 ../launcher.py（无黑框）
-├── ../统一服务器启动器.lnk    # 天气图标快捷方式，指向统一服务器启动器.bat，可复制到桌面
+├── ../MTWS+OMICS.bat          # 交付根目录 bat：pythonw 启动 ../launcher.py（无黑框）
+├── ../MTWS+OMICS.bat.lnk      # 桌面图标快捷方式，指向 MTWS+OMICS.bat，可复制到桌面
 ├── tools/nginx/nginx.exe     # portable Nginx，随 OMICS 携带，目标电脑无需额外安装 Nginx
 ├── assets/weather.ico        # OMICS/打包图标资源
 ├── assets/weather.png        # OMICS 图标资源
@@ -81,6 +81,14 @@
 ---
 
 ## 二、更新日志
+
+### v5.8-dev · 2026-06-14（目录/图标/BAT 重命名、登录态识别与数据库工具同步）
+- **调整** 交付图标拆分：启动器窗口/任务栏/桌面快捷方式使用 `桌面图标.ico`，系统托盘使用 `托盘图标.ico`；原 `桌面图标.png`/`托盘图标.png` 已转为 ico 并删除 png，两个 ico 均纳入 Git 版本管理。
+- **调整** 统一服务器 bat 名称：`统一服务器启动器.bat/.lnk` 重命名为 `MTWS+OMICS.bat/.lnk`，快捷方式图标指向 `桌面图标.ico`。
+- **调整** OMICS 业务目录名：`OMICS 5.8` 重命名为 `OMICS`；同步更新 `launcher.py`、`launcher_config.json`、`.gitignore` 中的路径引用。
+- **修复** 席位电脑找不到数据库管理工具：强制将 `MTWS/data/sqlite_database/database_manage_allinone.py` 纳入 Git（原本已 tracked，本次再次确认）；`launcher.py` 的数据库工具入口增加回退：配置推导的 MTWS 根目录找不到时，回退到随包交付的 `MTWS/data/sqlite_database/` 下的工具，避免本地配置路径异常导致无法启动。
+- **修复** MTWS 重启后登录态识别：退出所有服务再打开后，Nginx/启动器的统一登录态（仅存内存）会清空；修改 MTWS 前端 `initCurrentModeAuth`，在统一登录态为空但浏览器本地仍有可用 token 时，主动回灌 `/auth/update`，让控制台信息框立即识别为已登录（与 OMICS 前端行为一致）。
+- **验证** `launcher.py` 通过 `py_compile`；`launcher_config.json` JSON 解析通过；`database_manage_allinone.py` 通过 `py_compile`。
 
 ### v5.8-dev · 2026-06-12（启动器登录态识别、托盘图标、无模板导出与路径浏览）
 - **增强** 启动器登录态识别：OMICS 前端打开后，会把浏览器缓存里已存在的 token（`sf_weather_token`/`mtws_token`）主动回灌到 Nginx 统一登录态（`/auth/update`），启动器信息框据此正确显示「已登录」及用户标识，无需重新扫码。

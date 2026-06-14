@@ -24,15 +24,15 @@ backup/
 
 # ==== Local machine config ====
 launcher_config.json
-OMICS 5.8/launcher_config.json
+OMICS/launcher_config.json
 MTWS/launcher_config.json
 config.json
-OMICS 5.8/config.json
+OMICS/config.json
 MTWS/config.json
 
 # ==== Local / sensitive runtime data ====
 personnel_mapping.json
-OMICS 5.8/personnel_mapping.json
+OMICS/personnel_mapping.json
 MTWS/data/sqlite_database/*.db
 MTWS/data/sqlite_database/*.sqlite
 MTWS/data/sqlite_database/*.sqlite3
