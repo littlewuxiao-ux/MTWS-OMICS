@@ -260,6 +260,19 @@ http {{
             proxy_redirect http://{mtws_host}:{mtws_port}/ /mtws/;
         }}
 
+        # 静态 JS/CSS 禁止浏览器缓存，避免席位电脑服务端更新后仍运行旧脚本。
+        location ~* ^/static/.*\\.(js|css)$ {{
+            proxy_pass http://{mtws_host}:{mtws_port};
+            proxy_http_version 1.1;
+            proxy_set_header Host $host:$server_port;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+            add_header Pragma "no-cache" always;
+            expires -1;
+        }}
+
         location ~ ^/(current|test|system|admin|static|media)(/.*)?$ {{
             proxy_pass http://{mtws_host}:{mtws_port};
             proxy_http_version 1.1;
@@ -856,14 +869,23 @@ class LauncherApp(ctk.CTk):
         bar = ctk.CTkFrame(self, fg_color=BG_SECONDARY, corner_radius=0, height=52)
         bar.pack(fill="x"); bar.pack_propagate(False)
         left = ctk.CTkFrame(bar, fg_color="transparent"); left.pack(side="left", padx=18, pady=8)
-        ctk.CTkLabel(left, text="🛫", font=ctk.CTkFont(size=20)).pack(side="left")
         ctk.CTkLabel(left, text="航空气象统一服务启动器", font=ctk.CTkFont(size=15, weight="bold"),
-                     text_color=COLOR_LABEL).pack(side="left", padx=(8, 0))
+                     text_color=COLOR_LABEL).pack(side="left")
         ctk.CTkLabel(left, text="统一入口 8000 · MTWS 8001 · OMICS 8002", font=ctk.CTkFont(size=11),
                      text_color="#636366").pack(side="left", padx=(8, 0), pady=(2, 0))
-        right = ctk.CTkFrame(bar, fg_color="transparent"); right.pack(side="right", padx=18)
+        # 按钮直接钉在标题栏右边缘，窗口缩小时优先保证可见与可点击。
+        ctk.CTkButton(bar, text="退出服务", width=80, command=self._quit_app,
+                      font=ctk.CTkFont(size=12), fg_color="#3a1f1f", hover_color="#5a2a2a",
+                      text_color="#ff6b6b", corner_radius=8, height=32).pack(side="right", padx=(8, 18))
+        ctk.CTkButton(bar, text="⚙ 路径配置", width=92, command=self._open_path_config,
+                      font=ctk.CTkFont(size=12), fg_color=BG_TERTIARY, hover_color=BG_GROUPED,
+                      text_color=COLOR_LABEL2, corner_radius=8, height=32).pack(side="right", padx=(8, 0))
+        ctk.CTkButton(bar, text="全部启动", width=80, command=self._start_all,
+                      font=ctk.CTkFont(size=12), fg_color=COLOR_GREEN, hover_color="#27a846",
+                      text_color="#fff", corner_radius=8, height=32).pack(side="right", padx=(8, 0))
+        # 登录状态标签紧贴按钮左侧；窗口缩小时从它的右侧开始被逐渐遮挡，不影响按钮。
         self.auth_info_label = ctk.CTkLabel(
-            right,
+            bar,
             text="登录状态：未登录｜请在 MTWS 或 OMICS 页面扫码",
             font=ctk.CTkFont(size=12),
             text_color=COLOR_LABEL2,
@@ -871,17 +893,9 @@ class LauncherApp(ctk.CTk):
             corner_radius=8,
             padx=12,
             height=32,
+            anchor="w",
         )
         self.auth_info_label.pack(side="right", padx=(8, 0))
-        ctk.CTkButton(right, text="退出服务", width=80, command=self._quit_app,
-                      font=ctk.CTkFont(size=12), fg_color="#3a1f1f", hover_color="#5a2a2a",
-                      text_color="#ff6b6b", corner_radius=8, height=32).pack(side="right", padx=(8, 0))
-        ctk.CTkButton(right, text="⚙ 路径配置", width=92, command=self._open_path_config,
-                      font=ctk.CTkFont(size=12), fg_color=BG_TERTIARY, hover_color=BG_GROUPED,
-                      text_color=COLOR_LABEL2, corner_radius=8, height=32).pack(side="right", padx=(8, 0))
-        ctk.CTkButton(right, text="全部启动", width=80, command=self._start_all,
-                      font=ctk.CTkFont(size=12), fg_color=COLOR_GREEN, hover_color="#27a846",
-                      text_color="#fff", corner_radius=8, height=32).pack(side="right", padx=(8, 0))
         ctk.CTkFrame(self, fg_color=COLOR_SEPARATOR, height=1, corner_radius=0).pack(fill="x")
 
     def _build_service_column(self, parent, svc, col_index):

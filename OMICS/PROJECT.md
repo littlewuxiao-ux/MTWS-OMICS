@@ -82,6 +82,13 @@
 
 ## 二、更新日志
 
+### v5.8-dev · 2026-06-15（图标样式更新、标题栏优化与登录态缓存修复）
+- **调整** 重新生成托盘/桌面图标：按最新样式将 `托盘图标.png` 重新转为 `托盘图标.ico`（多尺寸 16~256）并删除 png；`桌面图标.ico` 采用最新样式；重建 `MTWS+OMICS.bat.lnk` 快捷方式并指向 `桌面图标.ico`。
+- **调整** 标题栏：删除「航空气象统一服务启动器」前的小飞机 emoji。
+- **修复** 窗口缩小时的遇遮顺序：将「全部启动/路径配置/退出服务」三个按钮直接钉在标题栏右边缘，登录状态标签紧贴按钮左侧；窗口缩小时从登录状态标签的右侧开始被逐渐遮挡，按钮始终可见可点击。
+- **修复** 席位电脑登录态识别根因：Nginx 静态 JS/CSS 原来无 Cache-Control 头，服务端更新 `main.js` 后浏览器仍运行旧脚本（不含回灌登录态的修复）；在生成的 nginx 配置中为 `/static/*.js|css` 加上 `no-cache, no-store, must-revalidate`，确保各机总是拉取最新脚本。说明：登录态后端与路径配置无关（`/auth/` 代理到本机 19529 的 broker，跳过 Django），UNC 路径（如 `//MTWS-OMICS/MTWS`）不影响 token 回灌，问题为浏览器缓存旧 JS。
+- **验证** `launcher.py` 通过 `py_compile`（无 SyntaxWarning）；重启启动器后实测：生成的 nginx 配置含 `\.(js|css)$` 静态缓存规则，`http://127.0.0.1:8000/static/js/main.js` 返回 `Cache-Control: no-cache, no-store, must-revalidate`；token 推送（:19529 /auth/update）与 `:8000 /auth/status` 闭环正常。
+
 ### v5.8-dev · 2026-06-14（目录/图标/BAT 重命名、登录态识别与数据库工具同步）
 - **调整** 交付图标拆分：启动器窗口/任务栏/桌面快捷方式使用 `桌面图标.ico`，系统托盘使用 `托盘图标.ico`；原 `桌面图标.png`/`托盘图标.png` 已转为 ico 并删除 png，两个 ico 均纳入 Git 版本管理。
 - **调整** 统一服务器 bat 名称：`统一服务器启动器.bat/.lnk` 重命名为 `MTWS+OMICS.bat/.lnk`，快捷方式图标指向 `桌面图标.ico`。
