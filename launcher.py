@@ -51,6 +51,9 @@ SCRIPT_DIR  = Path(__file__).parent
 CONFIG_PATH = SCRIPT_DIR / "launcher_config.json"
 IPC_PORT    = 19528          # 单实例 IPC（与 MTWS 的 19527 错开）
 AUTH_BROKER_PORT = 19529     # Nginx 统一登录态接口后端（仅 127.0.0.1，由 Nginx /auth/ 反代）
+# SF 平台航班计划接口，用于轻量校验 token 是否仍然有效（与 MTWS validate-token 同源）。
+SF_FLIGHT_VALIDATE_URL = "http://sfa-wgw-inn.sf-airlines.com:1080/flight/flightSchedule/getByFlightDate"
+AUTH_VALIDATE_INTERVAL_MS = 60000   # 控制台后台校验 token 的间隔（毫秒）
 DEFAULT_MTWS_DIR = SCRIPT_DIR / "MTWS"
 DEFAULT_OMICS_DIR = SCRIPT_DIR / "OMICS"
 # 桌面/窗口图标（窗口标题栏、任务栏、桌面快捷方式）
@@ -819,8 +822,9 @@ class LauncherApp(ctk.CTk):
         self._ipc_sock = ipc_sock
         self._quitting = False
         self.tray_icon = None
-        self.auth_state = {"logged_in": False, "token": None, "userCode": None, "displayName": None, "login_time": None, "source": None}
+        self.auth_state = {"logged_in": False, "token": None, "userCode": None, "displayName": None, "login_time": None, "source": None, "expired": False}
         self.auth_broker = None
+        self._auth_validating = False
 
         self.mtws = ServicePanel(self, "mtws", self.cfg["mtws"])
         self.omics = ServicePanel(self, "omics", self.cfg["omics"])
@@ -847,6 +851,7 @@ class LauncherApp(ctk.CTk):
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.after(100, self._poll_logs)
         self.after(1500, self._monitor_services)
+        self.after(AUTH_VALIDATE_INTERVAL_MS, self._monitor_auth)
         self.after(300, self._autostart)
 
         threading.Thread(target=self._ipc_listener, daemon=True).start()
@@ -1046,14 +1051,18 @@ class LauncherApp(ctk.CTk):
             "displayName": name,
             "login_time": datetime.now().isoformat(timespec="seconds"),
             "source": source or "unknown",
+            "expired": False,
         }
         self._refresh_auth_info_label()
         self.omics.log(f"统一登录态已更新：{name}（来源：{source or 'unknown'}）。Token 由 Nginx 统一入口复用。", "success")
 
-    def clear_auth_state(self, source=None):
-        self.auth_state = {"logged_in": False, "token": None, "userCode": None, "displayName": None, "login_time": None, "source": source}
+    def clear_auth_state(self, source=None, expired=False):
+        self.auth_state = {"logged_in": False, "token": None, "userCode": None, "displayName": None, "login_time": None, "source": source, "expired": bool(expired)}
         self._refresh_auth_info_label()
-        self.omics.log(f"统一登录态已清空（来源：{source or 'unknown'}）。", "info")
+        if expired:
+            self.omics.log(f"登录已过期（来源：{source or 'token校验'}），MTWS / OMICS 页面将自动登出，请重新扫码登录。", "warn")
+        else:
+            self.omics.log(f"统一登录态已清空（来源：{source or 'unknown'}）。", "info")
 
     def _refresh_auth_info_label(self):
         if not hasattr(self, "auth_info_label") or not self.auth_info_label:
@@ -1067,11 +1076,52 @@ class LauncherApp(ctk.CTk):
                 text=f"当前登录：{name}｜来源：{source}｜{login_time}",
                 text_color=COLOR_GREEN,
             )
+        elif state.get("expired"):
+            self.auth_info_label.configure(
+                text="登录已过期｜请在 MTWS 或 OMICS 页面重新扫码登录",
+                text_color=COLOR_ORANGE,
+            )
         else:
             self.auth_info_label.configure(
                 text="登录状态：未登录｜请在 MTWS 或 OMICS 页面扫码",
                 text_color=COLOR_LABEL2,
             )
+
+    def _monitor_auth(self):
+        """控制台后台定期校验统一 token 是否仍有效；过期则自动登出并通知前端。"""
+        if not self._quitting:
+            try:
+                if self.auth_state.get("logged_in") and self.auth_state.get("token") and not self._auth_validating:
+                    self._auth_validating = True
+                    threading.Thread(target=self._validate_token_worker,
+                                     args=(self.auth_state.get("token"),), daemon=True).start()
+            except Exception:
+                pass
+            self.after(AUTH_VALIDATE_INTERVAL_MS, self._monitor_auth)
+
+    def _validate_token_worker(self, token):
+        """后台线程：调用 SF 航班接口轻量校验 token。401 视为过期；网络错误视为仍有效，不误护登出。"""
+        try:
+            if requests is None:
+                return
+            now_ms = int(time.time() * 1000)
+            headers = {"token": token, "Content-Type": "application/json"}
+            payload = {
+                "startTime": now_ms - 3600 * 1000,
+                "endTime": now_ms + 3600 * 1000,
+                "excludeCancel": True,
+                "excludeHaveAta": True,
+            }
+            resp = requests.post(SF_FLIGHT_VALIDATE_URL, headers=headers, json=payload, timeout=10)
+            if resp.status_code == 401:
+                # token 已过期/异地登录被挤下线，仅在仍是同一个 token 时才清理，避免覆盖期间新登录。
+                if self.auth_state.get("token") == token:
+                    self.after(0, lambda: self.clear_auth_state(source="token过期", expired=True))
+        except Exception:
+            # 网络异常等不当作过期处理，保守起见保留登录态。
+            pass
+        finally:
+            self._auth_validating = False
 
     def get_auth_state(self, include_token=False):
         state = dict(self.auth_state)

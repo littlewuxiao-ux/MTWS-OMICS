@@ -3772,6 +3772,33 @@ async function clearUnifiedAuth() {
     }
 }
 
+// 监听控制台统一登录态：控制台后台会定期校验 token，过期时清空统一态。
+// MTWS 轮询发现统一态被清空（且自身仍认为已登录）时，自动登出并提示重新登录。
+let unifiedAuthWatchTimer = null;
+function startUnifiedAuthWatch() {
+    if (unifiedAuthWatchTimer) return;
+    unifiedAuthWatchTimer = setInterval(async () => {
+        if (currentTimeMode !== 'current' || !currentToken) return;
+        const unified = await fetchUnifiedAuthStatus();
+        if (!unified) return; // 接口异常不误判
+        if (!unified.logged_in) {
+            // 控制台已判定登录过期/异地登录，统一态被清空 -> 本页面自动登出
+            console.warn('统一登录态已失效（控制台校验），自动登出');
+            stopUnifiedAuthWatch();
+            clearAuthState();
+            window.tokenInvalidDetected = true;
+            if (typeof stopAllAutoRefresh === 'function') stopAllAutoRefresh();
+            showTokenInvalidError();
+        }
+    }, 30000);
+}
+function stopUnifiedAuthWatch() {
+    if (unifiedAuthWatchTimer) {
+        clearInterval(unifiedAuthWatchTimer);
+        unifiedAuthWatchTimer = null;
+    }
+}
+
 // 初始化current模式的鉴权
 async function initCurrentModeAuth() {
     const unified = await fetchUnifiedAuthStatus();
@@ -3798,6 +3825,7 @@ async function initCurrentModeAuth() {
             await updateUnifiedAuth(currentToken, currentUserCode);
         }
         showUserInfo();
+        startUnifiedAuthWatch();
         loadInitialData();
     } else {
         showLoginModal();
@@ -3969,6 +3997,7 @@ function startLoginCheck() {
 
                     // 重置token失效标志并重新启动自动刷新
                     window.tokenInvalidDetected = false;
+                    startUnifiedAuthWatch();
                     if (!window.autoRefreshTimer) {
                         startAutoRefresh();
                     }
@@ -4087,6 +4116,7 @@ function clearAuthState() {
     currentToken = null;
     currentUserCode = null;
 
+    stopUnifiedAuthWatch();
     clearUnifiedAuth();
 
     // 清除localStorage

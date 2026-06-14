@@ -87,6 +87,41 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // 控制台后台定期校验 token，过期时会清空统一登录态。
+    // OMICS 轮询发现统一态被清空（且本页面仍认为已登录）时，自动登出并提示重新登录。
+    let unifiedAuthWatchTimer = null;
+    function startUnifiedAuthWatch() {
+        if (unifiedAuthWatchTimer) return;
+        unifiedAuthWatchTimer = setInterval(async () => {
+            if (!apiToken) return;
+            const unified = await fetchUnifiedAuthStatus();
+            if (!unified) return; // 接口异常不误判
+            if (!unified.logged_in) {
+                console.warn('统一登录态已失效（控制台校验），OMICS 自动登出');
+                performAutoLogout();
+            }
+        }, 30000);
+    }
+    function stopUnifiedAuthWatch() {
+        if (unifiedAuthWatchTimer) {
+            clearInterval(unifiedAuthWatchTimer);
+            unifiedAuthWatchTimer = null;
+        }
+    }
+    function performAutoLogout() {
+        stopUnifiedAuthWatch();
+        clearLocalAuthState();
+        try { userInfoDiv.classList.add('hidden'); } catch (e) {}
+        try { loginBtn.classList.remove('hidden'); } catch (e) {}
+        const adminSection = document.getElementById('admin-only-section');
+        if (adminSection) {
+            adminSection.classList.add('hidden');
+            adminSection.style.display = 'none';
+        }
+        try { updateDisplayUserName(); } catch (e) {}
+        alert('登录已过期或异地登录，已自动登出，请重新扫码登录。');
+    }
+
     function saveTokenForBothApps(token, userCode = null) {
         apiToken = token || null;
         if (token) {
@@ -515,6 +550,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 updateDisplayUserName(data.userCode, data.isOffline, data.displayName);
                 loginBtn.classList.add('hidden');
                 userInfoDiv.classList.remove('hidden');
+                startUnifiedAuthWatch();
             } else {
                 clearLocalAuthState();
                 loginBtn.classList.remove('hidden');
@@ -609,6 +645,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loginBtn.addEventListener('click', startLogin);
     logoutBtn.addEventListener('click', async () => {
         try { await fetch('/api/auth/logout', { method: 'POST' }); } catch(e) {}
+        stopUnifiedAuthWatch();
         await clearUnifiedAuth();
         clearLocalAuthState();
         userInfoDiv.classList.add('hidden'); 
@@ -761,6 +798,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         await updateUnifiedAuth(apiToken, statusData.userCode, statusData.displayName);
                         updateDisplayUserName(statusData.userCode, statusData.isOffline, statusData.displayName);
                     }
+                    startUnifiedAuthWatch();
                 } else {
                     qrStatusText.textContent = "验证失败: " + valData.message;
                 }
