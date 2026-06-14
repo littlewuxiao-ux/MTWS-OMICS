@@ -1,0 +1,21 @@
+# 强制二进制处理，避免不同机器 core.autocrlf 设置导致图标/可执行文件损坏
+*.ico   binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.exe   binary
+*.dll   binary
+*.lnk   binary
+*.db    binary
+*.xlsx  binary
+*.xlsm  binary
+*.zip   binary
+
+# 文本文件统一用 LF，避免跨机 CRLF 噪声
+*.py    text eol=lf
+*.js    text eol=lf
+*.css   text eol=lf
+*.html  text eol=lf
+*.json  text eol=lf
+*.md    text eol=lf
