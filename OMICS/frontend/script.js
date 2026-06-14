@@ -595,11 +595,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const globalSettingsModal = document.getElementById('global-settings-modal');
     
     settingsBtn.addEventListener('click', () => {
-        const currentUserId = localStorage.getItem('sf_userId') || ''; 
-        // 只要在人员字典里，直接放行，不需要密码
-        const isKnownUser = !!personnelDict[currentUserId] || currentUserId === ADMIN_ID;
-        if (!isKnownUser) {
-            const inputPwd = prompt("安全验证：访问系统配置需输入管理密码。");
+        const currentUserId = localStorage.getItem('sf_userId') || '';
+        const currentToken = apiToken || localStorage.getItem('sf_weather_token') || '';
+        const isLoggedIn = !!currentToken && !!currentUserId;
+        // 权限规则：未登录必须输入设置密码；已登录账号可进入普通设置。
+        if (!isLoggedIn) {
+            const inputPwd = prompt("安全验证：未登录状态访问系统配置需输入管理密码。");
             if (inputPwd !== settingsPassword) {
                 alert("密码错误，拒绝访问！");
                 return; 
@@ -611,7 +612,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const adminSection = document.getElementById('admin-only-section');
         const adminNavBtn = document.querySelector('.set-nav[data-target="pane-admin"]');
         if (adminSection) {
-            const isAdmin = currentUserId === ADMIN_ID || personnelDict[currentUserId] === '吴霄';
+            // 只有吴霄账号能看到高级管理员配置；未登录输密码只能进普通设置。
+            const isAdmin = isLoggedIn && (currentUserId === ADMIN_ID || personnelDict[currentUserId] === '吴霄');
             if (isAdmin) {
                 adminSection.classList.remove('hidden');
                 adminSection.style.display = 'block'; 
@@ -622,6 +624,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 adminSection.classList.add('hidden');
                 adminSection.style.display = 'none';
                 if (adminNavBtn) adminNavBtn.style.display = 'none';
+                const adminPane = document.getElementById('pane-admin');
+                if (adminPane && adminPane.style.display !== 'none') {
+                    document.querySelector('.set-nav[data-target="pane-pb"]')?.click();
+                }
             }
         }
     });

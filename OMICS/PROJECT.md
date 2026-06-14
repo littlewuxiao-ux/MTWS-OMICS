@@ -82,6 +82,12 @@
 
 ## 二、更新日志
 
+### v5.8-dev · 2026-06-15（登录弹窗恢复与 OMICS 设置权限修正）
+- **修复** MTWS current 模式未登录时自动弹出丰声扫码二维码的行为：页面初始化会先判断统一登录态/前端 localStorage token；如无 token 或统一态已标记过期，立即弹出登录二维码；如存在本地 token，则先调用 `validate-token` 轻量校验，401 时清理本地态并弹二维码。
+- **修复** OMICS 系统设置权限：未登录访问设置必须输入管理密码；已登录账号可进入普通设置；只有吴霄账号（`41060711` / 显示名“吴霄”）能显示「高级管理员配置」，未登录输密码也不会显示高级管理员配置。
+- **调整** OMICS 设置侧栏「机场字典配置」按钮颜色为白色，并通过 CSS 覆盖 active 状态，避免选中后变蓝。
+- **验证** `launcher.py` 通过 `py_compile`；`MTWS/main.js`、`OMICS/script.js` 通过 `node --check`。
+
 ### v5.8-dev · 2026-06-15（Token 过期实时监控与三端自动登出）
 - **新增** 控制台 token 实时监控：`launcher.py` 后台每 60 秒调用 SF 航班接口（与 MTWS validate-token 同源）轻量校验当前统一 token；返回 401（过期/异地登录被挤下线）时自动清空统一登录态并标记 `expired`，控制台信息框变为橙色「登录已过期｜请重新扫码登录」。网络错误等异常不误判为过期，保留登录态。
 - **调整** 统一登录态保存策略：token 仍由 MTWS/OMICS 前端 localStorage 持有，中控台**不再**从本机磁盘 token 自动恢复登录，避免“前端和中控台都关闭后，再单独打开中控台却默认登录”。`%LOCALAPPDATA%/MTWS_OMICS_Nginx/auth_state.json` 只写无 token 的安全占位，用于覆盖旧版可能留下的 token 缓存。

@@ -296,6 +296,10 @@ textarea:focus { border-color: var(--sf-red); outline: none; background: white; 
     background: rgba(255, 255, 255, 0.05) !important;
     background-color: rgba(255, 255, 255, 0.05) !important;
 }
+.set-nav[data-target="pane-ap"],
+.set-nav[data-target="pane-ap"].active {
+    color: #ffffff !important;
+}
 .set-nav.active {
     background: #334155 !important; /* 你需要的“稍微有点灰度”，完美融入深蓝侧边栏 */
     background-color: #334155 !important;

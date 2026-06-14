@@ -3806,6 +3806,26 @@ function stopUnifiedAuthWatch() {
 }
 
 // 初始化current模式的鉴权
+async function checkTokenStillValid(token, userCode) {
+    if (!token) return false;
+    try {
+        const headers = {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+        };
+        if (userCode) headers['X-User-Code'] = userCode;
+        const response = await fetch(`/${currentTimeMode}/api/validate-token/`, {
+            method: 'GET',
+            headers,
+            cache: 'no-store'
+        });
+        return response.status !== 401;
+    } catch (error) {
+        // 验证接口异常时保守放行，避免网络抖动误弹登录。
+        return true;
+    }
+}
+
 async function initCurrentModeAuth() {
     const unified = await fetchUnifiedAuthStatus();
     const localToken = localStorage.getItem('mtws_token') || localStorage.getItem('sf_weather_token');
@@ -3817,7 +3837,20 @@ async function initCurrentModeAuth() {
         ? unified.userCode
         : localUserCode;
 
+    if (unified && unified.expired) {
+        clearAuthState();
+        showLoginModal();
+        return;
+    }
+
     if (savedToken && savedUserCode) {
+        const stillValid = await checkTokenStillValid(savedToken, savedUserCode);
+        if (!stillValid) {
+            clearAuthState();
+            showLoginModal();
+            return;
+        }
+
         currentToken = savedToken;
         currentUserCode = savedUserCode;
         localStorage.setItem('mtws_token', currentToken);
