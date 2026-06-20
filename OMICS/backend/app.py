@@ -1470,10 +1470,7 @@ def export_publish_api():
 
                 # 模板观感：深灰标题、风险色块、细边框、24小时表格+尾部说明。
                 dark = PatternFill('solid', fgColor='4B5563')
-                header = PatternFill('solid', fgColor='5D6D7E')
-                hour_header = PatternFill('solid', fgColor='4A5867')
                 white = PatternFill('solid', fgColor='FFFFFF')
-                zebra = PatternFill('solid', fgColor='F2F4F4')
                 ts_fill = PatternFill('solid', fgColor='DC2626')
                 wind_fill = PatternFill('solid', fgColor='2563EB')
                 snow_fill = PatternFill('solid', fgColor='64748B')
@@ -1482,15 +1479,15 @@ def export_publish_api():
                 heavy_rain_fill = PatternFill('solid', fgColor='0F766E')
                 cloud_fill = PatternFill('solid', fgColor='F59E0B')
                 other_fill = PatternFill('solid', fgColor='BAE6FD')
-                temp_fill = PatternFill('solid', fgColor='AFC7E8')
-                white_font = Font(name='微软雅黑', color='FFFFFF', bold=True)
-                black_font = Font(name='微软雅黑', color='111827')
-                title_font = Font(name='微软雅黑', size=28, bold=True, color='FFFFFF')
-                bold_font = Font(name='微软雅黑', bold=True, color='111827')
+                white_font = Font(name='????', color='FFFFFF', bold=True)
+                black_font = Font(name='????', color='111827')
+                title_font = Font(name='????', size=48, bold=True, color='FFFFFF')
+                bold_font = Font(name='????', bold=True, color='111827')
                 thin = Side(style='thin', color='95A5A6')
                 med = Side(style='medium', color='34495E')
                 border = Border(left=thin, right=thin, top=thin, bottom=thin)
                 center = Alignment(horizontal='center', vertical='center', wrap_text=True)
+                center_nowrap = Alignment(horizontal='center', vertical='center', wrap_text=False)
 
                 bjt = None
                 try:
@@ -1503,155 +1500,153 @@ def export_publish_api():
 
                 max_hours = min(hour_count, 25)
                 end_col = 3 + max_hours
-                end_letter = get_column_letter(end_col)
-                ws.merge_cells(start_row=1, start_column=1, end_row=2, end_column=end_col)
-                ws['A1'] = '24小时天气预报' if validity_hours == 24 else f'{validity_hours}小时天气预报'
-                ws['A1'].font = title_font
-                ws['A1'].alignment = center
-                for row in range(1, 3):
-                    for col in range(1, end_col + 1):
-                        ws.cell(row, col).fill = dark
-
-                # 统计栏/日期/预报员，贴近模板：上方为风险色块，下一行放日期与预报员。
-                legend_counts = [('雷暴', ts_fill), ('大风', wind_fill), ('降雪', snow_fill), ('低能见度', vis_fill)]
-                for i, (label, fill) in enumerate(legend_counts):
-                    col = 10 + i * 3
-                    if col + 1 <= end_col:
-                        ws.merge_cells(start_row=3, start_column=col, end_row=4, end_column=col+1)
-                        cell = ws.cell(3, col)
-                        cell.value = f'{label}\n0'
-                        cell.fill = fill
-                        cell.font = white_font if fill != vis_fill else black_font
-                        cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
-                        for rr in (3, 4):
-                            for cc in range(col, col + 2):
-                                ws.cell(rr, cc).border = border
-
-                for r in range(3, 6):
-                    for c in range(1, end_col + 1):
-                        cell = ws.cell(r, c)
-                        if cell.fill.fill_type is None:
-                            cell.fill = dark
-                        cell.alignment = center
-                        cell.border = border
-                ws.merge_cells(start_row=4, start_column=1, end_row=5, end_column=3)
-                ws['A4'] = '日期（北京时）'
-                ws['D4'] = f'{bjt.year}年{bjt.month}月{bjt.day}日'
-                ws.cell(4, max(4, end_col-3)).value = '预报员：'
-                ws.cell(4, end_col-1).value = forecaster
-                for c in range(1, end_col + 1):
-                    ws.cell(4, c).font = white_font
-                    ws.cell(5, c).font = white_font
-
-                ws['A6'] = '起报时间'
-                ws['C6'] = f'{bjt.hour}时'
-                ws.merge_cells(start_row=7, start_column=1, end_row=7, end_column=2)
-                ws['A7'] = '影响机场'
-                ws['A8'] = '名称'
-                ws['B8'] = '性质'
-                ws['C7'] = '预报时长→'
-                ws['C8'] = '预报时刻→'
-                for i in range(max_hours):
-                    col = 4 + i
-                    ws.cell(7, col).value = i
-                    ws.cell(8, col).value = f'{(bjt.hour + i) % 24}时'
-                for r in range(6, 9):
-                    for c in range(1, end_col + 1):
-                        cell = ws.cell(r, c)
-                        cell.fill = header if r != 8 or c < 4 else hour_header
-                        cell.font = white_font
-                        cell.alignment = center
-                        cell.border = Border(left=thin, right=thin, top=thin, bottom=med if r == 8 else thin)
-
                 data_rows = normalize_publish_rows()
 
                 def fill_for(value):
                     v = value or ''
-                    if not v or v in ('—', '/', '适航'):
+                    if not v or v in ('?', '/', '??'):
                         return None, black_font
-                    if '雷' in v or '雹' in v:
+                    if '?' in v or '?' in v:
                         return ts_fill, white_font
-                    if any(k in v for k in ('大雨', '暴雨', '强降水')):
+                    if any(k in v for k in ('??', '??', '???')):
                         return heavy_rain_fill, white_font
-                    if '雨' in v:
+                    if '?' in v:
                         return rain_fill, white_font
-                    if '雪' in v or '冻雨' in v or '冰' in v:
+                    if '?' in v or '??' in v or '?' in v:
                         return snow_fill, white_font
-                    if '低云' in v:
+                    if '??' in v:
                         return cloud_fill, white_font
-                    if v.startswith('W') or '大风' in v or '风' in v:
+                    if v.startswith('W') or '??' in v or '?' in v:
                         return wind_fill, white_font
-                    if v.isdigit() or '低能见度' in v or '雾' in v or '霾' in v or '沙' in v or '尘' in v:
+                    if v.isdigit() or '????' in v or '?' in v or '?' in v or '?' in v or '?' in v:
                         return vis_fill, black_font
                     return other_fill, black_font
 
-                def count_category(keyword_func):
-                    n = 0
-                    for _, _, vals in data_rows:
-                        if any(keyword_func(v or '') for v in vals[:max_hours]):
-                            n += 1
-                    return n
+                legend_defs = [
+                    ('??', ts_fill, white_font, lambda v: '?' in v or '?' in v),
+                    ('??', wind_fill, white_font, lambda v: v.startswith('W') or '??' in v or '?' in v),
+                    ('??', snow_fill, white_font, lambda v: '?' in v or '??' in v or '?' in v),
+                    ('???', heavy_rain_fill, white_font, lambda v: any(k in v for k in ('??', '??', '???'))),
+                    ('????', vis_fill, black_font, lambda v: v.isdigit() or '????' in v or '?' in v or '?' in v or '?' in v or '?' in v),
+                    ('??', cloud_fill, white_font, lambda v: '??' in v),
+                    ('??', other_fill, black_font, lambda v: bool(v) and fill_for(v)[0] == other_fill),
+                ]
+                count_map = {label: sum(1 for _, _, vals in data_rows if any(pred(v or '') for v in vals[:max_hours])) for label, _, _, pred in legend_defs}
 
-                count_map = {
-                    '雷暴': count_category(lambda v: '雷' in v or '雹' in v),
-                    '大风': count_category(lambda v: v.startswith('W') or '大风' in v or '风' in v),
-                    '降雪': count_category(lambda v: '雪' in v or '冻雨' in v),
-                    '低能见度': count_category(lambda v: v.isdigit() or '低能见度' in v or '雾' in v or '霾' in v or '沙' in v or '尘' in v),
-                }
-                for merged in ws.merged_cells.ranges:
-                    pass
-                for row in range(3, 5):
-                    for col in range(10, end_col + 1):
-                        label = str(ws.cell(row, col).value or '').split('\n')[0]
-                        if label in count_map:
-                            ws.cell(row, col).value = f'{label}\n{count_map[label]}'
+                ws.merge_cells(start_row=1, start_column=1, end_row=2, end_column=end_col)
+                ws['A1'] = '24??????' if validity_hours == 24 else f'{validity_hours}??????'
+                ws['A1'].font = title_font
+                ws['A1'].alignment = center
+                for row in range(1, 9):
+                    for col in range(1, end_col + 1):
+                        ws.cell(row, col).fill = dark
+                        ws.cell(row, col).alignment = center
+
+                slots = len(legend_defs)
+                usable_start, usable_end = 4, end_col
+                usable_cols = max(1, usable_end - usable_start + 1)
+                base = usable_cols // slots
+                extra = usable_cols % slots
+                col = usable_start
+                for idx, (label, fill, font, _) in enumerate(legend_defs):
+                    width = max(2, base + (1 if idx < extra else 0))
+                    span_end = min(usable_end, col + width - 1)
+                    if col > usable_end:
+                        break
+                    ws.merge_cells(start_row=3, start_column=col, end_row=4, end_column=span_end)
+                    cell = ws.cell(3, col)
+                    cell.value = f'{label}\n{count_map.get(label, 0)}'
+                    cell.fill = fill
+                    cell.font = font
+                    cell.alignment = center
+                    col = span_end + 1
+
+                ws.merge_cells(start_row=4, start_column=1, end_row=5, end_column=2)
+                ws.merge_cells(start_row=4, start_column=3, end_row=5, end_column=3)
+                ws['A4'] = '???????'
+                ws['C4'] = f'{bjt.year}?{bjt.month}?{bjt.day}?'
+                ws['A4'].font = white_font
+                ws['C4'].font = white_font
+                ws['C4'].alignment = center_nowrap
+                ws.cell(5, max(4, end_col-3)).value = '????'
+                ws.cell(5, max(5, end_col-2)).value = forecaster
+                ws.cell(5, max(4, end_col-3)).font = white_font
+                ws.cell(5, max(5, end_col-2)).font = white_font
+
+                ws.merge_cells(start_row=6, start_column=1, end_row=6, end_column=2)
+                ws['A6'] = '????'
+                ws['C6'] = f'{bjt.hour}?'
+                ws.merge_cells(start_row=7, start_column=1, end_row=7, end_column=2)
+                ws['A7'] = '????'
+                ws['A8'] = '??'
+                ws['B8'] = '??'
+                ws['C7'] = '?????'
+                ws['C8'] = '?????'
+                for i in range(max_hours):
+                    c = 4 + i
+                    ws.cell(7, c).value = i
+                    ws.cell(8, c).value = f'{(bjt.hour + i) % 24}?'
+                for r in range(6, 9):
+                    for c in range(1, end_col + 1):
+                        cell = ws.cell(r, c)
+                        cell.fill = dark
+                        cell.font = white_font
+                        cell.alignment = center
+                        cell.border = Border(left=thin, right=thin, top=thin, bottom=med if r == 8 else thin)
 
                 start_row = 9
                 for idx, (name, ap_type, vals) in enumerate(data_rows, start=start_row):
                     ws.cell(idx, 1).value = name
                     ws.cell(idx, 2).value = ap_type
                     for c in (1, 2, 3):
-                        ws.cell(idx, c).fill = zebra if idx % 2 else white
+                        ws.cell(idx, c).fill = white
                         ws.cell(idx, c).font = bold_font if c == 1 else black_font
                         ws.cell(idx, c).alignment = center
                         ws.cell(idx, c).border = border
                     for j in range(max_hours):
                         value = vals[j] if j < len(vals) else ''
-                        value = '' if value in ('—', '/') else value
+                        value = '' if value in ('?', '/') else value
                         cell = ws.cell(idx, 4 + j)
                         cell.value = value
                         fill, font = fill_for(value)
-                        cell.fill = fill or (zebra if idx % 2 else white)
+                        cell.fill = fill or white
                         cell.font = font
                         cell.alignment = center
                         cell.border = border
 
                 tail_start = start_row + max(len(data_rows), 1) + 1
-                ws.merge_cells(start_row=tail_start, start_column=1, end_row=tail_start, end_column=2)
-                ws.cell(tail_start, 1).value = '地面结冰/极寒条件机场'
-                ws.cell(tail_start, 3).value = icing_text or '无'
-                ws.merge_cells(start_row=tail_start, start_column=3, end_row=tail_start, end_column=end_col)
+                for rr in (tail_start, tail_start + 1, tail_start + 3):
+                    ws.merge_cells(start_row=rr, start_column=1, end_row=rr, end_column=3)
+                    ws.cell(rr, 1).font = bold_font
+                    ws.cell(rr, 1).alignment = center
 
-                ws.merge_cells(start_row=tail_start+1, start_column=1, end_row=tail_start+1, end_column=2)
-                ws.cell(tail_start+1, 1).value = '颜色说明'
-                legend = [('雷暴', ts_fill, white_font), ('大风', wind_fill, white_font), ('降雪', snow_fill, white_font), ('低能见度', vis_fill, black_font), ('强降水', heavy_rain_fill, white_font), ('低云', cloud_fill, white_font)]
-                col = 3
-                for label, fill, font in legend:
+                ws.cell(tail_start, 1).value = '??????/????'
+                ws.merge_cells(start_row=tail_start, start_column=4, end_row=tail_start, end_column=end_col)
+                ws.cell(tail_start, 4).value = icing_text or '?'
+                ws.cell(tail_start, 4).font = bold_font
+                ws.cell(tail_start, 4).alignment = Alignment(horizontal='left', vertical='center', wrap_text=True)
+
+                ws.cell(tail_start+1, 1).value = '????'
+                col = 4
+                for label, fill, font, _ in legend_defs:
                     if col > end_col:
                         break
-                    ws.cell(tail_start+1, col).value = label
                     ws.cell(tail_start+1, col).fill = fill
-                    ws.cell(tail_start+1, col).font = font
-                    ws.cell(tail_start+1, col).alignment = center
+                    desc_end = min(end_col, col + 2)
+                    if col + 1 <= desc_end:
+                        ws.merge_cells(start_row=tail_start+1, start_column=col+1, end_row=tail_start+1, end_column=desc_end)
+                        ws.cell(tail_start+1, col+1).value = label
+                        ws.cell(tail_start+1, col+1).alignment = center
+                        ws.cell(tail_start+1, col+1).font = black_font
                     col += 3
 
-                ws.merge_cells(start_row=tail_start+2, start_column=1, end_row=tail_start+4, end_column=2)
-                ws.cell(tail_start+2, 1).value = '发布说明'
-                ws.merge_cells(start_row=tail_start+2, start_column=3, end_row=tail_start+4, end_column=end_col)
-                ws.cell(tail_start+2, 3).value = '1. 本表依据指数预报、TAF报文与运行需求综合生成。\n2. 能见度和云高单位为米，风速单位为米/秒。\n3. 图片导出支持分页切割；Excel导出为可编辑版本。'
-                ws.cell(tail_start+2, 3).alignment = Alignment(horizontal='left', vertical='top', wrap_text=True)
+                ws.merge_cells(start_row=tail_start+3, start_column=1, end_row=tail_start+5, end_column=3)
+                ws.cell(tail_start+3, 1).value = '????'
+                ws.merge_cells(start_row=tail_start+3, start_column=4, end_row=tail_start+5, end_column=end_col)
+                ws.cell(tail_start+3, 4).value = '1. ???????????????TAF?????????????AOC??????\n2. ????????????????????/???\n3. ??????????????????dddf?????NNE18??????18?/??'
+                ws.cell(tail_start+3, 4).alignment = Alignment(horizontal='left', vertical='top', wrap_text=True)
 
-                for r in range(tail_start, tail_start+5):
+                for r in list(range(tail_start, tail_start+1)) + list(range(tail_start+3, tail_start+6)):
                     for c in range(1, end_col + 1):
                         cell = ws.cell(r, c)
                         if not cell.fill or cell.fill.fill_type is None:
@@ -1659,14 +1654,21 @@ def export_publish_api():
                         cell.border = border
                         if cell.alignment is None:
                             cell.alignment = center
+                for c in range(1, 4):
+                    ws.cell(tail_start+1, c).border = border
+                    ws.cell(tail_start+1, c).fill = white
+                for c in range(4, end_col + 1):
+                    ws.cell(tail_start+1, c).border = Border()
+
                 for c in range(1, end_col + 1):
-                    ws.column_dimensions[get_column_letter(c)].width = 9 if c >= 4 else (14 if c == 1 else 10)
-                ws.column_dimensions['C'].width = 13
-                ws.row_dimensions[1].height = 36
-                ws.row_dimensions[2].height = 36
-                for r in range(3, tail_start+5):
+                    ws.column_dimensions[get_column_letter(c)].width = 9 if c >= 4 else (15 if c in (1, 2) else 19)
+                ws.row_dimensions[1].height = 58
+                ws.row_dimensions[2].height = 20
+                for r in range(3, tail_start+6):
                     ws.row_dimensions[r].height = 24
-                ws.row_dimensions[tail_start+2].height = 42
+                ws.row_dimensions[3].height = 28
+                ws.row_dimensions[4].height = 28
+                ws.row_dimensions[tail_start+3].height = 42
                 ws.freeze_panes = 'D9'
                 ws.sheet_view.showGridLines = False
 

@@ -59,26 +59,27 @@
         return document.getElementById('publish-export-path')?.value || '';
     }
 
-    // 计算分页：返回每页机场行数组成的数组
-    function paginate(rows, enableSplit, perPage) {
+    // 计算分页：返回每页机场行数组成的数组。优先按“每页机场数”，否则按“总页数”平均分配。
+    function paginate(rows, enableSplit, pageCountValue, perPageValue) {
         if (!enableSplit || rows.length === 0) return [rows];
-        let n = parseInt(perPage, 10);
-        if (!n || n < 1) {
-            // 默认平均分配：按约 10 个机场/页估算页数，再平均到各页。
-            const pageCount = Math.max(1, Math.ceil(rows.length / 10));
+        const perPage = parseInt(perPageValue, 10);
+        if (perPage && perPage > 0) {
             const pages = [];
-            const base = Math.floor(rows.length / pageCount);
-            let extra = rows.length % pageCount;
-            let pos = 0;
-            for (let p = 0; p < pageCount; p++) {
-                const size = base + (extra-- > 0 ? 1 : 0);
-                pages.push(rows.slice(pos, pos + size));
-                pos += size;
-            }
+            for (let i = 0; i < rows.length; i += perPage) pages.push(rows.slice(i, i + perPage));
             return pages;
         }
+        let pageCount = parseInt(pageCountValue, 10);
+        if (!pageCount || pageCount < 1) pageCount = Math.max(1, Math.ceil(rows.length / 10));
+        pageCount = Math.min(pageCount, rows.length);
         const pages = [];
-        for (let i = 0; i < rows.length; i += n) pages.push(rows.slice(i, i + n));
+        const base = Math.floor(rows.length / pageCount);
+        let extra = rows.length % pageCount;
+        let pos = 0;
+        for (let p = 0; p < pageCount; p++) {
+            const size = base + (extra-- > 0 ? 1 : 0);
+            pages.push(rows.slice(pos, pos + size));
+            pos += size;
+        }
         return pages;
     }
 
@@ -108,7 +109,7 @@
         // 表格：克隆 thead + 选中机场对应的 tbody 行（含其确认行）
         const srcTable = document.getElementById('forecast-table');
         const tbl = document.createElement('table');
-        tbl.style.cssText = 'width:100%; border-collapse:collapse; table-layout:fixed; text-align:center; border-bottom:2px solid #5D6D7E; font-family:微软雅黑,Microsoft YaHei,Arial,sans-serif;';
+        tbl.style.cssText = 'width:100%; border-collapse:collapse; table-layout:auto; text-align:center; border-bottom:2px solid #5D6D7E; font-family:微软雅黑,Microsoft YaHei,Arial,sans-serif;';
         tbl.className = srcTable ? srcTable.className : '';
         tbl.id = '';
         if (srcTable) {
@@ -124,32 +125,58 @@
             });
             tbl.appendChild(tbody);
         }
+        const textWidth = (txt, min, max, unit = 14) => Math.max(min, Math.min(max, String(txt || '').trim().length * unit + 28));
+        const airportWidth = Math.max(90, ...pageRows.map(r => textWidth(r.name, 90, 220, 16)));
+        const typeWidth = Math.max(60, ...pageRows.map(r => textWidth(r.type, 60, 150, 15)));
+        const noteWidth = Math.max(92, ...pageRows.map(r => textWidth(r.note, 92, 260, 10)));
+        const hourCells = (window.pbState?.validityHours || 24) + 1;
+        const hourWidth = hourCells > 25 ? 38 : 42;
+        const tableWidth = Math.max(1200, airportWidth + typeWidth + noteWidth + hourCells * hourWidth + 24);
+        wrap.style.width = `${tableWidth}px`;
+        tbl.style.width = `${tableWidth}px`;
+
         // sticky 在截图里会错位，统一取消；同时把字体/换行压到适合图片输出，避免内容撑破单元格。
         tbl.querySelectorAll('th, td').forEach(c => {
             c.style.position = 'static';
-            c.style.whiteSpace = 'normal';
+            c.style.border = '1px solid rgba(148, 163, 184, 0.55)';
             c.style.overflow = 'hidden';
             c.style.textOverflow = 'clip';
-            c.style.wordBreak = 'break-word';
-            c.style.overflowWrap = 'anywhere';
             c.style.boxSizing = 'border-box';
             c.style.lineHeight = '1.15';
             c.style.padding = '3px 2px';
             c.style.height = '30px';
             if (c.classList.contains('td-data')) {
+                c.style.whiteSpace = 'normal';
+                c.style.wordBreak = 'break-word';
+                c.style.overflowWrap = 'anywhere';
                 c.style.fontFamily = '微软雅黑,Microsoft YaHei,Arial,sans-serif';
                 c.style.fontSize = '10px';
                 c.style.fontWeight = '700';
+                c.style.width = `${hourWidth}px`;
+                c.style.minWidth = `${hourWidth}px`;
             }
-            if (c.classList.contains('col-airport')) c.style.width = '70px';
-            if (c.classList.contains('col-desc')) c.style.width = '78px';
+            if (c.classList.contains('td-airport')) {
+                c.style.whiteSpace = 'nowrap';
+                c.style.wordBreak = 'keep-all';
+                c.style.width = `${airportWidth}px`;
+                c.style.minWidth = `${airportWidth}px`;
+            } else if (c.classList.contains('col-airport') && !c.classList.contains('td-data')) {
+                c.style.whiteSpace = 'nowrap';
+                c.style.wordBreak = 'keep-all';
+            }
+            if (c.classList.contains('col-source') || c.classList.contains('col-op') || c.classList.contains('col-desc')) {
+                c.style.whiteSpace = 'nowrap';
+                c.style.wordBreak = 'keep-all';
+                c.style.width = c.classList.contains('col-desc') ? `${noteWidth}px` : `${Math.ceil(noteWidth / 2)}px`;
+                c.style.minWidth = c.style.width;
+            }
         });
         tbl.querySelectorAll('input,button').forEach(el => {
             if (el.classList.contains('airport-delete-x')) { el.remove(); return; }
             if (el.tagName === 'INPUT') {
                 const span = document.createElement('span');
                 span.textContent = el.value || '';
-                span.style.cssText = 'font-size:10px; font-weight:700; color:#1e40af; word-break:break-word;';
+                span.style.cssText = 'font-size:10px; font-weight:700; color:#1e40af; white-space:nowrap; word-break:keep-all;';
                 el.replaceWith(span);
             } else {
                 el.style.display = 'none';
@@ -168,6 +195,13 @@
                 el.replaceWith(span);
             });
             f.style.fontSize = '12px';
+            f.style.borderColor = 'rgba(148, 163, 184, 0.55)';
+            f.querySelectorAll('div').forEach(el => {
+                const st = el.style;
+                if (st.border || st.borderBottom || st.borderRight || st.borderTop || st.borderLeft) {
+                    st.borderColor = 'rgba(148, 163, 184, 0.55)';
+                }
+            });
             wrap.appendChild(f);
         }
 
@@ -209,8 +243,12 @@
         const info = document.getElementById('export-page-info');
         if (!body) return;
         const split = document.getElementById('export-split-toggle')?.checked;
+        const pageCount = document.getElementById('export-pagecount')?.value;
         const perPage = document.getElementById('export-perpage')?.value;
-        document.getElementById('export-perpage').disabled = !split;
+        const pageCountEl = document.getElementById('export-pagecount');
+        const perPageEl = document.getElementById('export-perpage');
+        if (pageCountEl) pageCountEl.disabled = !split;
+        if (perPageEl) perPageEl.disabled = !split;
 
         if (state.mode === 'excel') {
             // Excel 预览：用 HTML 表格近似展示将写入的机场数据
@@ -219,7 +257,7 @@
             return;
         }
 
-        const pages = paginate(state.rows, split, perPage);
+        const pages = paginate(state.rows, split, pageCount, perPage);
         if (info) info.textContent = `共 ${state.rows.length} 个机场，${pages.length} 页`;
         body.innerHTML = '<div style="color:#64748b; padding:20px;">⏳ 正在生成预览…</div>';
 
@@ -285,8 +323,10 @@
         document.getElementById('export-preview-title').textContent = mode === 'image' ? '🖼️ 导出图片预览' : '📊 导出 Excel 预览';
         // Excel 模式隐藏图片分页控件
         const splitWrap = document.getElementById('export-split-wrap');
+        const pageWrap = document.getElementById('export-pagecount-wrap');
         const perWrap = document.getElementById('export-perpage-wrap');
         if (splitWrap) splitWrap.style.display = mode === 'image' ? 'flex' : 'none';
+        if (pageWrap) pageWrap.style.display = mode === 'image' ? 'flex' : 'none';
         if (perWrap) perWrap.style.display = mode === 'image' ? 'flex' : 'none';
 
         document.getElementById('export-preview-modal').style.display = 'flex';
@@ -314,8 +354,9 @@
                 // 确保有最新分页图片
                 if (!state.images.length) {
                     const split = document.getElementById('export-split-toggle')?.checked;
+                    const pageCount = document.getElementById('export-pagecount')?.value;
                     const perPage = document.getElementById('export-perpage')?.value;
-                    const pages = paginate(state.rows, split, perPage);
+                    const pages = paginate(state.rows, split, pageCount, perPage);
                     state.images = [];
                     for (let i = 0; i < pages.length; i++) {
                         const node = buildPageNode(pages[i], i, pages.length);
@@ -355,6 +396,7 @@
             document.getElementById('export-preview-modal').style.display = 'none';
         });
         document.getElementById('export-split-toggle')?.addEventListener('change', refreshPreview);
+        document.getElementById('export-pagecount')?.addEventListener('change', refreshPreview);
         document.getElementById('export-perpage')?.addEventListener('change', refreshPreview);
         document.getElementById('export-preview-confirm')?.addEventListener('click', doExport);
 

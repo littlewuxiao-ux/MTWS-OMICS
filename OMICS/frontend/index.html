@@ -559,10 +559,15 @@
                     <label id="export-split-wrap" style="display:flex; align-items:center; gap:6px; font-weight:bold; color:#1e40af;">
                         <input type="checkbox" id="export-split-toggle"> 分页切割
                     </label>
+                    <label id="export-pagecount-wrap" style="display:flex; align-items:center; gap:6px;">
+                        总页数:
+                        <input type="number" id="export-pagecount" min="1" placeholder="自动" style="width:70px; padding:4px; border:1px solid #ccc; border-radius:4px;" disabled>
+                        <span style="color:#94a3b8;">(如填 2，则机场平均分到 2 页)</span>
+                    </label>
                     <label id="export-perpage-wrap" style="display:flex; align-items:center; gap:6px;">
                         每页机场数:
-                        <input type="number" id="export-perpage" min="1" placeholder="自动" style="width:70px; padding:4px; border:1px solid #ccc; border-radius:4px;" disabled>
-                        <span style="color:#94a3b8;">(默认平均分配)</span>
+                        <input type="number" id="export-perpage" min="1" placeholder="手动" style="width:70px; padding:4px; border:1px solid #ccc; border-radius:4px;" disabled>
+                        <span style="color:#94a3b8;">(填写后优先按每页数量切)</span>
                     </label>
                     <span id="export-page-info" style="color:#475569;"></span>
                     <div style="flex:1;"></div>
