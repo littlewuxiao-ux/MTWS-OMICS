@@ -22,6 +22,7 @@ def resolve_auth_token(provided_token=None):
 
 PERSONNEL_MAP_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'personnel_mapping.json'))
 SETTINGS_CONFIG_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'runtime', 'settings_config.json'))
+SETTINGS_CONFIG_EXAMPLE_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'runtime', 'settings_config.example.json'))
 DEFAULT_PERSONNEL_MAP = {"41060711": "吴霄"}
 
 DEFAULT_SETTINGS_CONFIG = {
@@ -82,6 +83,13 @@ def load_settings_config():
             with open(SETTINGS_CONFIG_PATH, 'r', encoding='utf-8') as f:
                 saved = json.load(f)
             data = deep_merge_dict(data, saved)
+        elif os.path.exists(SETTINGS_CONFIG_EXAMPLE_PATH):
+            with open(SETTINGS_CONFIG_EXAMPLE_PATH, 'r', encoding='utf-8') as f:
+                saved = json.load(f)
+            data = deep_merge_dict(data, saved)
+            os.makedirs(os.path.dirname(SETTINGS_CONFIG_PATH), exist_ok=True)
+            with open(SETTINGS_CONFIG_PATH, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
     except Exception as exc:
         LOG.warning("读取系统设置配置失败: %s", exc)
     return data

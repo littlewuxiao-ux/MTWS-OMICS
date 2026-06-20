@@ -16,9 +16,10 @@ dist/
 logs/
 *.log
 runtime/*
+OMICS/runtime/*
 !runtime/
 !OMICS/runtime/
-!OMICS/runtime/settings_config.json
+!OMICS/runtime/settings_config.example.json
 *.tmp
 *.bak
 

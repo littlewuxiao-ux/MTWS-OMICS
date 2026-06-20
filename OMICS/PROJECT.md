@@ -83,13 +83,14 @@
 ## 二、更新日志
 
 ### v5.8-dev · 2026-06-20（OMICS 系统设置持久化到 JSON）
-- **新增** OMICS 统一系统设置配置文件 `runtime/settings_config.json`，用于持久化除机场字典外的系统设置，避免浏览器 `localStorage` 清理、换入口或换电脑后配置丢失。
+- **新增** OMICS 统一系统设置配置文件 `runtime/settings_config.json`，用于持久化除机场字典外的系统设置，避免浏览器 `localStorage` 清理、换入口或换电脑后配置丢失。实际运行配置为本机私有文件，不随 Git pull 覆盖。
+- **新增** 默认模板 `runtime/settings_config.example.json`，Git 只分发模板；首次运行时如果本机没有 `settings_config.json`，后端会从模板/内置默认值自动生成。
 - **新增** 后端配置接口 `/api/settings_config`，支持读取/保存人员映射、云盘路径、默认机场、天气现象量级、天气要素阈值、单机场阈值、预报发布机场分组与极寒积冰/EC 自动配置。
 - **调整** 前端设置加载优先级：启动时优先读取 `runtime/settings_config.json`，并回填 `localStorage` 兼容旧逻辑；若配置文件不可用则回退旧本地缓存。
 - **调整** 系统设置保存逻辑：人员管理映射、云盘路径、默认机场、天气现象量级、全局/单机场阈值、预报发布分组和 EC 配置保存时同步写入统一 JSON。
 - **保留** 机场字典配置继续通过 `/api/save_airports` 写入 `frontend/airports.js`；人员映射继续兼容旧 `personnel_mapping.json` 并与统一设置同步。
-- **调整** `.gitignore` 对 `runtime/` 增加例外，允许提交默认 `OMICS/runtime/settings_config.json`，同时继续忽略其他运行时文件。
-- **验证** `backend/app.py` 通过 `py_compile`；`frontend/script.js`、`frontend/publish.js` 通过 `node --check`；`runtime/settings_config.json` 通过 Python JSON 读取校验。
+- **调整** `.gitignore` 对 `runtime/` 增加例外，允许提交默认模板 `OMICS/runtime/settings_config.example.json`；实际运行配置 `settings_config.json` 保持本机私有，避免下载/更新时覆盖各席位本地设置。
+- **验证** `backend/app.py` 通过 `py_compile`；`frontend/script.js`、`frontend/publish.js` 通过 `node --check`；`runtime/settings_config.example.json` 通过 Python JSON 读取校验。
 
 ### v5.8-dev · 2026-06-15（登录弹窗恢复与 OMICS 设置权限修正）
 - **修复** MTWS current 模式未登录时自动弹出丰声扫码二维码的行为：页面初始化会先判断统一登录态/前端 localStorage token；如无 token 或统一态已标记过期，立即弹出登录二维码；如存在本地 token，则先调用 `validate-token` 轻量校验，401 时清理本地态并弹二维码。
