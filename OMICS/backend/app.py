@@ -1512,46 +1512,56 @@ def export_publish_api():
                     for col in range(1, end_col + 1):
                         ws.cell(row, col).fill = dark
 
-                # 统计栏/日期/预报员，尽量贴近模板第三行布局。
-                ws['A3'] = '日期（北京时）'
-                ws['C3'] = f'{bjt.year}年{bjt.month}月{bjt.day}日'
-                ws.cell(3, max(4, end_col-1)).value = '预报员：'
-                ws.cell(3, end_col).value = forecaster
-                for c in range(1, end_col + 1):
-                    ws.cell(3, c).fill = dark
-                    ws.cell(3, c).font = white_font
-                    ws.cell(3, c).alignment = center
-                    ws.cell(3, c).border = border
-
-                legend_counts = [('雷暴', ts_fill), ('大风', wind_fill), ('降雪', snow_fill), ('低能见度', vis_fill), ('强降水', heavy_rain_fill), ('低云', cloud_fill)]
+                # 统计栏/日期/预报员，贴近模板：上方为风险色块，下一行放日期与预报员。
+                legend_counts = [('雷暴', ts_fill), ('大风', wind_fill), ('降雪', snow_fill), ('低能见度', vis_fill)]
                 for i, (label, fill) in enumerate(legend_counts):
-                    col = 4 + i * 3
+                    col = 10 + i * 3
                     if col + 1 <= end_col:
-                        ws.merge_cells(start_row=4, start_column=col, end_row=4, end_column=col+1)
-                        ws.cell(4, col).value = label
-                        ws.cell(4, col).fill = fill
-                        ws.cell(4, col).font = white_font if fill not in (vis_fill, other_fill, temp_fill) else black_font
-                        ws.cell(4, col).alignment = center
+                        ws.merge_cells(start_row=3, start_column=col, end_row=4, end_column=col+1)
+                        cell = ws.cell(3, col)
+                        cell.value = f'{label}\n0'
+                        cell.fill = fill
+                        cell.font = white_font if fill != vis_fill else black_font
+                        cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+                        for rr in (3, 4):
+                            for cc in range(col, col + 2):
+                                ws.cell(rr, cc).border = border
 
-                ws['A5'] = '起报时间'
-                ws['C5'] = f'{bjt.hour}时'
-                ws.merge_cells(start_row=6, start_column=1, end_row=6, end_column=2)
-                ws['A6'] = '影响机场'
-                ws['A7'] = '名称'
-                ws['B7'] = '性质'
-                ws['C6'] = '预报时长→'
-                ws['C7'] = '预报时刻→'
-                for i in range(max_hours):
-                    col = 4 + i
-                    ws.cell(6, col).value = i
-                    ws.cell(7, col).value = f'{(bjt.hour + i) % 24}时'
-                for r in range(5, 8):
+                for r in range(3, 6):
                     for c in range(1, end_col + 1):
                         cell = ws.cell(r, c)
-                        cell.fill = header if r != 7 or c < 4 else hour_header
+                        if cell.fill.fill_type is None:
+                            cell.fill = dark
+                        cell.alignment = center
+                        cell.border = border
+                ws.merge_cells(start_row=4, start_column=1, end_row=5, end_column=3)
+                ws['A4'] = '日期（北京时）'
+                ws['D4'] = f'{bjt.year}年{bjt.month}月{bjt.day}日'
+                ws.cell(4, max(4, end_col-3)).value = '预报员：'
+                ws.cell(4, end_col-1).value = forecaster
+                for c in range(1, end_col + 1):
+                    ws.cell(4, c).font = white_font
+                    ws.cell(5, c).font = white_font
+
+                ws['A6'] = '起报时间'
+                ws['C6'] = f'{bjt.hour}时'
+                ws.merge_cells(start_row=7, start_column=1, end_row=7, end_column=2)
+                ws['A7'] = '影响机场'
+                ws['A8'] = '名称'
+                ws['B8'] = '性质'
+                ws['C7'] = '预报时长→'
+                ws['C8'] = '预报时刻→'
+                for i in range(max_hours):
+                    col = 4 + i
+                    ws.cell(7, col).value = i
+                    ws.cell(8, col).value = f'{(bjt.hour + i) % 24}时'
+                for r in range(6, 9):
+                    for c in range(1, end_col + 1):
+                        cell = ws.cell(r, c)
+                        cell.fill = header if r != 8 or c < 4 else hour_header
                         cell.font = white_font
                         cell.alignment = center
-                        cell.border = Border(left=thin, right=thin, top=thin, bottom=med if r == 7 else thin)
+                        cell.border = Border(left=thin, right=thin, top=thin, bottom=med if r == 8 else thin)
 
                 data_rows = normalize_publish_rows()
 
@@ -1575,7 +1585,28 @@ def export_publish_api():
                         return vis_fill, black_font
                     return other_fill, black_font
 
-                start_row = 8
+                def count_category(keyword_func):
+                    n = 0
+                    for _, _, vals in data_rows:
+                        if any(keyword_func(v or '') for v in vals[:max_hours]):
+                            n += 1
+                    return n
+
+                count_map = {
+                    '雷暴': count_category(lambda v: '雷' in v or '雹' in v),
+                    '大风': count_category(lambda v: v.startswith('W') or '大风' in v or '风' in v),
+                    '降雪': count_category(lambda v: '雪' in v or '冻雨' in v),
+                    '低能见度': count_category(lambda v: v.isdigit() or '低能见度' in v or '雾' in v or '霾' in v or '沙' in v or '尘' in v),
+                }
+                for merged in ws.merged_cells.ranges:
+                    pass
+                for row in range(3, 5):
+                    for col in range(10, end_col + 1):
+                        label = str(ws.cell(row, col).value or '').split('\n')[0]
+                        if label in count_map:
+                            ws.cell(row, col).value = f'{label}\n{count_map[label]}'
+
+                start_row = 9
                 for idx, (name, ap_type, vals) in enumerate(data_rows, start=start_row):
                     ws.cell(idx, 1).value = name
                     ws.cell(idx, 2).value = ap_type
@@ -1636,7 +1667,7 @@ def export_publish_api():
                 for r in range(3, tail_start+5):
                     ws.row_dimensions[r].height = 24
                 ws.row_dimensions[tail_start+2].height = 42
-                ws.freeze_panes = 'D8'
+                ws.freeze_panes = 'D9'
                 ws.sheet_view.showGridLines = False
 
                 xlsx_path = os.path.join(target_dir, f'24小时天气预报_{ts}.xlsx')

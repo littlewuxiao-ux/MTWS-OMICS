@@ -64,9 +64,18 @@
         if (!enableSplit || rows.length === 0) return [rows];
         let n = parseInt(perPage, 10);
         if (!n || n < 1) {
-            // 默认平均分配：尽量每页机场数接近，页数 = ceil(总数/10)
+            // 默认平均分配：按约 10 个机场/页估算页数，再平均到各页。
             const pageCount = Math.max(1, Math.ceil(rows.length / 10));
-            n = Math.ceil(rows.length / pageCount);
+            const pages = [];
+            const base = Math.floor(rows.length / pageCount);
+            let extra = rows.length % pageCount;
+            let pos = 0;
+            for (let p = 0; p < pageCount; p++) {
+                const size = base + (extra-- > 0 ? 1 : 0);
+                pages.push(rows.slice(pos, pos + size));
+                pos += size;
+            }
+            return pages;
         }
         const pages = [];
         for (let i = 0; i < rows.length; i += n) pages.push(rows.slice(i, i + n));
@@ -77,20 +86,29 @@
        通过克隆现有 DOM 节点，最大程度保持与界面一致的观感。 */
     function buildPageNode(pageRows, pageIdx, pageTotal) {
         const wrap = document.createElement('div');
-        wrap.style.cssText = 'width:1200px; background:#fff; font-family:微软雅黑,Microsoft YaHei,sans-serif;';
+        wrap.style.cssText = 'width:1200px; background:#fff; font-family:微软雅黑,Microsoft YaHei,Arial,sans-serif; color:#1f2937;';
 
         // 头：克隆标题栏
         const headerSrc = document.getElementById('pb-export-header');
         if (headerSrc) {
             const h = headerSrc.cloneNode(true);
-            h.style.borderRadius = '8px 8px 0 0';
+            h.style.borderRadius = '0';
+            h.style.padding = '14px 18px 12px 18px';
+            h.querySelectorAll('select,input').forEach(el => {
+                const display = document.createElement('span');
+                display.textContent = el.tagName === 'SELECT' ? (el.options[el.selectedIndex]?.text || el.value || '') : (el.value || '');
+                display.style.cssText = el.id === 'pb-main-title-select'
+                    ? 'display:block; text-align:center; font-size:42px; line-height:1.15; font-weight:800; letter-spacing:2px; color:#fff;'
+                    : 'display:inline-block; min-width:70px; text-align:center; color:#fff;';
+                el.replaceWith(display);
+            });
             wrap.appendChild(h);
         }
 
         // 表格：克隆 thead + 选中机场对应的 tbody 行（含其确认行）
         const srcTable = document.getElementById('forecast-table');
         const tbl = document.createElement('table');
-        tbl.style.cssText = 'width:100%; border-collapse:collapse; text-align:center; border-bottom:2px solid #5D6D7E;';
+        tbl.style.cssText = 'width:100%; border-collapse:collapse; table-layout:fixed; text-align:center; border-bottom:2px solid #5D6D7E; font-family:微软雅黑,Microsoft YaHei,Arial,sans-serif;';
         tbl.className = srcTable ? srcTable.className : '';
         tbl.id = '';
         if (srcTable) {
@@ -106,13 +124,52 @@
             });
             tbl.appendChild(tbody);
         }
-        // sticky 在截图里会错位，统一取消
-        tbl.querySelectorAll('th, td').forEach(c => { c.style.position = 'static'; });
+        // sticky 在截图里会错位，统一取消；同时把字体/换行压到适合图片输出，避免内容撑破单元格。
+        tbl.querySelectorAll('th, td').forEach(c => {
+            c.style.position = 'static';
+            c.style.whiteSpace = 'normal';
+            c.style.overflow = 'hidden';
+            c.style.textOverflow = 'clip';
+            c.style.wordBreak = 'break-word';
+            c.style.overflowWrap = 'anywhere';
+            c.style.boxSizing = 'border-box';
+            c.style.lineHeight = '1.15';
+            c.style.padding = '3px 2px';
+            c.style.height = '30px';
+            if (c.classList.contains('td-data')) {
+                c.style.fontFamily = '微软雅黑,Microsoft YaHei,Arial,sans-serif';
+                c.style.fontSize = '10px';
+                c.style.fontWeight = '700';
+            }
+            if (c.classList.contains('col-airport')) c.style.width = '70px';
+            if (c.classList.contains('col-desc')) c.style.width = '78px';
+        });
+        tbl.querySelectorAll('input,button').forEach(el => {
+            if (el.classList.contains('airport-delete-x')) { el.remove(); return; }
+            if (el.tagName === 'INPUT') {
+                const span = document.createElement('span');
+                span.textContent = el.value || '';
+                span.style.cssText = 'font-size:10px; font-weight:700; color:#1e40af; word-break:break-word;';
+                el.replaceWith(span);
+            } else {
+                el.style.display = 'none';
+            }
+        });
         wrap.appendChild(tbl);
 
         // 尾：克隆结冰/颜色/说明区
         const footerSrc = document.getElementById('pb-export-footer');
-        if (footerSrc) wrap.appendChild(footerSrc.cloneNode(true));
+        if (footerSrc) {
+            const f = footerSrc.cloneNode(true);
+            f.querySelectorAll('input').forEach(el => {
+                const span = document.createElement('span');
+                span.textContent = el.value || '无';
+                span.style.cssText = 'font-weight:700; color:#005A9C;';
+                el.replaceWith(span);
+            });
+            f.style.fontSize = '12px';
+            wrap.appendChild(f);
+        }
 
         if (pageTotal > 1) {
             const tag = document.createElement('div');
@@ -130,7 +187,14 @@
         holder.appendChild(pageNode);
         document.body.appendChild(holder);
         try {
-            const canvas = await html2canvas(pageNode, { scale: 2, backgroundColor: '#ffffff' });
+            const canvas = await html2canvas(pageNode, {
+                scale: 2,
+                backgroundColor: '#ffffff',
+                useCORS: true,
+                logging: false,
+                windowWidth: pageNode.scrollWidth,
+                windowHeight: pageNode.scrollHeight
+            });
             return canvas.toDataURL('image/png');
         } finally {
             document.body.removeChild(holder);
