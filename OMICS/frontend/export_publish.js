@@ -245,8 +245,16 @@
         }
     }
 
+    function updatePublishStickyOffsets() {
+        const header = document.getElementById('pb-export-header');
+        const workspace = document.getElementById('publish-workspace');
+        if (!header || !workspace) return;
+        const h = Math.ceil(header.getBoundingClientRect().height || 0);
+        workspace.style.setProperty('--pb-sticky-top', `${h}px`);
+    }
+
     // ---- 预览弹窗状态 ----
-    const state = { mode: 'image', rows: [], rawRows: [], images: [], pageSizes: [] };
+    const state = { mode: 'image', rows: [], rawRows: [], images: [], pageSizes: [], rendering: false };
 
     function refreshPreview() {
         const body = document.getElementById('export-preview-body');
