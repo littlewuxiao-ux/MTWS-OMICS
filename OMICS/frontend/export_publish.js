@@ -294,13 +294,15 @@
         document.getElementById('export-perpage')?.addEventListener('change', refreshPreview);
         document.getElementById('export-preview-confirm')?.addEventListener('click', doExport);
 
-        // ---- 文图互导：导出/导入 标签切换 ----
+        // ---- 文图互导：导出/导入 标签切换 + 纠错 ----
         const tabOut = document.getElementById('export-text-tab-out');
         const tabIn = document.getElementById('export-text-tab-in');
         const importBtn = document.getElementById('import-export-text-btn');
+        const checkBtn = document.getElementById('check-export-text-btn');
         const copyBtn = document.getElementById('copy-export-text-btn');
         const outHint = document.getElementById('export-text-out-hint');
         const inHint = document.getElementById('export-text-in-hint');
+        const panel = document.getElementById('export-text-error-panel');
         const ta = document.getElementById('export-text-content');
 
         function setTab(mode) {
@@ -310,13 +312,24 @@
             if (outHint) outHint.style.display = isIn ? 'none' : 'block';
             if (inHint) inHint.style.display = isIn ? 'block' : 'none';
             if (importBtn) importBtn.style.display = isIn ? 'inline-block' : 'none';
+            if (checkBtn) checkBtn.style.display = isIn ? 'inline-block' : 'none';
             if (copyBtn) copyBtn.style.display = isIn ? 'none' : 'inline-block';
-            if (isIn) { ta.value = ''; ta.placeholder = '例：\n深圳：5日08-11时有雷雨，12-15时有大风。\n杭州：5日14-18时有小雨。'; }
-            ta.dataset.mode = mode;
+            if (panel) { panel.style.display = 'none'; panel.innerHTML = ''; }
+            if (ta) {
+                ta.style.borderColor = '#ccc';
+                if (isIn) {
+                    ta.value = '';
+                    ta.placeholder = '例：\n深圳：5日08-11时有雷雨，12-15时有大风。\n杭州：5日06Z-09Z有小雨。（Z=世界时/UTC；无Z默认北京时）';
+                }
+                ta.dataset.mode = mode;
+            }
         }
         tabOut?.addEventListener('click', () => setTab('out'));
         tabIn?.addEventListener('click', () => setTab('in'));
+        checkBtn?.addEventListener('click', () => validateImportText(ta.value, true));
         importBtn?.addEventListener('click', () => {
+            const checked = validateImportText(ta.value, true);
+            if (!checked.ok) return;
             const n = importTextToForecast(ta.value);
             if (n > 0) {
                 document.getElementById('export-text-modal').style.display = 'none';
@@ -327,7 +340,8 @@
 
     /* ===== 需求2：文字 -> 24小时预报（反向解析） =====
        支持行格式：机场名：时段描述。
-       时段片段：「N日HH-HH时有XX」 / 「N日HH时-N日HH时有XX」 / 「HH-HH时有XX」 */
+       北京时：5日08-11时有雷雨；世界时：5日00Z-03Z有雷雨 / 00Z-03Z有雷雨。
+       无 Z 默认北京时；任一端带 Z 则按世界时 UTC 解析。 */
     function buildNameToIcao() {
         const map = {};
         const src = window.GLOBAL_AIRPORT_NAME_MAP || {};
@@ -342,108 +356,181 @@
         return new Date(`${sd}T${String(sh).padStart(2, '0')}:00:00Z`).getTime();
     }
 
-    // 将「N日HH」或「HH」解析为相对起报时间的小时偏移（北京时）
-    function resolveOffset(dayStr, hourStr) {
-        const sh = window.pbState?.startHour || 0;
-        const startBJT = (sh + 8) % 24;
+    function standardFormatTip() {
+        return '标准格式：每行一个机场，例如：\n' +
+            '深圳：5日08-11时有雷雨，12-15时有大风。\n' +
+            '杭州：5日06Z-09Z有小雨。\n' +
+            '说明：无 Z 默认北京时；时间后加 Z 表示世界时/UTC；机场可填中文名或四字码。';
+    }
+
+    // 将「N日HH」或「HH」解析为相对起报世界时的小时偏移。
+    // isUTC=true 表示输入时间为世界时；false 表示北京时。
+    function resolveOffset(dayStr, hourStr, isUTC = false) {
         const startEpoch = startEpochUTC();
         if (startEpoch === null) return -1;
         const hour = parseInt(hourStr, 10);
-        if (isNaN(hour)) return -1;
+        if (isNaN(hour) || hour < 0 || hour > 23) return -1;
+
+        const base = new Date(startEpoch + (isUTC ? 0 : 8 * 3600000));
         if (dayStr) {
-            // 有明确日期：用起报日期所在月拼出目标北京时间点
             const day = parseInt(dayStr, 10);
-            const startDateBJT = new Date(startEpoch + 8 * 3600000);
-            const y = startDateBJT.getUTCFullYear();
-            let m = startDateBJT.getUTCMonth();
-            // 如果目标日小于起报日，视为次月
-            let targetBJT = Date.UTC(y, m, day, hour, 0, 0);
-            if (day < startDateBJT.getUTCDate()) targetBJT = Date.UTC(y, m + 1, day, hour, 0, 0);
-            const targetEpoch = targetBJT - 8 * 3600000;
+            if (isNaN(day) || day < 1 || day > 31) return -1;
+            const y = base.getUTCFullYear();
+            const m = base.getUTCMonth();
+            let targetWall = Date.UTC(y, m, day, hour, 0, 0);
+            if (day < base.getUTCDate()) targetWall = Date.UTC(y, m + 1, day, hour, 0, 0);
+            const targetEpoch = isUTC ? targetWall : targetWall - 8 * 3600000;
             return Math.round((targetEpoch - startEpoch) / 3600000);
         }
-        // 无日期：在 0..validity 范围内找第一个匹配该北京时钟点的偏移
+
         const numCells = (window.pbState?.validityHours || 24) + 1;
+        const startWallHour = isUTC ? (window.pbState?.startHour || 0) : ((window.pbState?.startHour || 0) + 8) % 24;
         for (let i = 0; i < numCells; i++) {
-            if ((startBJT + i) % 24 === hour) return i;
+            if ((startWallHour + i) % 24 === hour) return i;
         }
         return -1;
     }
 
-    function importTextToForecast(text) {
-        if (!window.pbState) { alert('预报状态未就绪，请先刷新预报数据。'); return 0; }
-        if (startEpochUTC() === null) { alert('请先选择起报日期/时间并刷新预报。'); return 0; }
-        const nameToIcao = buildNameToIcao();
-        const numCells = (window.pbState.validityHours || 24) + 1;
-        const lines = (text || '').split(/\n+/).map(s => s.trim()).filter(Boolean);
-        let imported = 0;
-        const unknown = [];
+    function parseForecastLine(line, lineNo, nameToIcao, numCells) {
+        const errors = [];
+        const m = line.match(/^(.+?)[：:]\s*(.+?)[。.]?$/);
+        if (!m) {
+            errors.push({ lineNo, line, reason: '缺少“机场名：预报内容”结构。' });
+            return { errors };
+        }
+        const namePart = m[1].trim();
+        const body = m[2].trim();
+        const icao = nameToIcao[namePart] || (/^[A-Z]{4}$/.test(namePart.toUpperCase()) ? namePart.toUpperCase() : null);
+        if (!icao) {
+            errors.push({ lineNo, line, reason: `无法识别机场“${namePart}”。请使用机场中文名或四字码，如“深圳”或“ZGSZ”。` });
+            return { errors };
+        }
 
-        lines.forEach(line => {
-            const m = line.match(/^(.+?)[：:]\s*(.+?)[。.]?$/);
-            if (!m) return;
-            const namePart = m[1].trim();
-            const body = m[2].trim();
-            const icao = nameToIcao[namePart] || (/^[A-Z]{4}$/.test(namePart.toUpperCase()) ? namePart.toUpperCase() : null);
-            if (!icao) { unknown.push(namePart); return; }
+        const cells = [];
+        for (let i = 0; i < numCells; i++) cells.push({ text: '', bg: 'transparent', fg: '#1e293b', ts: 'none' });
 
-            // 初始化空白一行
-            const cells = [];
-            for (let i = 0; i < numCells; i++) cells.push({ text: '', bg: 'transparent', fg: '#1e293b', ts: 'none' });
+        if (/适航|天气适航/.test(body)) return { icao, cells, note: '适航', errors: [] };
 
-            if (/适航|天气适航/.test(body)) {
-                // 适航：保留空白，备注记为适航
-                window.pbState.confirmedData[icao] = { rows: [cells], notes: ['适航'] };
-                window.pbState.forceShowAirports.add(icao);
-                imported++;
+        const segs = body.split(/[，,；;]/).map(s => s.trim()).filter(Boolean);
+        if (!segs.length) {
+            errors.push({ lineNo, line, reason: '没有识别到时段描述。' });
+            return { errors };
+        }
+
+        let lastDay = null;
+        let applied = 0;
+        segs.forEach(seg => {
+            // 例：5日08-11时有雷雨；5日00Z-03Z有雷雨；5日22时-6日02时有雷雨
+            const r = seg.match(/(?:(\d{1,2})日)?(\d{1,2})(?:时)?(Z)?\s*[-—~至]\s*(?:(\d{1,2})日)?(\d{1,2})(?:时)?(Z)?\s*有?\s*(.+)/i);
+            let startOff = -1, endOff = -1, phenomenon = '';
+            if (r) {
+                const d1 = r[1] || lastDay;
+                const h1 = r[2];
+                const z1 = !!r[3];
+                const d2 = r[4] || r[1] || lastDay;
+                const h2 = r[5];
+                const z2 = !!r[6];
+                const isUTC = z1 || z2;
+                lastDay = r[4] || r[1] || lastDay;
+                startOff = resolveOffset(d1, h1, isUTC);
+                endOff = resolveOffset(d2, h2, isUTC);
+                phenomenon = (r[7] || '').trim();
+            } else {
+                const r2 = seg.match(/(?:(\d{1,2})日)?(\d{1,2})(?:时)?(Z)?\s*有?\s*(.+)/i);
+                if (r2) {
+                    const d1 = r2[1] || lastDay;
+                    const h1 = r2[2];
+                    const isUTC = !!r2[3];
+                    lastDay = r2[1] || lastDay;
+                    startOff = endOff = resolveOffset(d1, h1, isUTC);
+                    phenomenon = (r2[4] || '').trim();
+                }
+            }
+            phenomenon = phenomenon.replace(/[。.、]$/, '').trim();
+            if (startOff < 0 || endOff < 0 || !phenomenon) {
+                errors.push({ lineNo, line, segment: seg, reason: '无法识别时段或天气现象。请写成“5日08-11时有雷雨”或“5日00Z-03Z有雷雨”。' });
                 return;
             }
-
-            // 拆分多个时段片段（以逗号/分号/顿号分隔）
-            const segs = body.split(/[，,；;]/).map(s => s.trim()).filter(Boolean);
-            let lastDay = null;
-            segs.forEach(seg => {
-                // 匹配 「(N日)?HH(时)?-(N日)?HH时 有 XXX」
-                const r = seg.match(/(?:(\d{1,2})日)?(\d{1,2})时?\s*[-—~至]\s*(?:(\d{1,2})日)?(\d{1,2})时\s*有?\s*(.+)/);
-                let startOff = -1, endOff = -1, phenomenon = '';
-                if (r) {
-                    const d1 = r[1] || lastDay; const h1 = r[2];
-                    const d2 = r[3] || r[1] || lastDay; const h2 = r[4];
-                    lastDay = r[3] || r[1] || lastDay;
-                    startOff = resolveOffset(d1, h1);
-                    endOff = resolveOffset(d2, h2);
-                    phenomenon = (r[5] || '').trim();
-                } else {
-                    // 单时点：「(N日)?HH时有XXX」
-                    const r2 = seg.match(/(?:(\d{1,2})日)?(\d{1,2})时\s*有?\s*(.+)/);
-                    if (r2) {
-                        const d1 = r2[1] || lastDay;
-                        lastDay = r2[1] || lastDay;
-                        startOff = endOff = resolveOffset(d1, r2[2]);
-                        phenomenon = (r2[3] || '').trim();
-                    }
-                }
-                if (startOff < 0 || endOff < 0 || !phenomenon) return;
-                phenomenon = phenomenon.replace(/[。.、]$/, '').trim();
-                const lo = Math.max(0, Math.min(startOff, endOff));
-                const hi = Math.min(numCells - 1, Math.max(startOff, endOff));
-                const style = window.getMultiCellStyle ? window.getMultiCellStyle(phenomenon) : { bg: '#dc2626', fg: '#fff', ts: 'none' };
-                for (let i = lo; i <= hi; i++) {
-                    cells[i] = { text: phenomenon, bg: style.bg, fg: style.fg, ts: style.ts || 'none' };
-                }
-            });
-
-            window.pbState.confirmedData[icao] = { rows: [cells], notes: ['/'] };
-            window.pbState.forceShowAirports.add(icao);
-            imported++;
+            if (startOff >= numCells || endOff < 0) {
+                errors.push({ lineNo, line, segment: seg, reason: '时段不在当前预报有效期内。' });
+                return;
+            }
+            const lo = Math.max(0, Math.min(startOff, endOff));
+            const hi = Math.min(numCells - 1, Math.max(startOff, endOff));
+            const style = window.getMultiCellStyle ? window.getMultiCellStyle(phenomenon) : { bg: '#dc2626', fg: '#fff', ts: 'none' };
+            for (let i = lo; i <= hi; i++) cells[i] = { text: phenomenon, bg: style.bg, fg: style.fg, ts: style.ts || 'none' };
+            applied++;
         });
 
-        if (unknown.length) {
-            alert('以下名称未能识别为机场，已跳过：\n' + unknown.join('、'));
+        if (!applied) errors.push({ lineNo, line, reason: '整行没有任何可导入的有效时段。' });
+        return { icao, cells, note: '/', errors };
+    }
+
+    function renderValidationPanel(result) {
+        const panel = document.getElementById('export-text-error-panel');
+        const ta = document.getElementById('export-text-content');
+        if (!panel || !ta) return;
+        if (result.ok) {
+            ta.style.borderColor = '#22c55e';
+            panel.style.display = 'block';
+            panel.style.borderColor = '#bbf7d0';
+            panel.style.background = '#f0fdf4';
+            panel.innerHTML = `<div style="color:#15803d; font-weight:bold;">✅ 纠错检查通过：可导入 ${result.validCount} 个机场。</div>`;
+            return;
         }
+        ta.style.borderColor = '#dc2626';
+        panel.style.display = 'block';
+        panel.style.borderColor = '#fecaca';
+        panel.style.background = '#fff7f7';
+        const rows = result.errors.map(e => `<div style="border-left:4px solid #dc2626; background:#fee2e2; padding:6px 8px; margin:5px 0; border-radius:4px; color:#7f1d1d;">
+            <b>第 ${e.lineNo} 行无法识别：</b>${escapeHtml(e.line || '')}<br>
+            ${e.segment ? `<b>问题片段：</b>${escapeHtml(e.segment)}<br>` : ''}
+            <b>原因：</b>${escapeHtml(e.reason)}
+        </div>`).join('');
+        panel.innerHTML = rows + `<div style="margin-top:8px; color:#92400e; background:#fffbeb; border:1px solid #fde68a; padding:8px; border-radius:4px; white-space:pre-line;">${escapeHtml(standardFormatTip())}</div>`;
+    }
+
+    function escapeHtml(s) {
+        return String(s).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+    }
+
+    function validateImportText(text, showPanel = false) {
+        if (!window.pbState || startEpochUTC() === null) {
+            const result = { ok: false, validCount: 0, errors: [{ lineNo: '-', line: '', reason: '预报状态未就绪，请先选择起报日期/时间并刷新预报。' }] };
+            if (showPanel) renderValidationPanel(result);
+            return result;
+        }
+        const nameToIcao = buildNameToIcao();
+        const numCells = (window.pbState.validityHours || 24) + 1;
+        const lines = (text || '').split(/\n+/).map((raw, idx) => ({ raw: raw.trim(), lineNo: idx + 1 })).filter(x => x.raw);
+        if (!lines.length) {
+            const result = { ok: false, validCount: 0, errors: [{ lineNo: 1, line: '', reason: '请输入需要导入的预报文本。' }] };
+            if (showPanel) renderValidationPanel(result);
+            return result;
+        }
+        const parsed = lines.map(x => parseForecastLine(x.raw, x.lineNo, nameToIcao, numCells));
+        const errors = parsed.flatMap(p => p.errors || []);
+        const validCount = parsed.filter(p => p.icao && !(p.errors || []).length).length;
+        const result = { ok: errors.length === 0, validCount, errors, parsed };
+        if (showPanel) renderValidationPanel(result);
+        return result;
+    }
+
+    function importTextToForecast(text) {
+        const checked = validateImportText(text, false);
+        if (!checked.ok) {
+            renderValidationPanel(checked);
+            return 0;
+        }
+        let imported = 0;
+        checked.parsed.forEach(item => {
+            if (!item.icao) return;
+            window.pbState.confirmedData[item.icao] = { rows: [item.cells], notes: [item.note || '/'] };
+            window.pbState.forceShowAirports.add(item.icao);
+            imported++;
+        });
         if (imported > 0) {
             if (window.saveConfirmedDataToLocal) window.saveConfirmedDataToLocal();
-            // 确保导入的机场出现在分析列表里
             if (Array.isArray(window.currentApAnalysis)) {
                 Object.keys(window.pbState.confirmedData).forEach(icao => {
                     if (!window.currentApAnalysis.some(a => a.icao === icao)) {
