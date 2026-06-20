@@ -1378,17 +1378,24 @@ def _resolve_desktop_dir():
 
 @app.route('/api/export_publish', methods=['POST'])
 def export_publish_api():
-    """预报发布界面导出：保存 PNG 截图，并按“未来24小时天气预报”宏模板生成 xlsm。"""
+    """预报发布导出：图片/Excel 分离；Excel 不依赖外部模板，按模板观感直接生成。"""
     import base64
     try:
         data = request.json or {}
+        mode = (data.get('mode') or 'both').lower()
+        images_b64 = data.get('images') or []
         image_b64 = data.get('image', '')
+        if image_b64 and not images_b64:
+            images_b64 = [image_b64]
         rows = data.get('data', []) or []
         publish_rows = data.get('publish_rows', []) or []
         export_path = (data.get('export_path') or '').strip()
         start_date = (data.get('start_date') or '').strip()
         start_hour = data.get('start_hour')
+        forecaster = data.get('forecaster') or ''
+        icing_text = data.get('icing_text') or '无'
         validity_hours = int(data.get('validity_hours') or 24)
+        hour_count = validity_hours + 1
 
         if export_path:
             target_dir = export_path
@@ -1401,52 +1408,89 @@ def export_publish_api():
             return jsonify({"success": False, "error": f"导出目录无法创建: {target_dir} ({e})"}), 200
 
         ts = datetime.now().strftime('%Y%m%d_%H%M%S')
-        png_path = os.path.join(target_dir, f'24小时天气预报_{ts}.png')
-        xlsx_path = os.path.join(target_dir, f'24小时天气预报_{ts}.xlsx')
         saved = []
 
-        if image_b64:
-            try:
-                if ',' in image_b64:
-                    image_b64 = image_b64.split(',', 1)[1]
-                with open(png_path, 'wb') as f:
-                    f.write(base64.b64decode(image_b64))
-                saved.append(png_path)
-            except Exception as e:
-                LOG.exception("保存预报发布图片失败: %s", e)
+        # 图片导出：支持前端分页切割后的多张图片。
+        if mode in ('image', 'both', '') and images_b64:
+            for idx, img in enumerate(images_b64, start=1):
+                try:
+                    if ',' in img:
+                        img = img.split(',', 1)[1]
+                    suffix = f'_第{idx}页' if len(images_b64) > 1 else ''
+                    png_path = os.path.join(target_dir, f'24小时天气预报_{ts}{suffix}.png')
+                    with open(png_path, 'wb') as f:
+                        f.write(base64.b64decode(img))
+                    saved.append(png_path)
+                except Exception as e:
+                    LOG.exception("保存预报发布图片失败: %s", e)
+                    return jsonify({"success": False, "error": f"预报发布图片写入失败: {e}"}), 200
 
-        if rows or publish_rows:
+        def normalize_publish_rows():
+            data_rows = []
+            if publish_rows:
+                for item in publish_rows:
+                    if not isinstance(item, dict):
+                        continue
+                    name = str(item.get('name') or '').strip()
+                    ap_type = str(item.get('type') or '普通').strip()
+                    vals = [str(v or '').strip() for v in (item.get('values') or [])[:hour_count]]
+                    if len(vals) < hour_count:
+                        vals += [''] * (hour_count - len(vals))
+                    if name:
+                        data_rows.append((name, ap_type or '普通', vals))
+            else:
+                for row in rows:
+                    if not row or len(row) < 4:
+                        continue
+                    name = str(row[0] or '').strip()
+                    ap_type = str(row[1] or '').strip()
+                    marker = str(row[2] or '').strip()
+                    if name in ('名称', '影响机场') or ap_type in ('性质', ''):
+                        continue
+                    if name in ('TAF', 'EC', '天气', '风', '能见度', '温度', '气压') or marker in ('TAF', 'EC'):
+                        continue
+                    vals = [str(v or '').strip() for v in row[4:4+hour_count]]
+                    if len(vals) < hour_count:
+                        vals += [''] * (hour_count - len(vals))
+                    if not any(vals) and marker not in ('适航', '/'):
+                        continue
+                    data_rows.append((name, ap_type or '普通', vals))
+            return data_rows
+
+        # Excel 导出：按用户提供的 xlsm 模板观感复刻，不依赖模板文件。
+        if mode in ('excel', 'both', '') and (rows or publish_rows):
             try:
                 import openpyxl
                 from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
                 from openpyxl.utils import get_column_letter
+
                 wb = openpyxl.Workbook()
                 ws = wb.active
                 ws.title = '24小时天气预报'
 
-                # 不再依赖外部 xlsm 模板文件；直接按原模板版式生成一份可编辑 xlsx。
-                dark_fill = PatternFill('solid', fgColor='4B5563')
-                header_fill = PatternFill('solid', fgColor='5B6770')
-                label_fill = PatternFill('solid', fgColor='F8F9FA')
-                thunder_fill = PatternFill('solid', fgColor='DC2626')
+                # 模板观感：深灰标题、风险色块、细边框、24小时表格+尾部说明。
+                dark = PatternFill('solid', fgColor='4B5563')
+                header = PatternFill('solid', fgColor='5D6D7E')
+                hour_header = PatternFill('solid', fgColor='4A5867')
+                white = PatternFill('solid', fgColor='FFFFFF')
+                zebra = PatternFill('solid', fgColor='F2F4F4')
+                ts_fill = PatternFill('solid', fgColor='DC2626')
                 wind_fill = PatternFill('solid', fgColor='2563EB')
-                snow_fill = PatternFill('solid', fgColor='9CA3AF')
-                vis_fill = PatternFill('solid', fgColor='FFFF00')
-                rain_fill = PatternFill('solid', fgColor='5A8F3A')
+                snow_fill = PatternFill('solid', fgColor='64748B')
+                vis_fill = PatternFill('solid', fgColor='FDE047')
+                rain_fill = PatternFill('solid', fgColor='16A34A')
+                heavy_rain_fill = PatternFill('solid', fgColor='0F766E')
+                cloud_fill = PatternFill('solid', fgColor='F59E0B')
+                other_fill = PatternFill('solid', fgColor='BAE6FD')
                 temp_fill = PatternFill('solid', fgColor='AFC7E8')
-                white_font = Font(color='FFFFFF')
-                bold_font = Font(bold=True)
-                title_font = Font(size=28, bold=True, color='FFFFFF')
-                thin = Side(style='thin', color='D1D5DB')
+                white_font = Font(name='微软雅黑', color='FFFFFF', bold=True)
+                black_font = Font(name='微软雅黑', color='111827')
+                title_font = Font(name='微软雅黑', size=28, bold=True, color='FFFFFF')
+                bold_font = Font(name='微软雅黑', bold=True, color='111827')
+                thin = Side(style='thin', color='95A5A6')
+                med = Side(style='medium', color='34495E')
                 border = Border(left=thin, right=thin, top=thin, bottom=thin)
-
-                ws.merge_cells('A1:AB2')
-                ws['A1'] = '24小时天气预报'
-                ws['A1'].font = title_font
-                ws['A1'].alignment = Alignment(horizontal='center', vertical='center')
-                for row in ws['A1:AB2']:
-                    for cell in row:
-                        cell.fill = dark_fill
+                center = Alignment(horizontal='center', vertical='center', wrap_text=True)
 
                 bjt = None
                 try:
@@ -1456,113 +1500,146 @@ def export_publish_api():
                     bjt = None
                 if bjt is None:
                     bjt = datetime.now()
-                ws['A3'] = '日期（北京时）'
-                ws['C3'] = f"{bjt.year}年{bjt.month}月{bjt.day}日"
-                ws['Z3'] = '预报员：'
-                ws['AA3'] = data.get('forecaster') or ''
-                for cell in ws[3]:
-                    cell.fill = dark_fill
-                    cell.font = white_font
 
-                counters = [('雷暴', 'count-ts', thunder_fill), ('大风', 'count-wind', wind_fill), ('降雪', 'count-snow', snow_fill), ('低能见度', 'count-vis', vis_fill)]
-                for idx, (label, _key, fill) in enumerate(counters, start=10):
-                    ws.cell(3, idx).value = label
-                    ws.cell(4, idx).value = 0
-                    ws.cell(3, idx).fill = fill
-                    ws.cell(4, idx).fill = fill
-                    ws.cell(3, idx).alignment = ws.cell(4, idx).alignment = Alignment(horizontal='center')
+                max_hours = min(hour_count, 25)
+                end_col = 3 + max_hours
+                end_letter = get_column_letter(end_col)
+                ws.merge_cells(start_row=1, start_column=1, end_row=2, end_column=end_col)
+                ws['A1'] = '24小时天气预报' if validity_hours == 24 else f'{validity_hours}小时天气预报'
+                ws['A1'].font = title_font
+                ws['A1'].alignment = center
+                for row in range(1, 3):
+                    for col in range(1, end_col + 1):
+                        ws.cell(row, col).fill = dark
+
+                # 统计栏/日期/预报员，尽量贴近模板第三行布局。
+                ws['A3'] = '日期（北京时）'
+                ws['C3'] = f'{bjt.year}年{bjt.month}月{bjt.day}日'
+                ws.cell(3, max(4, end_col-1)).value = '预报员：'
+                ws.cell(3, end_col).value = forecaster
+                for c in range(1, end_col + 1):
+                    ws.cell(3, c).fill = dark
+                    ws.cell(3, c).font = white_font
+                    ws.cell(3, c).alignment = center
+                    ws.cell(3, c).border = border
+
+                legend_counts = [('雷暴', ts_fill), ('大风', wind_fill), ('降雪', snow_fill), ('低能见度', vis_fill), ('强降水', heavy_rain_fill), ('低云', cloud_fill)]
+                for i, (label, fill) in enumerate(legend_counts):
+                    col = 4 + i * 3
+                    if col + 1 <= end_col:
+                        ws.merge_cells(start_row=4, start_column=col, end_row=4, end_column=col+1)
+                        ws.cell(4, col).value = label
+                        ws.cell(4, col).fill = fill
+                        ws.cell(4, col).font = white_font if fill not in (vis_fill, other_fill, temp_fill) else black_font
+                        ws.cell(4, col).alignment = center
 
                 ws['A5'] = '起报时间'
-                ws['C5'] = f"{bjt.hour}时"
+                ws['C5'] = f'{bjt.hour}时'
+                ws.merge_cells(start_row=6, start_column=1, end_row=6, end_column=2)
                 ws['A6'] = '影响机场'
                 ws['A7'] = '名称'
                 ws['B7'] = '性质'
                 ws['C6'] = '预报时长→'
                 ws['C7'] = '预报时刻→'
-                for c in range(4, 28):
-                    h = (bjt.hour + c - 4) % 24
-                    ws.cell(6, c).value = c - 4
-                    ws.cell(7, c).value = f'{h}时'
+                for i in range(max_hours):
+                    col = 4 + i
+                    ws.cell(6, col).value = i
+                    ws.cell(7, col).value = f'{(bjt.hour + i) % 24}时'
                 for r in range(5, 8):
-                    for c in range(1, 28):
-                        ws.cell(r, c).fill = header_fill
-                        ws.cell(r, c).font = white_font
-                        ws.cell(r, c).alignment = Alignment(horizontal='center', vertical='center')
-                        ws.cell(r, c).border = border
+                    for c in range(1, end_col + 1):
+                        cell = ws.cell(r, c)
+                        cell.fill = header if r != 7 or c < 4 else hour_header
+                        cell.font = white_font
+                        cell.alignment = center
+                        cell.border = Border(left=thin, right=thin, top=thin, bottom=med if r == 7 else thin)
 
-                data_rows = []
-                if publish_rows:
-                    for item in publish_rows:
-                        if not isinstance(item, dict):
-                            continue
-                        name = str(item.get('name') or '').strip()
-                        ap_type = str(item.get('type') or '普通').strip()
-                        vals = [str(v or '').strip() for v in (item.get('values') or [])[:24]]
-                        if name:
-                            data_rows.append((name, ap_type or '普通', vals))
-                else:
-                    for row in rows:
-                        if not row or len(row) < 4:
-                            continue
-                        name = str(row[0] or '').strip()
-                        ap_type = str(row[1] or '').strip()
-                        marker = str(row[2] or '').strip()
-                        if name in ('名称', '影响机场') or ap_type in ('性质', ''):
-                            continue
-                        if name in ('TAF', 'EC', '天气', '风', '能见度', '温度', '气压') or marker in ('TAF', 'EC'):
-                            continue
-                        vals = [str(v or '').strip() for v in row[4:4+24]]
-                        if not any(vals) and marker not in ('适航', '/'):
-                            continue
-                        data_rows.append((name, ap_type or '普通', vals))
+                data_rows = normalize_publish_rows()
 
-                # 按原模板样式输出最多19个机场、24小时预报列。
-                weather_fills = [
-                    ('雷', thunder_fill), ('大风', wind_fill), ('降雪', snow_fill), ('雪', snow_fill),
-                    ('低能见度', vis_fill), ('小雨', rain_fill), ('中雨', rain_fill), ('大雨', rain_fill), ('强降水', rain_fill),
-                    ('℃', temp_fill), ('°C', temp_fill), ('弱雷雨', thunder_fill), ('中雷雨', thunder_fill), ('强雷雨', thunder_fill),
-                ]
-                for idx, (name, ap_type, vals) in enumerate(data_rows[:19], start=8):
+                def fill_for(value):
+                    v = value or ''
+                    if not v or v in ('—', '/', '适航'):
+                        return None, black_font
+                    if '雷' in v or '雹' in v:
+                        return ts_fill, white_font
+                    if any(k in v for k in ('大雨', '暴雨', '强降水')):
+                        return heavy_rain_fill, white_font
+                    if '雨' in v:
+                        return rain_fill, white_font
+                    if '雪' in v or '冻雨' in v or '冰' in v:
+                        return snow_fill, white_font
+                    if '低云' in v:
+                        return cloud_fill, white_font
+                    if v.startswith('W') or '大风' in v or '风' in v:
+                        return wind_fill, white_font
+                    if v.isdigit() or '低能见度' in v or '雾' in v or '霾' in v or '沙' in v or '尘' in v:
+                        return vis_fill, black_font
+                    return other_fill, black_font
+
+                start_row = 8
+                for idx, (name, ap_type, vals) in enumerate(data_rows, start=start_row):
                     ws.cell(idx, 1).value = name
                     ws.cell(idx, 2).value = ap_type
-                    ws.cell(idx, 3).value = vals[0] if vals and vals[0] in ('适航', '晴好') else ''
-                    for c in range(1, 28):
-                        cell = ws.cell(idx, c)
-                        cell.border = border
-                        cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
-                    for j in range(min(24, len(vals))):
-                        value = '' if vals[j] in ('—', '/') else vals[j]
+                    for c in (1, 2, 3):
+                        ws.cell(idx, c).fill = zebra if idx % 2 else white
+                        ws.cell(idx, c).font = bold_font if c == 1 else black_font
+                        ws.cell(idx, c).alignment = center
+                        ws.cell(idx, c).border = border
+                    for j in range(max_hours):
+                        value = vals[j] if j < len(vals) else ''
+                        value = '' if value in ('—', '/') else value
                         cell = ws.cell(idx, 4 + j)
                         cell.value = value
-                        for key, fill in weather_fills:
-                            if value and key in value:
-                                cell.fill = fill
-                                if fill in (thunder_fill, wind_fill, snow_fill, rain_fill):
-                                    cell.font = white_font
-                                break
-                tail_start = 8 + min(len(data_rows), 19) + 1
-                ws.cell(tail_start, 1).value = '地面结冰/极寒条件机场'
-                ws.cell(tail_start, 3).value = data.get('icing_text') or '无'
-                ws.cell(tail_start + 1, 1).value = '颜色说明'
-                legend = [('雷暴', thunder_fill), ('大风', wind_fill), ('降雪', snow_fill), ('低能见度', vis_fill), ('强降水', rain_fill), ('温度', temp_fill)]
-                for offset, (label, fill) in enumerate(legend):
-                    cell = ws.cell(tail_start + 1, 3 + offset * 3)
-                    cell.value = label
-                    cell.fill = fill
-                    cell.alignment = Alignment(horizontal='center')
-                ws.cell(tail_start + 2, 1).value = '发布说明'
-                ws.cell(tail_start + 2, 3).value = '1.本表结论依据指数预报和运行机场TAF报文综合分析。\n2.能见度和云高单位为米，风速单位为米/秒。\n3.大风表示该时次预期最大阵风值。'
-                ws.merge_cells(start_row=tail_start + 2, start_column=3, end_row=tail_start + 4, end_column=27)
+                        fill, font = fill_for(value)
+                        cell.fill = fill or (zebra if idx % 2 else white)
+                        cell.font = font
+                        cell.alignment = center
+                        cell.border = border
 
-                for col in range(1, 28):
-                    ws.column_dimensions[get_column_letter(col)].width = 10 if col >= 4 else 12
-                ws.column_dimensions['A'].width = 12
-                ws.column_dimensions['B'].width = 10
-                ws.column_dimensions['C'].width = 14
-                for row in range(1, tail_start + 5):
-                    ws.row_dimensions[row].height = 22
-                    for col in range(1, 28):
-                        ws.cell(row, col).border = border
+                tail_start = start_row + max(len(data_rows), 1) + 1
+                ws.merge_cells(start_row=tail_start, start_column=1, end_row=tail_start, end_column=2)
+                ws.cell(tail_start, 1).value = '地面结冰/极寒条件机场'
+                ws.cell(tail_start, 3).value = icing_text or '无'
+                ws.merge_cells(start_row=tail_start, start_column=3, end_row=tail_start, end_column=end_col)
+
+                ws.merge_cells(start_row=tail_start+1, start_column=1, end_row=tail_start+1, end_column=2)
+                ws.cell(tail_start+1, 1).value = '颜色说明'
+                legend = [('雷暴', ts_fill, white_font), ('大风', wind_fill, white_font), ('降雪', snow_fill, white_font), ('低能见度', vis_fill, black_font), ('强降水', heavy_rain_fill, white_font), ('低云', cloud_fill, white_font)]
+                col = 3
+                for label, fill, font in legend:
+                    if col > end_col:
+                        break
+                    ws.cell(tail_start+1, col).value = label
+                    ws.cell(tail_start+1, col).fill = fill
+                    ws.cell(tail_start+1, col).font = font
+                    ws.cell(tail_start+1, col).alignment = center
+                    col += 3
+
+                ws.merge_cells(start_row=tail_start+2, start_column=1, end_row=tail_start+4, end_column=2)
+                ws.cell(tail_start+2, 1).value = '发布说明'
+                ws.merge_cells(start_row=tail_start+2, start_column=3, end_row=tail_start+4, end_column=end_col)
+                ws.cell(tail_start+2, 3).value = '1. 本表依据指数预报、TAF报文与运行需求综合生成。\n2. 能见度和云高单位为米，风速单位为米/秒。\n3. 图片导出支持分页切割；Excel导出为可编辑版本。'
+                ws.cell(tail_start+2, 3).alignment = Alignment(horizontal='left', vertical='top', wrap_text=True)
+
+                for r in range(tail_start, tail_start+5):
+                    for c in range(1, end_col + 1):
+                        cell = ws.cell(r, c)
+                        if not cell.fill or cell.fill.fill_type is None:
+                            cell.fill = white
+                        cell.border = border
+                        if cell.alignment is None:
+                            cell.alignment = center
+                for c in range(1, end_col + 1):
+                    ws.column_dimensions[get_column_letter(c)].width = 9 if c >= 4 else (14 if c == 1 else 10)
+                ws.column_dimensions['C'].width = 13
+                ws.row_dimensions[1].height = 36
+                ws.row_dimensions[2].height = 36
+                for r in range(3, tail_start+5):
+                    ws.row_dimensions[r].height = 24
+                ws.row_dimensions[tail_start+2].height = 42
+                ws.freeze_panes = 'D8'
+                ws.sheet_view.showGridLines = False
+
+                xlsx_path = os.path.join(target_dir, f'24小时天气预报_{ts}.xlsx')
                 wb.save(xlsx_path)
                 saved.append(xlsx_path)
             except Exception as e:

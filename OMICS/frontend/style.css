@@ -212,6 +212,9 @@ textarea:focus { border-color: var(--sf-red); outline: none; background: white; 
 #forecast-table th, #forecast-table td { border: 1px solid #95A5A6; text-align: center; white-space: nowrap; overflow: hidden; }
 
 /* 核心：低饱和度深灰蓝表头 */
+#forecast-table thead th { position: sticky; top: 0; z-index: 7; }
+#forecast-table thead tr:nth-child(2) th { top: 33px; }
+#forecast-table thead .col-airport, #forecast-table thead .col-desc { z-index: 9; }
 #forecast-table .col-airport.hdr, #forecast-table .col-desc.hdr, #forecast-table .th-lead {
     background-color: #5D6D7E !important; color: #FFFFFF !important; font-size: 13px; font-weight: bold; padding: 8px 4px; border-bottom: 2px solid #34495E !important;
 }

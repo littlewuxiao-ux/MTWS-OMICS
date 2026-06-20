@@ -111,6 +111,8 @@ const pbState = {
 };
 
 let _nextRowIdx = 0, _cachedAirports = [];
+window.pbState = pbState;
+window.renderPublishTable = function() { renderPublishTableTriRow(window.currentApAnalysis || []); };
 
 // 🌟 需求B：全局统一的保存方法（记录打卡人与时间戳）
 window.saveConfirmedDataToLocal = function() {
@@ -451,6 +453,9 @@ function setupGlobalToolbar() {
             });
             textarea.value = exportLines.join('\n');
         }
+        // 默认回到导出文本页签
+        document.getElementById('export-text-tab-out')?.click();
+        textarea.dataset.mode = 'out';
         modal.style.display = 'flex';
     });
     
@@ -990,6 +995,8 @@ function getMultiCellStyle(value) {
     }
     return { bg: `linear-gradient(to bottom right, ${stops.join(', ')})`, fg: '#ffffff', ts: '1px 1px 2px rgba(0,0,0,0.8)' };
 }
+window.getMultiCellStyle = getMultiCellStyle;
+window.getCellStyleByContent = getCellStyleByContent;
 function processAirportData(apiData) {
   if (!apiData || !apiData.hourly) return null;
   const targetUTC = new Date(`${pbState.startDate}T${String(pbState.startHour).padStart(2, '0')}:00:00Z`).getTime();
