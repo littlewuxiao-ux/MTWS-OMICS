@@ -260,9 +260,9 @@
         if (!header || !workspace) return;
         const h = Math.ceil(header.getBoundingClientRect().height || 0);
         workspace.style.setProperty('--pb-sticky-top', `${h}px`);
-        const firstHeadRow = table?.querySelector('thead tr:first-child');
-        const rowH = Math.ceil(firstHeadRow?.getBoundingClientRect().height || 34);
-        workspace.style.setProperty('--pb-head-row1-height', `${rowH}px`);
+        // 只有表格滚到标题区下面时，时间轴才让出标题区高度；初始状态不顶出空行。
+        const tableTop = table ? table.getBoundingClientRect().top : Infinity;
+        workspace.classList.toggle('pb-head-stuck', tableTop <= h);
     }
 
     // ---- 预览弹窗状态 ----
@@ -443,6 +443,8 @@
     document.addEventListener('DOMContentLoaded', () => {
         updatePublishStickyOffsets();
         window.addEventListener('resize', updatePublishStickyOffsets);
+        window.addEventListener('scroll', updatePublishStickyOffsets, { passive: true });
+        document.getElementById('table-wrapper')?.addEventListener('scroll', updatePublishStickyOffsets, { passive: true });
         const pbHeader = document.getElementById('pb-export-header');
         if (pbHeader) new MutationObserver(updatePublishStickyOffsets).observe(pbHeader, { childList: true, subtree: true, attributes: true });
         document.getElementById('close-export-preview')?.addEventListener('click', () => {

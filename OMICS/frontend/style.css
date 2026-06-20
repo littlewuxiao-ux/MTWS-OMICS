@@ -212,12 +212,14 @@ textarea:focus { border-color: var(--sf-red); outline: none; background: white; 
 #forecast-table th, #forecast-table td { border: 1px solid #95A5A6; text-align: center; white-space: nowrap; overflow: hidden; }
 
 /* 核心：低饱和度深灰蓝表头 */
-#forecast-table thead th { position: sticky; top: var(--pb-sticky-top, 0px); z-index: 80; }
-#forecast-table thead tr:nth-child(2) th { top: calc(var(--pb-sticky-top, 0px) + var(--pb-head-row1-height, 34px)); }
-#forecast-table thead .col-airport, #forecast-table thead .col-airport-type, #forecast-table thead .col-desc { z-index: 90; }
-#forecast-table thead .col-airport { left: 0; }
-#forecast-table thead .col-airport-type { position: sticky; left: 90px; }
-#forecast-table thead .col-desc { left: 140px; }
+#forecast-table thead { position: sticky; top: 0; z-index: 90; }
+#publish-workspace.pb-head-stuck #forecast-table thead { top: var(--pb-sticky-top, 0px); }
+#forecast-table thead th { position: static; z-index: auto; box-sizing: border-box; background-clip: padding-box; }
+#forecast-table thead tr:nth-child(2) th { top: auto; }
+#forecast-table thead .col-airport, #forecast-table thead .col-airport-type, #forecast-table thead .col-desc { z-index: auto; }
+#forecast-table thead .col-airport { left: auto; }
+#forecast-table thead .col-airport-type { position: static; left: auto; }
+#forecast-table thead .col-desc { left: auto; }
 #forecast-table .col-airport.hdr, #forecast-table .col-desc.hdr, #forecast-table .th-lead {
     background-color: #4B5563 !important; color: #FFFFFF !important; font-size: 13px; font-weight: bold; padding: 8px 4px; border-bottom: 2px solid #34495E !important;
 }
@@ -227,11 +229,10 @@ textarea:focus { border-color: var(--sf-red); outline: none; background: white; 
 #publish-workspace .publish-toolbar { position: relative; z-index: 31; }
 
 /* 左侧固定的“机场”与“说明”列 */
-#forecast-table .col-airport { position: sticky; left: 0; width: 90px; min-width: 90px; z-index: 20; font-weight: bold; background-color: #F8F9F9; }
-#forecast-table .col-airport-type { position: sticky; left: 90px; width: 50px; min-width: 50px; z-index: 20; background-color: #FFFFFF; }
-#forecast-table .col-desc { position: sticky; left: 140px; width: 100px; min-width: 100px; z-index: 20; font-size: 11px; color: #64748b; background-color: #FFFFFF; }
+#forecast-table .col-airport { position: sticky; left: 0; width: 90px; min-width: 90px; max-width: 90px; z-index: 20; font-weight: bold; background-color: #F8F9F9; box-sizing: border-box; }
+#forecast-table .col-airport-type { position: sticky; left: 90px; width: 50px; min-width: 50px; max-width: 50px; z-index: 20; background-color: #FFFFFF; box-sizing: border-box; }
+#forecast-table .col-desc { position: sticky; left: 140px; width: 100px; min-width: 100px; max-width: 100px; z-index: 20; font-size: 11px; color: #64748b; background-color: #FFFFFF; box-sizing: border-box; }
 #forecast-table tbody .col-airport, #forecast-table tbody .col-airport-type, #forecast-table tbody .col-desc { z-index: 20; }
-#forecast-table thead .col-airport, #forecast-table thead .col-airport-type, #forecast-table thead .col-desc { z-index: 95; }
 
 /* 数据网格默认底色 (白灰交替) */
 #forecast-table tbody tr.g0 td.td-data { background: #FFFFFF; }
