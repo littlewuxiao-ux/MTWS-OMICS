@@ -256,9 +256,13 @@
     function updatePublishStickyOffsets() {
         const header = document.getElementById('pb-export-header');
         const workspace = document.getElementById('publish-workspace');
+        const table = document.getElementById('forecast-table');
         if (!header || !workspace) return;
         const h = Math.ceil(header.getBoundingClientRect().height || 0);
         workspace.style.setProperty('--pb-sticky-top', `${h}px`);
+        const firstHeadRow = table?.querySelector('thead tr:first-child');
+        const rowH = Math.ceil(firstHeadRow?.getBoundingClientRect().height || 34);
+        workspace.style.setProperty('--pb-head-row1-height', `${rowH}px`);
     }
 
     // ---- 预览弹窗状态 ----

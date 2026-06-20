@@ -1709,7 +1709,7 @@ def export_publish_api():
                 ws.row_dimensions[4].height = 26
                 for r in range(5, last_row + 1):
                     ws.row_dimensions[r].height = 22
-                ws.freeze_panes = 'D9'
+                ws.freeze_panes = None
                 ws.sheet_view.showGridLines = False
 
                 xlsx_path = os.path.join(target_dir, f'24小时天气预报_{ts}.xlsx')
