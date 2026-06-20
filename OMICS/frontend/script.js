@@ -1,4 +1,4 @@
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     const loginBtn = document.getElementById('login-btn');
     const logoutBtn = document.getElementById('logout-btn');
     const exitAppBtn = document.getElementById('exit-app-btn');
@@ -50,6 +50,67 @@ document.addEventListener('DOMContentLoaded', () => {
     const UNIFIED_AUTH_STATUS_URL = '/auth/status';
     const UNIFIED_AUTH_UPDATE_URL = '/auth/update';
     const UNIFIED_AUTH_CLEAR_URL = '/auth/clear';
+    const SETTINGS_CONFIG_URL = '/api/settings_config';
+
+    async function loadSettingsConfigFromServer() {
+        try {
+            const res = await fetch(SETTINGS_CONFIG_URL, { cache: 'no-store' });
+            const data = await res.json();
+            if (data.success && data.data) return data.data;
+        } catch (e) {
+            console.warn('读取系统设置配置文件失败，回退 localStorage', e);
+        }
+        return null;
+    }
+
+    function buildSettingsConfigSnapshot() {
+        return {
+            personnel_dict: personnelDict || {},
+            paths: {
+                taf_excel_path: localStorage.getItem('taf_excel_path') || '',
+                manual_excel_path: localStorage.getItem('manual_excel_path') || '',
+                backup_save_path: localStorage.getItem('backup_save_path') || ''
+            },
+            default_airports: {
+                manual: localStorage.getItem('sf_def_manual_aps') || 'ZBAA ZGSZ ZHEC ZSHC',
+                taf: localStorage.getItem('sf_def_taf_aps') || 'ZHEC'
+            },
+            phenomena_config: phenomenaSettings || {},
+            thresholds: {
+                global: globalThresholds || {},
+                custom_airports: customAirportsThresholds || {}
+            },
+            publish: {
+                airport_groups: localStorage.getItem('pb_airport_groups') ? JSON.parse(localStorage.getItem('pb_airport_groups')) : [],
+                auto_ec_cfg: localStorage.getItem('pb_auto_ec_cfg') ? JSON.parse(localStorage.getItem('pb_auto_ec_cfg')) : {}
+            }
+        };
+    }
+
+    async function saveSettingsConfigToServer(settings) {
+        try {
+            const res = await fetch(SETTINGS_CONFIG_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ settings })
+            });
+            const data = await res.json();
+            if (data.success && data.data) {
+                window.OMICS_SETTINGS_CONFIG = data.data;
+                return data.data;
+            }
+            console.warn('保存系统设置配置文件失败', data.error || data);
+        } catch (e) {
+            console.warn('保存系统设置配置文件失败', e);
+        }
+        return null;
+    }
+
+    function syncSettingsConfigToServer() {
+        return saveSettingsConfigToServer(buildSettingsConfigSnapshot());
+    }
+
+    window.OMICS_syncSettingsConfig = syncSettingsConfigToServer;
 
     async function fetchUnifiedAuthStatus() {
         try {
@@ -170,15 +231,28 @@ document.addEventListener('DOMContentLoaded', () => {
         '强降水(无雷)类': ['RA'], 
         '特殊类': ['GR', 'GS', 'FC', 'SQ'] 
     };
+    const serverSettingsConfig = await loadSettingsConfigFromServer();
+    window.OMICS_SETTINGS_CONFIG = serverSettingsConfig || {};
+    const serverPaths = serverSettingsConfig?.paths || {};
+    const serverDefaultAirports = serverSettingsConfig?.default_airports || {};
+    const serverThresholds = serverSettingsConfig?.thresholds || {};
+    const serverPublish = serverSettingsConfig?.publish || {};
+    if (serverPaths.taf_excel_path) localStorage.setItem('taf_excel_path', serverPaths.taf_excel_path);
+    if (serverPaths.manual_excel_path) localStorage.setItem('manual_excel_path', serverPaths.manual_excel_path);
+    if (serverPaths.backup_save_path) localStorage.setItem('backup_save_path', serverPaths.backup_save_path);
+    if (serverDefaultAirports.manual) localStorage.setItem('sf_def_manual_aps', serverDefaultAirports.manual);
+    if (serverDefaultAirports.taf) localStorage.setItem('sf_def_taf_aps', serverDefaultAirports.taf);
+    if (serverPublish.airport_groups && serverPublish.airport_groups.length) localStorage.setItem('pb_airport_groups', JSON.stringify(serverPublish.airport_groups));
+    if (serverPublish.auto_ec_cfg && Object.keys(serverPublish.auto_ec_cfg).length) localStorage.setItem('pb_auto_ec_cfg', JSON.stringify(serverPublish.auto_ec_cfg));
     
-    let phenomenaSettings = JSON.parse(localStorage.getItem('phenomena_config')) || JSON.parse(JSON.stringify(DEFAULT_PHEN_CATEGORIES));
+    let phenomenaSettings = serverSettingsConfig?.phenomena_config || JSON.parse(localStorage.getItem('phenomena_config')) || JSON.parse(JSON.stringify(DEFAULT_PHEN_CATEGORIES));
     
     const ADMIN_ID = '41060711'; 
     const DEFAULT_PERSONNEL = {
         "40690141": "曹骏", "347657": "崔云云", "41060711": "吴霄",
         "41984815": "杨风良", "41917213": "罗亦杰", "42464638": "张倩", "42623776": "苏永发"
     };
-    let personnelDict = JSON.parse(localStorage.getItem('personnel_dict')) || DEFAULT_PERSONNEL;
+    let personnelDict = { ...DEFAULT_PERSONNEL, ...(serverSettingsConfig?.personnel_dict || {}), ...(JSON.parse(localStorage.getItem('personnel_dict') || '{}')) };
     let settingsPassword = localStorage.getItem('settings_pwd') || '123';
 
     const amdSwitch = document.getElementById('admin-recognize-amd');
@@ -256,6 +330,7 @@ document.addEventListener('DOMContentLoaded', () => {
             personnelDict[newId] = newName;
             localStorage.setItem('personnel_dict', JSON.stringify(personnelDict));
             syncPersonnelMappingToServer();
+            syncSettingsConfigToServer();
             renderPersonnelList();
             document.getElementById('new-emp-id').value = '';
             document.getElementById('new-emp-name').value = '';
@@ -269,6 +344,7 @@ document.addEventListener('DOMContentLoaded', () => {
             delete personnelDict[empId];
             localStorage.setItem('personnel_dict', JSON.stringify(personnelDict));
             syncPersonnelMappingToServer();
+            syncSettingsConfigToServer();
             renderPersonnelList();
             updateDisplayUserName();
         }
@@ -279,6 +355,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (newPwd) {
             settingsPassword = newPwd;
             localStorage.setItem('settings_pwd', settingsPassword);
+            syncSettingsConfigToServer();
             alert("通用设置密码已更新！");
         }
     });
@@ -324,21 +401,21 @@ document.addEventListener('DOMContentLoaded', () => {
         e.target.textContent = "打开中...";
         try {
             const res = await fetch('/api/select_folder'); const data = await res.json();
-            if (data.success) { tafExcelPathInput.value = data.path; localStorage.setItem('taf_excel_path', data.path); }
+            if (data.success) { tafExcelPathInput.value = data.path; localStorage.setItem('taf_excel_path', data.path); syncSettingsConfigToServer(); }
         } catch (err) {} e.target.textContent = "浏览";
     });
     document.getElementById('browse-manual-btn')?.addEventListener('click', async (e) => {
         e.target.textContent = "打开中...";
         try {
             const res = await fetch('/api/select_folder'); const data = await res.json();
-            if (data.success) { manualExcelPathInput.value = data.path; localStorage.setItem('manual_excel_path', data.path); }
+            if (data.success) { manualExcelPathInput.value = data.path; localStorage.setItem('manual_excel_path', data.path); syncSettingsConfigToServer(); }
         } catch (err) {} e.target.textContent = "浏览";
     });
     document.getElementById('browse-backup-btn')?.addEventListener('click', async (e) => {
         e.target.textContent = "打开中...";
         try {
             const res = await fetch('/api/select_folder'); const data = await res.json();
-            if (data.success && backupSavePathInput) { backupSavePathInput.value = data.path; localStorage.setItem('backup_save_path', data.path); }
+            if (data.success && backupSavePathInput) { backupSavePathInput.value = data.path; localStorage.setItem('backup_save_path', data.path); syncSettingsConfigToServer(); }
         } catch (err) {} e.target.textContent = "浏览";
     });
 
@@ -369,6 +446,7 @@ document.addEventListener('DOMContentLoaded', () => {
         renderEvalPersonSelect();
         updateDisplayUserName();
         syncPersonnelMappingToServer();
+        syncSettingsConfigToServer();
     });
 
     const adminDefManual = document.getElementById('admin-default-manual');
@@ -379,6 +457,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('save-default-aps-btn')?.addEventListener('click', () => {
         if (adminDefManual) localStorage.setItem('sf_def_manual_aps', adminDefManual.value.trim());
         if (adminDefTaf) localStorage.setItem('sf_def_taf_aps', adminDefTaf.value.trim());
+        syncSettingsConfigToServer();
         alert("✅ 默认机场配置已保存！");
     });
 
@@ -387,9 +466,9 @@ document.addEventListener('DOMContentLoaded', () => {
     customStartInputEl?.addEventListener('input', updateTimeRangeInputs);
     customEndInputEl?.addEventListener('input', updateTimeRangeInputs);
 
-    let customAirportsThresholds = JSON.parse(localStorage.getItem('sf_custom_ap_thresholds') || '{}');
+    let customAirportsThresholds = serverThresholds.custom_airports || JSON.parse(localStorage.getItem('sf_custom_ap_thresholds') || '{}');
     
-    let globalThresholds = JSON.parse(localStorage.getItem('sf_global_thresholds')) || {
+    let globalThresholds = serverThresholds.global || JSON.parse(localStorage.getItem('sf_global_thresholds')) || {
         vis_takeoff: 400, vis_landing: 800, vis_warning: 1000,
         cld_takeoff: 60, cld_landing: 60, cld_warning: 90, wind_warning: 17
     };
@@ -429,6 +508,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 wind_warning: document.getElementById('wind_warning').value
             };
             localStorage.setItem('sf_global_thresholds', JSON.stringify(globalThresholds));
+            syncSettingsConfigToServer();
             renderGlobalThresholds();
             alert("✅ 全局参数已保存并生效！");
         });
@@ -454,6 +534,7 @@ document.addEventListener('DOMContentLoaded', () => {
     window.deleteCustomApThresh = function(ap) {
         delete customAirportsThresholds[ap];
         localStorage.setItem('sf_custom_ap_thresholds', JSON.stringify(customAirportsThresholds));
+        syncSettingsConfigToServer();
         renderCustomAirports();
     };
 
@@ -470,6 +551,7 @@ document.addEventListener('DOMContentLoaded', () => {
             ww: document.getElementById('wind_warning').value
         };
         localStorage.setItem('sf_custom_ap_thresholds', JSON.stringify(customAirportsThresholds));
+        syncSettingsConfigToServer();
         document.getElementById('custom-thresh-ap').value = '';
         renderCustomAirports();
     });
@@ -515,7 +597,7 @@ document.addEventListener('DOMContentLoaded', () => {
             addBtn.onclick = () => {
                 const val = input.value.trim().toUpperCase();
                 if (val && !codes.includes(val)) {
-                    codes.push(val); localStorage.setItem('phenomena_config', JSON.stringify(phenomenaSettings)); renderPhenomenaSettings();
+                    codes.push(val); localStorage.setItem('phenomena_config', JSON.stringify(phenomenaSettings)); syncSettingsConfigToServer(); renderPhenomenaSettings();
                 }
             };
             inputContainer.appendChild(input); inputContainer.appendChild(addBtn); div.appendChild(inputContainer); phenomenaContainer.appendChild(div);
@@ -524,7 +606,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     resetPhenomenaBtn.onclick = () => {
         if(confirm("确定要重置天气配置为默认值吗？")) {
-            phenomenaSettings = JSON.parse(JSON.stringify(DEFAULT_PHEN_CATEGORIES)); localStorage.removeItem('phenomena_config'); renderPhenomenaSettings();
+            phenomenaSettings = JSON.parse(JSON.stringify(DEFAULT_PHEN_CATEGORIES)); localStorage.removeItem('phenomena_config'); syncSettingsConfigToServer(); renderPhenomenaSettings();
         }
     };
     renderPhenomenaSettings();
@@ -882,6 +964,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (backupSavePathInput) {
         backupSavePathInput.addEventListener('change', () => {
             localStorage.setItem('backup_save_path', backupSavePathInput.value.trim());
+            syncSettingsConfigToServer();
         });
     }
 
@@ -2110,6 +2193,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('backup-save-path')?.addEventListener('change', (e) => {
         localStorage.setItem('backup_save_path', e.target.value.trim());
+        syncSettingsConfigToServer();
     });
 
     handleModeChange(); 

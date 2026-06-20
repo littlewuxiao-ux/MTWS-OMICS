@@ -21,7 +21,81 @@ def resolve_auth_token(provided_token=None):
     return provided_token
 
 PERSONNEL_MAP_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'personnel_mapping.json'))
+SETTINGS_CONFIG_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'runtime', 'settings_config.json'))
 DEFAULT_PERSONNEL_MAP = {"41060711": "吴霄"}
+
+DEFAULT_SETTINGS_CONFIG = {
+    "personnel_dict": dict(DEFAULT_PERSONNEL_MAP),
+    "paths": {
+        "taf_excel_path": "",
+        "manual_excel_path": "",
+        "backup_save_path": ""
+    },
+    "default_airports": {
+        "manual": "ZBAA ZGSZ ZHEC ZSHC",
+        "taf": "ZHEC"
+    },
+    "phenomena_config": {
+        "雷雨类": ["TSRA"],
+        "积冰类": ["FZDZ", "FZRA", "SN", "SG", "PL"],
+        "强降水(无雷)类": ["RA"],
+        "特殊类": ["GR", "GS", "FC", "SQ"]
+    },
+    "thresholds": {
+        "global": {
+            "vis_takeoff": 400,
+            "vis_landing": 800,
+            "vis_warning": 1000,
+            "cld_takeoff": 60,
+            "cld_landing": 60,
+            "cld_warning": 90,
+            "wind_warning": 17
+        },
+        "custom_airports": {}
+    },
+    "publish": {
+        "airport_groups": [],
+        "auto_ec_cfg": {}
+    }
+}
+
+
+def deep_merge_dict(base, extra):
+    """Return a recursive merge without mutating inputs."""
+    merged = copy.deepcopy(base)
+    if not isinstance(extra, dict):
+        return merged
+    for key, value in extra.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = deep_merge_dict(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def load_settings_config():
+    data = copy.deepcopy(DEFAULT_SETTINGS_CONFIG)
+    # Keep backward compatibility with the older standalone personnel mapping file.
+    data["personnel_dict"] = deep_merge_dict(data.get("personnel_dict", {}), load_personnel_mapping())
+    try:
+        if os.path.exists(SETTINGS_CONFIG_PATH):
+            with open(SETTINGS_CONFIG_PATH, 'r', encoding='utf-8') as f:
+                saved = json.load(f)
+            data = deep_merge_dict(data, saved)
+    except Exception as exc:
+        LOG.warning("读取系统设置配置失败: %s", exc)
+    return data
+
+
+def save_settings_config(settings):
+    data = deep_merge_dict(DEFAULT_SETTINGS_CONFIG, settings if isinstance(settings, dict) else {})
+    # Also keep personnel_mapping.json in sync for launcher/legacy readers.
+    if isinstance(data.get("personnel_dict"), dict):
+        save_personnel_mapping(data["personnel_dict"])
+    os.makedirs(os.path.dirname(SETTINGS_CONFIG_PATH), exist_ok=True)
+    with open(SETTINGS_CONFIG_PATH, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    return data
 
 
 def load_personnel_mapping():
@@ -849,8 +923,32 @@ def personnel_mapping_api():
     mapping = data.get('mapping', data)
     try:
         saved = save_personnel_mapping(mapping)
+        # Mirror legacy personnel mapping changes into the unified settings file when present.
+        try:
+            cfg = load_settings_config()
+            cfg['personnel_dict'] = saved
+            save_settings_config(cfg)
+        except Exception as sync_exc:
+            LOG.warning("同步人员映射到统一设置失败: %s", sync_exc)
         return jsonify({"success": True, "data": saved})
     except Exception as exc:
+        return jsonify({"success": False, "error": str(exc)}), 200
+
+@app.route('/api/settings_config', methods=['GET', 'POST'])
+def settings_config_api():
+    """Persist system settings outside browser localStorage.
+
+    Airport dictionary remains in frontend/airports.js via /api/save_airports.
+    """
+    if request.method == 'GET':
+        return jsonify({"success": True, "data": load_settings_config()})
+    payload = request.get_json(silent=True) or {}
+    settings = payload.get('settings', payload)
+    try:
+        saved = save_settings_config(settings)
+        return jsonify({"success": True, "data": saved})
+    except Exception as exc:
+        LOG.warning("保存系统设置配置失败: %s", exc)
         return jsonify({"success": False, "error": str(exc)}), 200
 
 @app.route('/api/auth/offline_login', methods=['POST'])

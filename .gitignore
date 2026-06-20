@@ -15,7 +15,10 @@ dist/
 # ==== Runtime logs / caches ====
 logs/
 *.log
-runtime/
+runtime/*
+!runtime/
+!OMICS/runtime/
+!OMICS/runtime/settings_config.json
 *.tmp
 *.bak
 

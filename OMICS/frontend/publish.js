@@ -128,11 +128,14 @@ window.initPublishModule = async function() {
     window.publishInitialized = true;
     PBLOG('initPublishModule 开始初始化');
 
-    let savedGroups = localStorage.getItem('pb_airport_groups');
+    const settingsConfig = window.OMICS_SETTINGS_CONFIG || {};
+    const publishConfig = settingsConfig.publish || {};
+    let savedGroups = publishConfig.airport_groups && publishConfig.airport_groups.length ? JSON.stringify(publishConfig.airport_groups) : localStorage.getItem('pb_airport_groups');
     pbState.airportGroups = savedGroups ? JSON.parse(savedGroups) : DEFAULT_AIRPORT_GROUPS;
+    if (publishConfig.airport_groups && publishConfig.airport_groups.length) localStorage.setItem('pb_airport_groups', JSON.stringify(publishConfig.airport_groups));
     
     // 🌟 需求C：加载极寒积冰历史设置
-    const savedEcCfg = JSON.parse(localStorage.getItem('pb_auto_ec_cfg'));
+    const savedEcCfg = publishConfig.auto_ec_cfg && Object.keys(publishConfig.auto_ec_cfg).length ? publishConfig.auto_ec_cfg : JSON.parse(localStorage.getItem('pb_auto_ec_cfg'));
     if (savedEcCfg) {
         pbState.cfgIceTemp = savedEcCfg.iceTemp; pbState.cfgIceDew = savedEcCfg.iceDew;
         pbState.cfgIceVis = savedEcCfg.iceVis; pbState.cfgExtColdTemp = savedEcCfg.extCold;
@@ -529,6 +532,7 @@ function saveAirportGroupsConfig() {
     });
     pbState.airportGroups = newGroups;
     localStorage.setItem('pb_airport_groups', JSON.stringify(newGroups));
+    if (typeof window.OMICS_syncSettingsConfig === 'function') window.OMICS_syncSettingsConfig();
 }
 
 function populateModalForm() {
@@ -583,6 +587,7 @@ function saveModalForm() {
       iceTemp: pbState.cfgIceTemp, iceDew: pbState.cfgIceDew,
       iceVis: pbState.cfgIceVis, extCold: pbState.cfgExtColdTemp
   }));
+  if (typeof window.OMICS_syncSettingsConfig === 'function') window.OMICS_syncSettingsConfig();
 
   saveAirportGroupsConfig(); 
   

@@ -1,0 +1,42 @@
+{
+  "personnel_dict": {
+    "41060711": "吴霄",
+    "347657": "崔云云",
+    "40690141": "曹骏",
+    "41917213": "罗亦杰",
+    "41984815": "杨风良",
+    "42464638": "张倩",
+    "42623776": "苏永发"
+  },
+  "paths": {
+    "taf_excel_path": "",
+    "manual_excel_path": "",
+    "backup_save_path": ""
+  },
+  "default_airports": {
+    "manual": "ZBAA ZGSZ ZHEC ZSHC",
+    "taf": "ZHEC"
+  },
+  "phenomena_config": {
+    "雷雨类": ["TSRA"],
+    "积冰类": ["FZDZ", "FZRA", "SN", "SG", "PL"],
+    "强降水(无雷)类": ["RA"],
+    "特殊类": ["GR", "GS", "FC", "SQ"]
+  },
+  "thresholds": {
+    "global": {
+      "vis_takeoff": 400,
+      "vis_landing": 800,
+      "vis_warning": 1000,
+      "cld_takeoff": 60,
+      "cld_landing": 60,
+      "cld_warning": 90,
+      "wind_warning": 17
+    },
+    "custom_airports": {}
+  },
+  "publish": {
+    "airport_groups": [],
+    "auto_ec_cfg": {}
+  }
+}
