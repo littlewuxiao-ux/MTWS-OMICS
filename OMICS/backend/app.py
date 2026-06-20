@@ -1564,10 +1564,15 @@ def export_publish_api():
                 ws['A4'].font = white_font
                 ws['C4'].font = white_font
                 ws['C4'].alignment = center_nowrap
-                ws.cell(5, max(4, end_col-3)).value = '\u9884\u62a5\u5458\uff1a'
-                ws.cell(5, max(5, end_col-2)).value = forecaster
-                ws.cell(5, max(4, end_col-3)).font = white_font
-                ws.cell(5, max(5, end_col-2)).font = white_font
+                forecaster_label_col = max(4, end_col - 3)
+                ws.merge_cells(start_row=5, start_column=forecaster_label_col, end_row=5, end_column=forecaster_label_col + 1)
+                ws.merge_cells(start_row=5, start_column=forecaster_label_col + 2, end_row=5, end_column=end_col)
+                ws.cell(5, forecaster_label_col).value = '\u9884\u62a5\u5458\uff1a'
+                ws.cell(5, forecaster_label_col + 2).value = forecaster
+                ws.cell(5, forecaster_label_col).font = white_font
+                ws.cell(5, forecaster_label_col + 2).font = white_font
+                ws.cell(5, forecaster_label_col).alignment = center
+                ws.cell(5, forecaster_label_col + 2).alignment = center
 
                 # 6-8??????????????
                 ws.merge_cells(start_row=6, start_column=1, end_row=6, end_column=2)
@@ -1591,6 +1596,10 @@ def export_publish_api():
                         cell.alignment = center
                         cell.border = border
 
+                # ???????????3?????????????????????????????
+                max_text_len = max([len(str(v or '')) for _, _, vals in data_rows for v in vals[:max_hours]] + [0])
+                data_font_size = 11 if max_text_len <= 3 else (10 if max_text_len <= 4 else (9 if max_text_len <= 6 else 8))
+
                 start_row = 9
                 for idx, (name, ap_type, vals) in enumerate(data_rows, start=start_row):
                     ws.cell(idx, 1).value = name
@@ -1607,8 +1616,8 @@ def export_publish_api():
                         cell.value = value
                         fill, font = fill_for(value)
                         cell.fill = fill or white
-                        cell.font = font
-                        cell.alignment = center
+                        cell.font = Font(name=font_name, size=data_font_size, bold=True, color=(font.color.rgb[-6:] if getattr(font.color, 'rgb', None) else '111827'))
+                        cell.alignment = center_nowrap
                         cell.border = border
 
                 tail_start = start_row + max(len(data_rows), 1) + 1
@@ -1677,6 +1686,12 @@ def export_publish_api():
                     right_cell = ws.cell(r, end_col)
                     left_cell.border = Border(left=thick, right=left_cell.border.right, top=left_cell.border.top, bottom=left_cell.border.bottom)
                     right_cell.border = Border(left=right_cell.border.left, right=thick, top=right_cell.border.top, bottom=right_cell.border.bottom)
+
+                for r in range(1, 6):
+                    c_cell = ws.cell(r, 3)
+                    d_cell = ws.cell(r, 4)
+                    c_cell.border = Border(left=c_cell.border.left, right=Side(style=None), top=c_cell.border.top, bottom=c_cell.border.bottom)
+                    d_cell.border = Border(left=Side(style=None), right=d_cell.border.right, top=d_cell.border.top, bottom=d_cell.border.bottom)
 
                 for c in range(1, end_col + 1):
                     if c == 1:

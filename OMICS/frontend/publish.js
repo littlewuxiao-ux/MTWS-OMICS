@@ -1308,9 +1308,9 @@ function renderPublishTableTriRow(apAnalysis) {
     const cellStyle = isWide ? 'width:40px; min-width:40px;' : 'width:auto; min-width:25px;';
 
     const thead = document.createElement('thead');
-    let trLead1 = `<tr><th class="col-airport hdr" colspan="2" style="width:140px; border-bottom:1px solid #4B5563; background-color:#4B5563; color:#fff;">影响机场</th><th class="col-desc hdr" rowspan="2" colspan="2" style="width:100px; border-bottom:1px solid #4B5563; background-color:#4B5563; color:#fff;">备注</th>`;
+    let trLead1 = `<tr><th class="col-airport hdr" colspan="2" style="width:140px; min-width:140px; border-bottom:1px solid #4B5563; background-color:#4B5563; color:#fff;">影响机场</th><th class="col-desc hdr" rowspan="2" colspan="2" style="width:100px; min-width:100px; border-bottom:1px solid #4B5563; background-color:#4B5563; color:#fff;">备注</th>`;
     for (let i = 0; i < numCells; i++) trLead1 += `<th class="col-time th-lead" style="${cellStyle}">${i}h</th>`;
-    trLead1 += `</tr><tr><th class="col-airport hdr" style="width:90px; border-top:1px solid #4B5563; border-right:1px solid #4B5563; background-color:#4B5563; color:#fff;">名称</th><th class="col-airport hdr" style="width:50px; border-top:1px solid #4B5563; background-color:#4B5563; color:#fff;">性质</th>`;
+    trLead1 += `</tr><tr><th class="col-airport hdr" style="width:90px; min-width:90px; border-top:1px solid #4B5563; border-right:1px solid #4B5563; background-color:#4B5563; color:#fff;">名称</th><th class="col-airport-type hdr" style="width:50px; min-width:50px; border-top:1px solid #4B5563; background-color:#4B5563; color:#fff;">性质</th>`;
     for (let i = 0; i < numCells; i++) {
         const bjtHour = (sH + i + 8) % 24; 
         trLead1 += `<th class="col-time th-hour" style="${cellStyle} background:#4B5563; color:#E2E8F0;">${String(bjtHour).padStart(2, '0')}时</th>`;
@@ -1381,7 +1381,7 @@ function renderPublishTableTriRow(apAnalysis) {
 
         trEdit.innerHTML = `
             <td class="col-airport td-airport" rowspan="1" draggable="true" data-icao="${icao}" title="${tafRaw || '无TAF报文'}" style="font-weight:bold; vertical-align:middle; cursor:move; position:sticky; ${isGray?'color:#94a3b8;':''}">${apName}<button class="airport-delete-x" data-icao="${icao}" title="删除该机场">×</button></td>
-            <td rowspan="1" style="vertical-align:middle; border-right:2px solid #cbd5e1;">${apType}</td>
+            <td rowspan="1" class="col-airport-type" style="vertical-align:middle; border-right:2px solid #cbd5e1;">${apType}</td>
             ${srcOpHTML}
         `;
         
@@ -2098,7 +2098,7 @@ function setupAirportInteraction() {
           <td class="col-airport td-airport" style="padding:0;">
               <input type="text" class="new-ap-input" placeholder="输完回车" style="width:100%; height:100%; min-height:30px; box-sizing:border-box; text-align:center; text-transform:uppercase; font-weight:bold; border:2px solid #0f766e; outline:none;">
           </td>
-          <td style="vertical-align:middle; border-right:2px solid #cbd5e1;">普通</td>
+          <td class="col-airport-type" style="vertical-align:middle; border-right:2px solid #cbd5e1;">普通</td>
           <td colspan="2" class="col-desc td-desc" style="font-size:10px; color:#888;">(失焦取消)</td>
       `;
       for(let i=0; i<numCells; i++) html += `<td class="col-time td-data" style="width:auto; min-width:25px;"></td>`;
