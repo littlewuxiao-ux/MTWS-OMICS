@@ -145,6 +145,14 @@
         wrap.style.width = `${tableWidth}px`;
         tbl.style.width = `${tableWidth}px`;
 
+        // 统一导出图片中表头/名称/性质/备注/时间轴背景色，与“24小时天气预报”黑灰背景一致。
+        tbl.querySelectorAll('thead th, th.col-airport, th.col-desc, th.th-lead, th.th-hour').forEach(c => {
+            c.style.background = '#4B5563';
+            c.style.backgroundColor = '#4B5563';
+            c.style.color = '#fff';
+            c.style.borderColor = 'rgba(148, 163, 184, 0.55)';
+        });
+
         // sticky 在截图里会错位，统一取消；同时把字体/换行压到适合图片输出，避免内容撑破单元格。
         tbl.querySelectorAll('th, td').forEach(c => {
             c.style.position = 'static';

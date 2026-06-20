@@ -1308,12 +1308,12 @@ function renderPublishTableTriRow(apAnalysis) {
     const cellStyle = isWide ? 'width:40px; min-width:40px;' : 'width:auto; min-width:25px;';
 
     const thead = document.createElement('thead');
-    let trLead1 = `<tr><th class="col-airport hdr" colspan="2" style="width:140px; border-bottom:1px solid #c8d5e5; background-color:#5D6D7E; color:#fff;">影响机场</th><th class="col-desc hdr" rowspan="2" colspan="2" style="width:100px; border-bottom:1px solid #c8d5e5; background-color:#5D6D7E; color:#fff;">备注</th>`;
+    let trLead1 = `<tr><th class="col-airport hdr" colspan="2" style="width:140px; border-bottom:1px solid #4B5563; background-color:#4B5563; color:#fff;">影响机场</th><th class="col-desc hdr" rowspan="2" colspan="2" style="width:100px; border-bottom:1px solid #4B5563; background-color:#4B5563; color:#fff;">备注</th>`;
     for (let i = 0; i < numCells; i++) trLead1 += `<th class="col-time th-lead" style="${cellStyle}">${i}h</th>`;
-    trLead1 += `</tr><tr><th class="col-airport hdr" style="width:90px; border-top:1px solid #c8d5e5; border-right:1px solid #c8d5e5; background-color:#5D6D7E; color:#fff;">名称</th><th class="col-airport hdr" style="width:50px; border-top:1px solid #c8d5e5; background-color:#5D6D7E; color:#fff;">性质</th>`;
+    trLead1 += `</tr><tr><th class="col-airport hdr" style="width:90px; border-top:1px solid #4B5563; border-right:1px solid #4B5563; background-color:#4B5563; color:#fff;">名称</th><th class="col-airport hdr" style="width:50px; border-top:1px solid #4B5563; background-color:#4B5563; color:#fff;">性质</th>`;
     for (let i = 0; i < numCells; i++) {
         const bjtHour = (sH + i + 8) % 24; 
-        trLead1 += `<th class="col-time th-hour" style="${cellStyle} background:#e2e8f0; color:#333;">${String(bjtHour).padStart(2, '0')}时</th>`;
+        trLead1 += `<th class="col-time th-hour" style="${cellStyle} background:#4B5563; color:#E2E8F0;">${String(bjtHour).padStart(2, '0')}时</th>`;
     }
     trLead1 += `</tr>`;
     thead.innerHTML = trLead1;

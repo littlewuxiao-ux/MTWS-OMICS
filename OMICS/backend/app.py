@@ -1486,6 +1486,7 @@ def export_publish_api():
                 bold_font = Font(name=font_name, bold=True, color='111827')
                 thin = Side(style='thin', color='95A5A6')
                 med = Side(style='medium', color='34495E')
+                thick = Side(style='medium', color='000000')
                 border = Border(left=thin, right=thin, top=thin, bottom=thin)
                 center = Alignment(horizontal='center', vertical='center', wrap_text=True)
                 center_nowrap = Alignment(horizontal='center', vertical='center', wrap_text=False)
@@ -1500,7 +1501,7 @@ def export_publish_api():
                     bjt = datetime.now()
 
                 max_hours = min(hour_count, 25)
-                end_col = 3 + max_hours
+                end_col = 3 + max_hours  # 24??+?????? AB
                 data_rows = normalize_publish_rows()
 
                 def fill_for(value):
@@ -1534,32 +1535,27 @@ def export_publish_api():
                 ]
                 count_map = {label: sum(1 for _, _, vals in data_rows if any(pred(v or '') for v in vals[:max_hours])) for label, _, _, pred in legend_defs}
 
+                # 1-5????????/???????????????
                 ws.merge_cells(start_row=1, start_column=1, end_row=2, end_column=end_col)
                 ws['A1'] = '\u672a\u676524\u5c0f\u65f6\u5929\u6c14\u9884\u62a5' if validity_hours == 24 else f'\u672a\u6765{validity_hours}\u5c0f\u65f6\u5929\u6c14\u9884\u62a5'
                 ws['A1'].font = title_font
                 ws['A1'].alignment = center
-                for row in range(1, 9):
-                    for col in range(1, end_col + 1):
-                        ws.cell(row, col).fill = dark
-                        ws.cell(row, col).alignment = center
+                for r in range(1, 6):
+                    for c in range(1, end_col + 1):
+                        ws.cell(r, c).fill = dark
+                        ws.cell(r, c).alignment = center
 
-                usable_start, usable_end = 4, end_col
-                usable_cols = max(1, usable_end - usable_start + 1)
-                base = usable_cols // len(legend_defs)
-                extra = usable_cols % len(legend_defs)
-                col = usable_start
-                for idx, (label, fill, font, _) in enumerate(legend_defs):
-                    width = max(2, base + (1 if idx < extra else 0))
-                    span_end = min(usable_end, col + width - 1)
-                    if col > usable_end:
+                # ?3-4??????????2???D?AB????????????????
+                legend_cols = [4, 7, 10, 13, 16, 19, 22]
+                for (label, fill, font, _), c in zip(legend_defs, legend_cols):
+                    if c + 1 > end_col:
                         break
-                    ws.merge_cells(start_row=3, start_column=col, end_row=4, end_column=span_end)
-                    cell = ws.cell(3, col)
+                    ws.merge_cells(start_row=3, start_column=c, end_row=4, end_column=c+1)
+                    cell = ws.cell(3, c)
                     cell.value = f'{label}\n{count_map.get(label, 0)}'
                     cell.fill = fill
                     cell.font = font
                     cell.alignment = center
-                    col = span_end + 1
 
                 ws.merge_cells(start_row=4, start_column=1, end_row=5, end_column=2)
                 ws.merge_cells(start_row=4, start_column=3, end_row=5, end_column=3)
@@ -1573,6 +1569,7 @@ def export_publish_api():
                 ws.cell(5, max(4, end_col-3)).font = white_font
                 ws.cell(5, max(5, end_col-2)).font = white_font
 
+                # 6-8??????????????
                 ws.merge_cells(start_row=6, start_column=1, end_row=6, end_column=2)
                 ws['A6'] = '\u8d77\u62a5\u65f6\u95f4'
                 ws['C6'] = f'{bjt.hour}\u65f6'
@@ -1592,7 +1589,7 @@ def export_publish_api():
                         cell.fill = dark
                         cell.font = white_font
                         cell.alignment = center
-                        cell.border = Border(left=thin, right=thin, top=thin, bottom=med if r == 8 else thin)
+                        cell.border = border
 
                 start_row = 9
                 for idx, (name, ap_type, vals) in enumerate(data_rows, start=start_row):
@@ -1615,60 +1612,88 @@ def export_publish_api():
                         cell.border = border
 
                 tail_start = start_row + max(len(data_rows), 1) + 1
-                for rr in (tail_start, tail_start + 1, tail_start + 3):
-                    ws.merge_cells(start_row=rr, start_column=1, end_row=rr, end_column=3)
-                    ws.cell(rr, 1).font = bold_font
-                    ws.cell(rr, 1).alignment = center
-
+                ws.merge_cells(start_row=tail_start, start_column=1, end_row=tail_start, end_column=3)
                 ws.cell(tail_start, 1).value = '\u5730\u9762\u7ed3\u51b0\u6761\u4ef6/\u6781\u5bd2\u6761\u4ef6'
+                ws.cell(tail_start, 1).font = bold_font
+                ws.cell(tail_start, 1).alignment = center
                 ws.merge_cells(start_row=tail_start, start_column=4, end_row=tail_start, end_column=end_col)
                 ws.cell(tail_start, 4).value = icing_text or '\u65e0'
                 ws.cell(tail_start, 4).font = bold_font
                 ws.cell(tail_start, 4).alignment = Alignment(horizontal='left', vertical='center', wrap_text=True)
 
-                ws.cell(tail_start+1, 1).value = '\u989c\u8272\u8bf4\u660e'
+                color_row = tail_start + 1
+                ws.merge_cells(start_row=color_row, start_column=1, end_row=color_row, end_column=3)
+                ws.cell(color_row, 1).value = '\u989c\u8272\u8bf4\u660e'
+                ws.cell(color_row, 1).font = bold_font
+                ws.cell(color_row, 1).alignment = center
                 col = 4
                 for label, fill, font, _ in legend_defs:
                     if col > end_col:
                         break
-                    ws.cell(tail_start+1, col).fill = fill
+                    ws.cell(color_row, col).fill = fill
+                    ws.cell(color_row, col).border = Border(top=thin, bottom=thin)
                     desc_end = min(end_col, col + 2)
                     if col + 1 <= desc_end:
-                        ws.merge_cells(start_row=tail_start+1, start_column=col+1, end_row=tail_start+1, end_column=desc_end)
-                        ws.cell(tail_start+1, col+1).value = label
-                        ws.cell(tail_start+1, col+1).alignment = center
-                        ws.cell(tail_start+1, col+1).font = black_font
+                        ws.merge_cells(start_row=color_row, start_column=col+1, end_row=color_row, end_column=desc_end)
+                        ws.cell(color_row, col+1).value = label
+                        ws.cell(color_row, col+1).alignment = center
+                        ws.cell(color_row, col+1).font = black_font
                     col += 3
+                for c in range(1, end_col + 1):
+                    ws.cell(color_row, c).border = Border(top=thin, bottom=thin)
 
-                ws.merge_cells(start_row=tail_start+3, start_column=1, end_row=tail_start+5, end_column=3)
-                ws.cell(tail_start+3, 1).value = '\u53d1\u5e03\u8bf4\u660e'
-                ws.merge_cells(start_row=tail_start+3, start_column=4, end_row=tail_start+5, end_column=end_col)
-                ws.cell(tail_start+3, 4).value = '1. \u672c\u8868\u7ed3\u8bba\u4f9d\u636e\u6570\u503c\u9884\u62a5\u548c\u8fd0\u884c\u673a\u573aTAF\u62a5\u6587\u7efc\u5408\u5206\u6790\uff0c\u5982\u6709\u7591\u95ee\u54a8\u8be2AOC\u6c14\u8c61\u670d\u52a1\u5e2d\u3002\n2. \u80fd\u89c1\u5ea6\u548c\u4e91\u9ad8\u5355\u4f4d\u4e3a\u201c\u7c73\u201d\u3001\u98ce\u901f\u5355\u4f4d\u4e3a\u201c\u7c73/\u79d2\u201d\u3002\n3. \u5927\u98ce\u8868\u793a\u8be5\u65f6\u6b21\u9884\u671f\u6700\u5927\u9635\u98ce\u503c\uff0c\u683c\u5f0f\u201cdddf\u201d\uff0c\u4e3e\u4f8b\uff1aNNE18\u5373\u4e1c\u5317\u504f\u5317\u98ce18\u7c73/\u79d2\u3002'
-                ws.cell(tail_start+3, 4).alignment = Alignment(horizontal='left', vertical='top', wrap_text=True)
-
-                for r in list(range(tail_start, tail_start+1)) + list(range(tail_start+3, tail_start+6)):
+                notes = [
+                    '1. \u672c\u8868\u7ed3\u8bba\u4f9d\u636e\u6570\u503c\u9884\u62a5\u548c\u8fd0\u884c\u673a\u573aTAF\u62a5\u6587\u7efc\u5408\u5206\u6790\uff0c\u5982\u6709\u7591\u95ee\u54a8\u8be2AOC\u6c14\u8c61\u670d\u52a1\u5e2d\u3002',
+                    '2. \u80fd\u89c1\u5ea6\u548c\u4e91\u9ad8\u5355\u4f4d\u4e3a\u201c\u7c73\u201d\u3001\u98ce\u901f\u5355\u4f4d\u4e3a\u201c\u7c73/\u79d2\u201d\u3002',
+                    '3. \u5927\u98ce\u8868\u793a\u8be5\u65f6\u6b21\u9884\u671f\u6700\u5927\u9635\u98ce\u503c\uff0c\u683c\u5f0f\u201cdddf\u201d\uff0c\u4e3e\u4f8b\uff1aNNE18\u5373\u4e1c\u5317\u504f\u5317\u98ce18\u7c73/\u79d2\u3002'
+                ]
+                note_start = color_row + 1
+                ws.merge_cells(start_row=note_start, start_column=1, end_row=note_start + len(notes) - 1, end_column=3)
+                ws.cell(note_start, 1).value = '\u53d1\u5e03\u8bf4\u660e'
+                ws.cell(note_start, 1).font = bold_font
+                ws.cell(note_start, 1).alignment = center
+                for i, note in enumerate(notes):
+                    r = note_start + i
+                    ws.merge_cells(start_row=r, start_column=4, end_row=r, end_column=end_col)
+                    ws.cell(r, 4).value = note
+                    ws.cell(r, 4).alignment = Alignment(horizontal='left', vertical='center', wrap_text=False)
                     for c in range(1, end_col + 1):
-                        cell = ws.cell(r, c)
-                        if not cell.fill or cell.fill.fill_type is None:
-                            cell.fill = white
-                        cell.border = border
-                        if cell.alignment is None:
-                            cell.alignment = center
-                for c in range(1, 4):
-                    ws.cell(tail_start+1, c).border = border
-                    ws.cell(tail_start+1, c).fill = white
-                for c in range(4, end_col + 1):
-                    ws.cell(tail_start+1, c).border = Border()
+                        ws.cell(r, c).border = Border(top=thin, bottom=thin)
+
+                # ????????????/????????????
+                for c in range(1, end_col + 1):
+                    ws.cell(tail_start, c).border = border
+
+                last_row = note_start + len(notes) - 1
+
+                # ???????????????????????????
+                for c in range(1, end_col + 1):
+                    top_cell = ws.cell(1, c)
+                    top_cell.border = Border(left=top_cell.border.left, right=top_cell.border.right, top=thick, bottom=top_cell.border.bottom)
+                    bottom_cell = ws.cell(last_row, c)
+                    bottom_cell.border = Border(left=bottom_cell.border.left, right=bottom_cell.border.right, top=bottom_cell.border.top, bottom=thick)
+                for r in range(1, last_row + 1):
+                    left_cell = ws.cell(r, 1)
+                    right_cell = ws.cell(r, end_col)
+                    left_cell.border = Border(left=thick, right=left_cell.border.right, top=left_cell.border.top, bottom=left_cell.border.bottom)
+                    right_cell.border = Border(left=right_cell.border.left, right=thick, top=right_cell.border.top, bottom=right_cell.border.bottom)
 
                 for c in range(1, end_col + 1):
-                    ws.column_dimensions[get_column_letter(c)].width = 9 if c >= 4 else (15 if c in (1, 2) else 19)
+                    if c == 1:
+                        width = 15
+                    elif c == 2:
+                        width = 12
+                    elif c == 3:
+                        width = 19
+                    else:
+                        width = 6.2
+                    ws.column_dimensions[get_column_letter(c)].width = width
                 ws.row_dimensions[1].height = 58
-                ws.row_dimensions[2].height = 20
-                for r in range(3, tail_start+6):
-                    ws.row_dimensions[r].height = 24
-                ws.row_dimensions[3].height = 28
-                ws.row_dimensions[4].height = 28
-                ws.row_dimensions[tail_start+3].height = 42
+                ws.row_dimensions[2].height = 18
+                ws.row_dimensions[3].height = 26
+                ws.row_dimensions[4].height = 26
+                for r in range(5, last_row + 1):
+                    ws.row_dimensions[r].height = 22
                 ws.freeze_panes = 'D9'
                 ws.sheet_view.showGridLines = False
 
