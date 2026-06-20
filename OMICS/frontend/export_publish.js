@@ -60,8 +60,18 @@
     }
 
     // 计算分页：返回每页机场行数组成的数组。优先按“每页机场数”，否则按“总页数”平均分配。
-    function paginate(rows, enableSplit, pageCountValue, perPageValue) {
+    function paginate(rows, enableSplit, pageCountValue, perPageValue, pageSizesValue) {
         if (!enableSplit || rows.length === 0) return [rows];
+        const customSizes = (pageSizesValue || []).map(v => parseInt(v, 10)).filter(v => v > 0);
+        if (customSizes.length) {
+            const pages = [];
+            let pos = 0;
+            customSizes.forEach(size => {
+                if (pos < rows.length) { pages.push(rows.slice(pos, pos + size)); pos += size; }
+            });
+            if (pos < rows.length) pages.push(rows.slice(pos));
+            return pages.filter(p => p.length);
+        }
         const perPage = parseInt(perPageValue, 10);
         if (perPage && perPage > 0) {
             const pages = [];
@@ -69,7 +79,7 @@
             return pages;
         }
         let pageCount = parseInt(pageCountValue, 10);
-        if (!pageCount || pageCount < 1) pageCount = Math.max(1, Math.ceil(rows.length / 10));
+        if (!pageCount || pageCount < 1) pageCount = Math.min(2, rows.length);
         pageCount = Math.min(pageCount, rows.length);
         const pages = [];
         const base = Math.floor(rows.length / pageCount);
@@ -94,12 +104,12 @@
         if (headerSrc) {
             const h = headerSrc.cloneNode(true);
             h.style.borderRadius = '0';
-            h.style.padding = '14px 18px 12px 18px';
+            h.style.padding = '14px 18px 28px 18px';
             h.querySelectorAll('select,input').forEach(el => {
                 const display = document.createElement('span');
                 display.textContent = el.tagName === 'SELECT' ? (el.options[el.selectedIndex]?.text || el.value || '') : (el.value || '');
                 display.style.cssText = el.id === 'pb-main-title-select'
-                    ? 'display:block; text-align:center; font-size:42px; line-height:1.15; font-weight:800; letter-spacing:2px; color:#fff;'
+                    ? 'display:block; text-align:center; font-size:42px; line-height:1.15; font-weight:800; letter-spacing:2px; color:#fff; margin-bottom:22px;'
                     : 'display:inline-block; min-width:70px; text-align:center; color:#fff;';
                 el.replaceWith(display);
             });
@@ -236,14 +246,16 @@
     }
 
     // ---- 预览弹窗状态 ----
-    const state = { mode: 'image', rows: [], rawRows: [], images: [] };
+    const state = { mode: 'image', rows: [], rawRows: [], images: [], pageSizes: [] };
 
     function refreshPreview() {
         const body = document.getElementById('export-preview-body');
         const info = document.getElementById('export-page-info');
         if (!body) return;
         const split = document.getElementById('export-split-toggle')?.checked;
-        const pageCount = document.getElementById('export-pagecount')?.value;
+        const pageCountInput = document.getElementById('export-pagecount');
+        if (split && pageCountInput && !pageCountInput.value) pageCountInput.value = Math.min(2, state.rows.length || 2);
+        const pageCount = pageCountInput?.value;
         const perPage = document.getElementById('export-perpage')?.value;
         const pageCountEl = document.getElementById('export-pagecount');
         const perPageEl = document.getElementById('export-perpage');
@@ -257,7 +269,10 @@
             return;
         }
 
-        const pages = paginate(state.rows, split, pageCount, perPage);
+        const sizeInputs = Array.from(document.querySelectorAll('.export-page-size-input')).map(i => i.value);
+        const pages = paginate(state.rows, split, pageCount, perPage, sizeInputs);
+        state.pageSizes = pages.map(p => p.length);
+        renderPageSizeControls(split, pages);
         if (info) info.textContent = `共 ${state.rows.length} 个机场，${pages.length} 页`;
         body.innerHTML = '<div style="color:#64748b; padding:20px;">⏳ 正在生成预览…</div>';
 
@@ -282,6 +297,17 @@
         })().catch(e => {
             body.innerHTML = `<div style="color:#dc2626; padding:20px;">预览生成失败: ${e.message}</div>`;
         });
+    }
+
+    function renderPageSizeControls(split, pages) {
+        const box = document.getElementById('export-page-size-controls');
+        if (!box) return;
+        if (!split || !pages || pages.length <= 1) { box.style.display = 'none'; box.innerHTML = ''; return; }
+        box.style.display = 'flex';
+        box.innerHTML = '<span style="font-weight:bold;color:#1e40af;">单页机场数:</span>' + pages.map((p, idx) =>
+            `<label style="display:flex;align-items:center;gap:4px;">第${idx + 1}页 <input class="export-page-size-input" data-page="${idx}" type="number" min="1" value="${p.length}" style="width:58px;padding:3px;border:1px solid #cbd5e1;border-radius:4px;"></label>`
+        ).join('') + '<span style="color:#94a3b8;">修改后会重新分配，剩余机场自动顺延</span>';
+        box.querySelectorAll('.export-page-size-input').forEach(inp => inp.addEventListener('change', () => { state.images = []; refreshPreview(); }));
     }
 
     function renderExcelPreview(body, info, rows) {
@@ -318,6 +344,8 @@
         state.mode = mode;
         state.rows = collectPublishRows();
         state.rawRows = collectRawRows();
+        state.images = [];
+        state.pageSizes = [];
         if (state.rows.length === 0) { alert('没有已确认编发或有效的机场行可导出。'); return; }
 
         document.getElementById('export-preview-title').textContent = mode === 'image' ? '🖼️ 导出图片预览' : '📊 导出 Excel 预览';
@@ -356,7 +384,8 @@
                     const split = document.getElementById('export-split-toggle')?.checked;
                     const pageCount = document.getElementById('export-pagecount')?.value;
                     const perPage = document.getElementById('export-perpage')?.value;
-                    const pages = paginate(state.rows, split, pageCount, perPage);
+                    const sizeInputs = Array.from(document.querySelectorAll('.export-page-size-input')).map(i => i.value);
+                    const pages = paginate(state.rows, split, pageCount, perPage, sizeInputs);
                     state.images = [];
                     for (let i = 0; i < pages.length; i++) {
                         const node = buildPageNode(pages[i], i, pages.length);
@@ -392,12 +421,16 @@
     }
 
     document.addEventListener('DOMContentLoaded', () => {
+        updatePublishStickyOffsets();
+        window.addEventListener('resize', updatePublishStickyOffsets);
+        const pbHeader = document.getElementById('pb-export-header');
+        if (pbHeader) new MutationObserver(updatePublishStickyOffsets).observe(pbHeader, { childList: true, subtree: true, attributes: true });
         document.getElementById('close-export-preview')?.addEventListener('click', () => {
             document.getElementById('export-preview-modal').style.display = 'none';
         });
-        document.getElementById('export-split-toggle')?.addEventListener('change', refreshPreview);
-        document.getElementById('export-pagecount')?.addEventListener('change', refreshPreview);
-        document.getElementById('export-perpage')?.addEventListener('change', refreshPreview);
+        document.getElementById('export-split-toggle')?.addEventListener('change', () => { state.images = []; refreshPreview(); });
+        document.getElementById('export-pagecount')?.addEventListener('change', () => { state.images = []; refreshPreview(); });
+        document.getElementById('export-perpage')?.addEventListener('change', () => { state.images = []; refreshPreview(); });
         document.getElementById('export-preview-confirm')?.addEventListener('click', doExport);
 
         // ---- 文图互导：导出/导入 标签切换 + 纠错 ----

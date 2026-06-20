@@ -1479,10 +1479,11 @@ def export_publish_api():
                 heavy_rain_fill = PatternFill('solid', fgColor='0F766E')
                 cloud_fill = PatternFill('solid', fgColor='F59E0B')
                 other_fill = PatternFill('solid', fgColor='BAE6FD')
-                white_font = Font(name='????', color='FFFFFF', bold=True)
-                black_font = Font(name='????', color='111827')
-                title_font = Font(name='????', size=48, bold=True, color='FFFFFF')
-                bold_font = Font(name='????', bold=True, color='111827')
+                font_name = '\u5fae\u8f6f\u96c5\u9ed1'
+                white_font = Font(name=font_name, color='FFFFFF', bold=True)
+                black_font = Font(name=font_name, color='111827')
+                title_font = Font(name=font_name, size=48, bold=True, color='FFFFFF')
+                bold_font = Font(name=font_name, bold=True, color='111827')
                 thin = Side(style='thin', color='95A5A6')
                 med = Side(style='medium', color='34495E')
                 border = Border(left=thin, right=thin, top=thin, bottom=thin)
@@ -1504,37 +1505,37 @@ def export_publish_api():
 
                 def fill_for(value):
                     v = value or ''
-                    if not v or v in ('?', '/', '??'):
+                    if not v or v in ('\u2014', '/', '\u9002\u822a'):
                         return None, black_font
-                    if '?' in v or '?' in v:
+                    if '\u96f7' in v or '\u96f9' in v:
                         return ts_fill, white_font
-                    if any(k in v for k in ('??', '??', '???')):
+                    if any(k in v for k in ('\u5927\u96e8', '\u66b4\u96e8', '\u5f3a\u964d\u6c34')):
                         return heavy_rain_fill, white_font
-                    if '?' in v:
+                    if '\u96e8' in v:
                         return rain_fill, white_font
-                    if '?' in v or '??' in v or '?' in v:
+                    if '\u96ea' in v or '\u51bb\u96e8' in v or '\u51b0' in v:
                         return snow_fill, white_font
-                    if '??' in v:
+                    if '\u4f4e\u4e91' in v:
                         return cloud_fill, white_font
-                    if v.startswith('W') or '??' in v or '?' in v:
+                    if v.startswith('W') or '\u5927\u98ce' in v or '\u98ce' in v:
                         return wind_fill, white_font
-                    if v.isdigit() or '????' in v or '?' in v or '?' in v or '?' in v or '?' in v:
+                    if v.isdigit() or '\u4f4e\u80fd\u89c1\u5ea6' in v or '\u96fe' in v or '\u973e' in v or '\u6c99' in v or '\u5c18' in v:
                         return vis_fill, black_font
                     return other_fill, black_font
 
                 legend_defs = [
-                    ('??', ts_fill, white_font, lambda v: '?' in v or '?' in v),
-                    ('??', wind_fill, white_font, lambda v: v.startswith('W') or '??' in v or '?' in v),
-                    ('??', snow_fill, white_font, lambda v: '?' in v or '??' in v or '?' in v),
-                    ('???', heavy_rain_fill, white_font, lambda v: any(k in v for k in ('??', '??', '???'))),
-                    ('????', vis_fill, black_font, lambda v: v.isdigit() or '????' in v or '?' in v or '?' in v or '?' in v or '?' in v),
-                    ('??', cloud_fill, white_font, lambda v: '??' in v),
-                    ('??', other_fill, black_font, lambda v: bool(v) and fill_for(v)[0] == other_fill),
+                    ('\u96f7\u66b4', ts_fill, white_font, lambda v: '\u96f7' in v or '\u96f9' in v),
+                    ('\u5927\u98ce', wind_fill, white_font, lambda v: v.startswith('W') or '\u5927\u98ce' in v or '\u98ce' in v),
+                    ('\u964d\u96ea', snow_fill, white_font, lambda v: '\u96ea' in v or '\u51bb\u96e8' in v or '\u51b0' in v),
+                    ('\u5f3a\u964d\u6c34', heavy_rain_fill, white_font, lambda v: any(k in v for k in ('\u5927\u96e8', '\u66b4\u96e8', '\u5f3a\u964d\u6c34'))),
+                    ('\u4f4e\u80fd\u89c1\u5ea6', vis_fill, black_font, lambda v: v.isdigit() or '\u4f4e\u80fd\u89c1\u5ea6' in v or '\u96fe' in v or '\u973e' in v or '\u6c99' in v or '\u5c18' in v),
+                    ('\u4f4e\u4e91', cloud_fill, white_font, lambda v: '\u4f4e\u4e91' in v),
+                    ('\u5176\u4ed6', other_fill, black_font, lambda v: bool(v) and fill_for(v)[0] == other_fill),
                 ]
                 count_map = {label: sum(1 for _, _, vals in data_rows if any(pred(v or '') for v in vals[:max_hours])) for label, _, _, pred in legend_defs}
 
                 ws.merge_cells(start_row=1, start_column=1, end_row=2, end_column=end_col)
-                ws['A1'] = '24??????' if validity_hours == 24 else f'{validity_hours}??????'
+                ws['A1'] = '\u672a\u676524\u5c0f\u65f6\u5929\u6c14\u9884\u62a5' if validity_hours == 24 else f'\u672a\u6765{validity_hours}\u5c0f\u65f6\u5929\u6c14\u9884\u62a5'
                 ws['A1'].font = title_font
                 ws['A1'].alignment = center
                 for row in range(1, 9):
@@ -1542,11 +1543,10 @@ def export_publish_api():
                         ws.cell(row, col).fill = dark
                         ws.cell(row, col).alignment = center
 
-                slots = len(legend_defs)
                 usable_start, usable_end = 4, end_col
                 usable_cols = max(1, usable_end - usable_start + 1)
-                base = usable_cols // slots
-                extra = usable_cols % slots
+                base = usable_cols // len(legend_defs)
+                extra = usable_cols % len(legend_defs)
                 col = usable_start
                 for idx, (label, fill, font, _) in enumerate(legend_defs):
                     width = max(2, base + (1 if idx < extra else 0))
@@ -1563,29 +1563,29 @@ def export_publish_api():
 
                 ws.merge_cells(start_row=4, start_column=1, end_row=5, end_column=2)
                 ws.merge_cells(start_row=4, start_column=3, end_row=5, end_column=3)
-                ws['A4'] = '???????'
-                ws['C4'] = f'{bjt.year}?{bjt.month}?{bjt.day}?'
+                ws['A4'] = '\u65e5\u671f\uff08\u5317\u4eac\u65f6\uff09'
+                ws['C4'] = f'{bjt.year}\u5e74{bjt.month}\u6708{bjt.day}\u65e5'
                 ws['A4'].font = white_font
                 ws['C4'].font = white_font
                 ws['C4'].alignment = center_nowrap
-                ws.cell(5, max(4, end_col-3)).value = '????'
+                ws.cell(5, max(4, end_col-3)).value = '\u9884\u62a5\u5458\uff1a'
                 ws.cell(5, max(5, end_col-2)).value = forecaster
                 ws.cell(5, max(4, end_col-3)).font = white_font
                 ws.cell(5, max(5, end_col-2)).font = white_font
 
                 ws.merge_cells(start_row=6, start_column=1, end_row=6, end_column=2)
-                ws['A6'] = '????'
-                ws['C6'] = f'{bjt.hour}?'
+                ws['A6'] = '\u8d77\u62a5\u65f6\u95f4'
+                ws['C6'] = f'{bjt.hour}\u65f6'
                 ws.merge_cells(start_row=7, start_column=1, end_row=7, end_column=2)
-                ws['A7'] = '????'
-                ws['A8'] = '??'
-                ws['B8'] = '??'
-                ws['C7'] = '?????'
-                ws['C8'] = '?????'
+                ws['A7'] = '\u5f71\u54cd\u673a\u573a'
+                ws['A8'] = '\u540d\u79f0'
+                ws['B8'] = '\u6027\u8d28'
+                ws['C7'] = '\u9884\u62a5\u65f6\u957f\u2192'
+                ws['C8'] = '\u9884\u62a5\u65f6\u523b\u2192'
                 for i in range(max_hours):
                     c = 4 + i
                     ws.cell(7, c).value = i
-                    ws.cell(8, c).value = f'{(bjt.hour + i) % 24}?'
+                    ws.cell(8, c).value = f'{(bjt.hour + i) % 24}\u65f6'
                 for r in range(6, 9):
                     for c in range(1, end_col + 1):
                         cell = ws.cell(r, c)
@@ -1605,7 +1605,7 @@ def export_publish_api():
                         ws.cell(idx, c).border = border
                     for j in range(max_hours):
                         value = vals[j] if j < len(vals) else ''
-                        value = '' if value in ('?', '/') else value
+                        value = '' if value in ('\u2014', '/') else value
                         cell = ws.cell(idx, 4 + j)
                         cell.value = value
                         fill, font = fill_for(value)
@@ -1620,13 +1620,13 @@ def export_publish_api():
                     ws.cell(rr, 1).font = bold_font
                     ws.cell(rr, 1).alignment = center
 
-                ws.cell(tail_start, 1).value = '??????/????'
+                ws.cell(tail_start, 1).value = '\u5730\u9762\u7ed3\u51b0\u6761\u4ef6/\u6781\u5bd2\u6761\u4ef6'
                 ws.merge_cells(start_row=tail_start, start_column=4, end_row=tail_start, end_column=end_col)
-                ws.cell(tail_start, 4).value = icing_text or '?'
+                ws.cell(tail_start, 4).value = icing_text or '\u65e0'
                 ws.cell(tail_start, 4).font = bold_font
                 ws.cell(tail_start, 4).alignment = Alignment(horizontal='left', vertical='center', wrap_text=True)
 
-                ws.cell(tail_start+1, 1).value = '????'
+                ws.cell(tail_start+1, 1).value = '\u989c\u8272\u8bf4\u660e'
                 col = 4
                 for label, fill, font, _ in legend_defs:
                     if col > end_col:
@@ -1641,9 +1641,9 @@ def export_publish_api():
                     col += 3
 
                 ws.merge_cells(start_row=tail_start+3, start_column=1, end_row=tail_start+5, end_column=3)
-                ws.cell(tail_start+3, 1).value = '????'
+                ws.cell(tail_start+3, 1).value = '\u53d1\u5e03\u8bf4\u660e'
                 ws.merge_cells(start_row=tail_start+3, start_column=4, end_row=tail_start+5, end_column=end_col)
-                ws.cell(tail_start+3, 4).value = '1. ???????????????TAF?????????????AOC??????\n2. ????????????????????/???\n3. ??????????????????dddf?????NNE18??????18?/??'
+                ws.cell(tail_start+3, 4).value = '1. \u672c\u8868\u7ed3\u8bba\u4f9d\u636e\u6570\u503c\u9884\u62a5\u548c\u8fd0\u884c\u673a\u573aTAF\u62a5\u6587\u7efc\u5408\u5206\u6790\uff0c\u5982\u6709\u7591\u95ee\u54a8\u8be2AOC\u6c14\u8c61\u670d\u52a1\u5e2d\u3002\n2. \u80fd\u89c1\u5ea6\u548c\u4e91\u9ad8\u5355\u4f4d\u4e3a\u201c\u7c73\u201d\u3001\u98ce\u901f\u5355\u4f4d\u4e3a\u201c\u7c73/\u79d2\u201d\u3002\n3. \u5927\u98ce\u8868\u793a\u8be5\u65f6\u6b21\u9884\u671f\u6700\u5927\u9635\u98ce\u503c\uff0c\u683c\u5f0f\u201cdddf\u201d\uff0c\u4e3e\u4f8b\uff1aNNE18\u5373\u4e1c\u5317\u504f\u5317\u98ce18\u7c73/\u79d2\u3002'
                 ws.cell(tail_start+3, 4).alignment = Alignment(horizontal='left', vertical='top', wrap_text=True)
 
                 for r in list(range(tail_start, tail_start+1)) + list(range(tail_start+3, tail_start+6)):
