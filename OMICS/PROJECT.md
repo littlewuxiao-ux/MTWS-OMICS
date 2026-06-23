@@ -82,6 +82,18 @@
 
 ## 二、更新日志
 
+### v5.8-dev · 2026-06-24（配置持久化根因修复、权限规则收敛与发布/导出对齐）
+- **修复** 48 小时预报致命异常 `loadForecastData: Cannot read properties of undefined (reading 'bg')`。根因：已确认数据按旧时长（24h=25 格）保存，切到 48h（49 格）时附加行 `rowsToRender[r][i]` 尾部越界为 `undefined`。主行有兜底守卫但附加行漏了，现补上同样的兜底默认单元格。
+- **调整** 预报发布默认不选中 EC（`defaultShowEc:false`），并改写筛选语义：EC/TAF 未勾选时不作为筛选依据。`hasAlert` 拆分为 `hasAlertEC`/`hasAlertTAF`，最终 `hasAlert =（选中EC && EC告警）||（选中TAF && TAF告警）`。两者都不选则只剩常驻/手动机场，只选 TAF 则忽略 EC。勾选框改为凭缓存实时重算重渲染，不再重新请求 API。
+- **修复** 24 小时预报时间轴最右侧的多余“外框”：表头容器靠负 margin 撑满到可视全宽，内部表只到列宽之和，右侧露出深色背景。`syncTimelineHeader` 末尾改为内容窄时容器收紧到表宽、超宽时保持可视全宽走滚动，正文 wrapper 同步收紧，左右边界统一（无头实测 24h/48h/切回三态右边界差≤1px）。
+- **修复** 导出图片时间轴对齐与紧贴：克隆头部 padding 改成 18px 但时间轴仍用 -20px 负 margin 导致左右差 2px，且底部 28px padding 与 -20px margin 净剩 8px 深色背景条。改为克隆头 `padding:14px 18px 0 18px`、时间轴容器 `margin:16px -18px 0 -18px` 并清除内联 width，时间轴与正文左右对齐且紧贴无背景条。
+- **修复** 导出 Excel 弹窗残留分割图片专属内容：先点“分割图片”生成“单页机场数”控件后再切到 Excel 模式时，`refreshPreview` 的 excel 分支直接 return 未隐藏该控件。现在 excel 分支隐藏并清空 `#export-page-size-controls`。
+- **调整** 48 小时预报横向滚动条常驻：将原隐藏的 `#top-scrollbar` 改为 `position:fixed;bottom:0`，仅在正文横向溢出（48h）且发布页可见时显示，跟随正文可视区左右对齐，切走自动隐藏。
+- **修复（根因）** 系统设置“配置一段时间后还原成默认”：根因为后端 `save_settings_config` 用 `deep_merge(默认, 前端传入)` 且**不读磁盘已存值**，配合前端每次保存都用整份内存快照整体覆盖；任一加载时配置较旧/默认的会话触发保存（改路径/加人员/初始化），就把阈值、人员等冲回默认。修复：① 后端保存改为 默认→读盘已存→本次传入 三层叠加，传部分块不抹其余字段；② 前端所有保存点改为分块 PATCH（新增 `OMICS_patchSettingsConfig` 与各 block 构造函数），人员只提交 `personnel_dict`、阈值只提交 `thresholds`、路径只提交 `paths`、默认机场只提交 `default_airports`、天气现象只提交 `phenomena_config`、发布配置只提交 `publish`，互不覆盖。
+- **修复** OMICS 系统设置权限失效：旧逻辑为“任意账号登录即免密进设置”，且管理员判断依赖会被配置同步污染的 `personnelDict[uid]==='吴霄'`，时灵时不灵。按需求收敛为只认吴霄工号常量 `ADMIN_ID(41060711)`——吴霄扫码登录免密进入并显示「高级管理员配置」；其他任何情况（未登录或非吴霄）必须输管理密码且只能进普通设置、不显示高级管理员配置。`updateDisplayUserName`、`getRealBackupPath` 中的管理员判断一并统一为只认工号。
+- **修复（仅打包模式生效）** PyInstaller frozen 后配置路径用 `__file__` 指向 bundle 内部、非持久；`main.spec` 的 `datas` 也未打包 `runtime/`。新增 `_persistent_base_dir()`（frozen 用 `sys.executable` 同级目录）与 `_bundle_resource_dir()`（`_MEIPASS`），配置/人员映射写入持久目录、example 模板优先持久再回退 bundle；`main.spec` 增打 `runtime/settings_config.example.json`。源码模式路径不变（仍 `OMICS/runtime/settings_config.json`），现有配置不受影响。
+- **验证** `backend/app.py` 通过 `ast.parse`；`frontend/script.js`、`frontend/publish.js` 通过 `node --check`；后端三层叠加合并语义经独立脚本验证（传空组/部分块不抹其余字段）；时间轴对齐经无头 Chrome 实测。
+
 ### v5.8-dev · 2026-06-20（文图互导纠错与世界时识别）
 - **新增** 文图互导“文字导入预报”页签内的“纠错检查”按钮，导入前可先检查格式。
 - **新增** 无法识别内容的红色错误提示面板：按行标出错误内容、问题片段和原因，并给出标准输入格式示例。
