@@ -344,6 +344,14 @@
                                     预报员:<input type="text" id="pb-forecaster" style="width: 80px; padding: 4px; border-radius: 4px; border: none; background: #374151; color: white; text-align: center;">
                                 </div>
                             </div>
+
+                            <!-- 🌟 时间轴表头：从 forecast-table 的 thead 拆出，视觉并入发布头部，与正文表格列宽对齐 -->
+                            <div id="pb-timeline-header" style="overflow: hidden; margin: 16px -20px -20px -20px;">
+                                <table id="pb-timeline-table" style="border-collapse: collapse; table-layout: fixed; text-align: center; color: #fff;">
+                                    <colgroup id="pb-timeline-colgroup"></colgroup>
+                                    <tbody id="pb-timeline-body"></tbody>
+                                </table>
+                            </div>
                         </div>
 
                         <div id="publish-loading-indicator" style="display:none; text-align:center; padding:30px; color:#d9534f; font-weight:bold; font-size:16px; background:#fff; border:1px solid #ccc; border-radius:6px; margin: 10px 0;">
@@ -606,8 +614,15 @@
             const tsc = document.getElementById('top-scroll-content');
 
             if (tw && ts && tsc) {
-                tw.addEventListener('scroll', () => ts.scrollLeft = tw.scrollLeft);
-                ts.addEventListener('scroll', () => tw.scrollLeft = ts.scrollLeft);
+                const tlHeader = document.getElementById('pb-timeline-header');
+                tw.addEventListener('scroll', () => {
+                    ts.scrollLeft = tw.scrollLeft;
+                    if (tlHeader) tlHeader.scrollLeft = tw.scrollLeft;
+                });
+                ts.addEventListener('scroll', () => {
+                    tw.scrollLeft = ts.scrollLeft;
+                    if (tlHeader) tlHeader.scrollLeft = ts.scrollLeft;
+                });
                 const observer = new MutationObserver(() => {
                     const table = tw.querySelector('table');
                     if (table) tsc.style.width = table.scrollWidth + 'px';

@@ -99,12 +99,14 @@
         const wrap = document.createElement('div');
         wrap.style.cssText = 'width:1200px; background:#fff; font-family:微软雅黑,Microsoft YaHei,Arial,sans-serif; color:#1f2937;';
 
-        // 头：克隆标题栏
+        // 头：克隆标题栏（含已并入的时间轴表头 #pb-timeline-header）
         const headerSrc = document.getElementById('pb-export-header');
+        let clonedTimeline = null;
         if (headerSrc) {
             const h = headerSrc.cloneNode(true);
             h.style.borderRadius = '0';
             h.style.padding = '14px 18px 28px 18px';
+            clonedTimeline = h.querySelector('#pb-timeline-table');
             h.querySelectorAll('select,input').forEach(el => {
                 const display = document.createElement('span');
                 display.textContent = el.tagName === 'SELECT' ? (el.options[el.selectedIndex]?.text || el.value || '') : (el.value || '');
@@ -116,15 +118,14 @@
             wrap.appendChild(h);
         }
 
-        // 表格：克隆 thead + 选中机场对应的 tbody 行（含其确认行）
+        // 表格：forecast-table 已无 thead，导出表只含数据行
         const srcTable = document.getElementById('forecast-table');
         const tbl = document.createElement('table');
-        tbl.style.cssText = 'width:100%; border-collapse:collapse; table-layout:auto; text-align:center; border-bottom:2px solid #5D6D7E; font-family:微软雅黑,Microsoft YaHei,Arial,sans-serif;';
+        // 🌟 table-layout:fixed + colgroup，与表头共用同一套列宽，保证渲染后逐列对齐（auto 会按内容重分导致错位）
+        tbl.style.cssText = 'border-collapse:collapse; table-layout:fixed; text-align:center; border-bottom:2px solid #5D6D7E; font-family:微软雅黑,Microsoft YaHei,Arial,sans-serif;';
         tbl.className = srcTable ? srcTable.className : '';
         tbl.id = '';
         if (srcTable) {
-            const thead = srcTable.querySelector('thead');
-            if (thead) tbl.appendChild(thead.cloneNode(true));
             const tbody = document.createElement('tbody');
             const icaoSet = new Set(pageRows.map(r => r.icao).filter(Boolean));
             srcTable.querySelectorAll('tbody tr').forEach(tr => {
@@ -141,9 +142,45 @@
         const noteWidth = Math.max(92, ...pageRows.map(r => textWidth(r.note, 92, 260, 10)));
         const hourCells = (window.pbState?.validityHours || 24) + 1;
         const hourWidth = hourCells > 25 ? 38 : 42;
+        const noteLeftW = Math.floor(noteWidth / 2);
+        const noteRightW = Math.ceil(noteWidth / 2);
         const tableWidth = Math.max(1200, airportWidth + typeWidth + noteWidth + hourCells * hourWidth + 24);
         wrap.style.width = `${tableWidth}px`;
         tbl.style.width = `${tableWidth}px`;
+
+        // 🌟 为数据表注入 colgroup，列结构与表头完全一致：名称/性质/备注左/备注右 + 逐小时。
+        // 已确认态备注是 colspan=2，跨备注左+备注右两列；与表头布局完全同构。
+        const dataCg = document.createElement('colgroup');
+        let dcgHtml = `<col style="width:${airportWidth}px;"><col style="width:${typeWidth}px;"><col style="width:${noteLeftW}px;"><col style="width:${noteRightW}px;">`;
+        for (let i = 0; i < hourCells; i++) dcgHtml += `<col style="width:${hourWidth}px;">`;
+        dataCg.innerHTML = dcgHtml;
+        tbl.insertBefore(dataCg, tbl.firstChild);
+
+        // 让克隆进导出图的时间轴表头列宽，与数据表 colgroup 逐列一致。
+        if (clonedTimeline) {
+            clonedTimeline.style.width = `${tableWidth}px`;
+            clonedTimeline.style.tableLayout = 'fixed';
+            clonedTimeline.style.borderCollapse = 'collapse';
+            const cg = clonedTimeline.querySelector('colgroup');
+            if (cg) {
+                const cols = cg.querySelectorAll('col');
+                if (cols[0]) cols[0].style.width = `${airportWidth}px`;
+                if (cols[1]) cols[1].style.width = `${typeWidth}px`;
+                if (cols[2]) cols[2].style.width = `${noteLeftW}px`;
+                if (cols[3]) cols[3].style.width = `${noteRightW}px`;
+                for (let i = 4; i < cols.length; i++) cols[i].style.width = `${hourWidth}px`;
+            }
+            // 表头单元格边框/盒模型与数据表一致，保证边框连续、列宽不被 padding 撑偏。
+            clonedTimeline.querySelectorAll('th').forEach(c => {
+                c.style.boxSizing = 'border-box';
+                c.style.border = '1px solid rgba(148, 163, 184, 0.55)';
+                c.style.background = '#4B5563';
+                c.style.backgroundColor = '#4B5563';
+                c.style.color = '#fff';
+                c.style.padding = '4px 2px';
+                c.style.overflow = 'hidden';
+            });
+        }
 
         // 统一导出图片中表头/名称/性质/备注/时间轴背景色，与“24小时天气预报”黑灰背景一致。
         tbl.querySelectorAll('thead th, th.col-airport, th.col-desc, th.th-lead, th.th-hour').forEach(c => {

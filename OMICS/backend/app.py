@@ -1667,7 +1667,7 @@ def export_publish_api():
                     ws.cell(r, 4).value = note
                     ws.cell(r, 4).alignment = Alignment(horizontal='left', vertical='center', wrap_text=False)
                     for c in range(1, end_col + 1):
-                        ws.cell(r, c).border = Border(top=thin, bottom=thin)
+                        ws.cell(r, c).border = border
 
                 # ????????????/????????????
                 for c in range(1, end_col + 1):
@@ -1709,7 +1709,7 @@ def export_publish_api():
                 ws.row_dimensions[4].height = 26
                 for r in range(5, last_row + 1):
                     ws.row_dimensions[r].height = 22
-                ws.freeze_panes = 'D9'
+                ws.freeze_panes = 'A9'  # 取消 A/B/C 列左侧冻结，仅保留 1-8 行顶部冻结
                 ws.sheet_view.showGridLines = False
 
                 xlsx_path = os.path.join(target_dir, f'24小时天气预报_{ts}.xlsx')

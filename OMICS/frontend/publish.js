@@ -1307,17 +1307,8 @@ function renderPublishTableTriRow(apAnalysis) {
     const isWide = numCells > 25;
     const cellStyle = isWide ? 'width:40px; min-width:40px;' : 'width:auto; min-width:25px;';
 
-    const thead = document.createElement('thead');
-    let trLead1 = `<tr><th class="col-airport hdr" colspan="2" style="width:140px; min-width:140px; border-bottom:1px solid #4B5563; background-color:#4B5563; color:#fff;">影响机场</th><th class="col-desc hdr" rowspan="2" colspan="2" style="width:100px; min-width:100px; border-bottom:1px solid #4B5563; background-color:#4B5563; color:#fff;">备注</th>`;
-    for (let i = 0; i < numCells; i++) trLead1 += `<th class="col-time th-lead" style="${cellStyle}">${i}h</th>`;
-    trLead1 += `</tr><tr><th class="col-airport hdr" style="width:90px; min-width:90px; border-top:1px solid #4B5563; border-right:1px solid #4B5563; background-color:#4B5563; color:#fff;">名称</th><th class="col-airport-type hdr" style="width:50px; min-width:50px; border-top:1px solid #4B5563; background-color:#4B5563; color:#fff;">性质</th>`;
-    for (let i = 0; i < numCells; i++) {
-        const bjtHour = (sH + i + 8) % 24; 
-        trLead1 += `<th class="col-time th-hour" style="${cellStyle} background:#4B5563; color:#E2E8F0;">${String(bjtHour).padStart(2, '0')}时</th>`;
-    }
-    trLead1 += `</tr>`;
-    thead.innerHTML = trLead1;
-    table.appendChild(thead);
+    // 🌟 时间轴表头现在渲染到 #pb-timeline-header（并入发布头部），不再作为表格 thead。
+    renderTimelineHeader(numCells, sH, cellStyle, isWide);
 
     const tbody = document.createElement('tbody');
     const startMs = new Date(`${pbState.startDate}T${String(pbState.startHour).padStart(2, '0')}:00:00Z`).getTime();
@@ -1647,6 +1638,83 @@ function renderPublishTableTriRow(apAnalysis) {
     table.appendChild(tbody);
     if(window.updateAllRowspans) window.updateAllRowspans();
     updateTopCountersFromTable(); 
+    // 🌟 表体渲染完成后，同步时间轴表头的总宽与横向滚动位置
+    syncTimelineHeader();
+}
+
+// 🌟 渲染时间轴表头（名称/性质/备注 + 逐小时列）到 #pb-timeline-header。
+// 与正文 #forecast-table 采用一致的定宽列（名称90/性质50/备注100/小时列沿用 cellStyle），保证上下对齐。
+function renderTimelineHeader(numCells, sH, cellStyle, isWide) {
+    const colgroup = document.getElementById('pb-timeline-colgroup');
+    const tbody = document.getElementById('pb-timeline-body');
+    if (!colgroup || !tbody) return;
+
+    const hourW = isWide ? 40 : 25;
+    // 🌟 与正文严格对齐的 4 前导列：名称90 / 性质50 / 编辑列50 / 备注列50（编辑列与备注列等宽，合计=正文 col-desc 的 100px）
+    let cols = `<col style="width:90px;"><col style="width:50px;"><col style="width:50px;"><col style="width:50px;">`;
+    for (let i = 0; i < numCells; i++) cols += `<col style="width:${hourW}px;">`;
+    colgroup.innerHTML = cols;
+
+    const thBase = 'border:1px solid #95A5A6; background-color:#4B5563; color:#fff; box-sizing:border-box; padding:8px 4px; font-weight:bold;';
+    // 第一行：影响机场(colspan2) | 备注(colspan2, rowspan2) | 0h 1h 2h...
+    let tr1 = `<tr><th colspan="2" style="${thBase} font-size:13px;">影响机场</th><th colspan="2" rowspan="2" style="${thBase} font-size:11px; color:#fff;">备注</th>`;
+    for (let i = 0; i < numCells; i++) tr1 += `<th style="${thBase} font-size:11px;">${i}h</th>`;
+    tr1 += `</tr>`;
+    // 第二行：名称 | 性质 | 小时刻度(北京时)。备注由上一行 rowspan 占位，这里不再出列。
+    let tr2 = `<tr><th style="${thBase} font-size:13px;">名称</th><th style="${thBase} font-size:13px;">性质</th>`;
+    for (let i = 0; i < numCells; i++) {
+        const bjtHour = (sH + i + 8) % 24;
+        tr2 += `<th style="${thBase} font-size:11px; color:#E2E8F0;">${String(bjtHour).padStart(2, '0')}时</th>`;
+    }
+    tr2 += `</tr>`;
+    tbody.innerHTML = tr1 + tr2;
+}
+
+// 🌟 让时间轴表头与正文表格逐列像素级对齐：一次性采集正文所有列的实渲染宽，再统一写回表头。
+// 两个独立 table 无法共享列宽；forecast-table 是 table-layout:fixed + width:100% 被容器约束，
+// 小时列被压缩成亚像素宽。必须把每列实测宽写回表头 col，并让表头总宽严格等于这些列宽之和。
+function syncTimelineHeader() {
+    const table = document.getElementById('forecast-table');
+    const tlTable = document.getElementById('pb-timeline-table');
+    const tw = document.getElementById('table-wrapper');
+    const colgroup = document.getElementById('pb-timeline-colgroup');
+    if (!table || !tlTable || !colgroup) return;
+
+    const firstRow = table.querySelector('tbody tr');
+    const cols = colgroup.querySelectorAll('col');
+    if (firstRow && cols.length) {
+        // 前导 4 列实测：名称(col-airport) / 性质(col-airport-type) / 编辑(col-source) / op(col-op)。
+        // 备注区在未确认态是 col-source+col-op 两列；已确认态是 col-desc(colspan=2) 一列。
+        const lead = firstRow.querySelector('.col-desc')
+            ? [ '.col-airport', '.col-airport-type', '.col-desc' ]   // 已确认：备注为合并单列
+            : [ '.col-airport', '.col-airport-type', '.col-source', '.col-op' ];
+        // 先一次性采集所有实测宽（避免边写边测导致 fixed 布局重算）
+        const leadWidths = lead.map(sel => {
+            const el = firstRow.querySelector(sel);
+            return el ? el.getBoundingClientRect().width : 0;
+        });
+        const timeCells = firstRow.querySelectorAll('td.col-time');
+        const hourWidths = [...timeCells].map(c => c.getBoundingClientRect().width);
+
+        // 表头 colgroup 固定为 4 前导列：名称/性质/编辑/备注。
+        // 未确认态：leadWidths 正好 4 个，逐一对应；已确认态：备注合并宽拆成表头编辑+备注两列。
+        let headLead;
+        if (leadWidths.length === 4) {
+            headLead = leadWidths;
+        } else {
+            const noteW = leadWidths[2] || 0;
+            headLead = [ leadWidths[0], leadWidths[1], Math.floor(noteW / 2), Math.ceil(noteW / 2) ];
+        }
+        let total = 0;
+        headLead.forEach((w, i) => { if (cols[i]) cols[i].style.width = w + 'px'; total += w; });
+        hourWidths.forEach((w, i) => { const col = cols[4 + i]; if (col) { col.style.width = w + 'px'; total += w; } });
+
+        // 表头总宽严格等于各列实测宽之和（不用 scrollWidth，fixed 布局下 scrollWidth 会以 col 为准被撑大）
+        if (total) tlTable.style.width = total + 'px';
+    }
+    // 横向滚动同步：初始对齐当前 scrollLeft
+    const header = document.getElementById('pb-timeline-header');
+    if (header && tw) header.scrollLeft = tw.scrollLeft;
 }
 
 document.getElementById('forecast-table')?.addEventListener('contextmenu', (e) => {
