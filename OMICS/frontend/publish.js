@@ -104,7 +104,7 @@ const pbState = {
   expandedAirports: new Set(), 
   forceShowAirports: new Set(),
   allowOtherCarriers: false,
-  defaultShowTaf: true, defaultShowEc: true,
+  defaultShowTaf: true, defaultShowEc: false,
   confirmedData: {},
   // 🌟 需求C：新增极寒与积冰配置参数
   cfgIceTemp: 10, cfgIceDew: 1, cfgIceVis: 1500, cfgExtColdTemp: -30
@@ -308,6 +308,19 @@ function applyTimePreset(val) {
     populateModalForm();
 }
 
+// 🌟 需求：EC/TAF 勾选变化时，仅凭缓存重算 hasAlert 并重渲染（不重新请求 API）。
+function recomputeAlertsAndRerender() {
+    if (Array.isArray(window.currentApAnalysis)) {
+        window.currentApAnalysis.forEach(ap => {
+            if (pbState.confirmedData[ap.icao]) { ap.hasAlert = true; return; }
+            ap.hasAlert = (pbState.defaultShowEc && ap.hasAlertEC) || (pbState.defaultShowTaf && ap.hasAlertTAF);
+        });
+        renderPublishTableTriRow(window.currentApAnalysis);
+    }
+    if(window.updateAllRowspans) window.updateAllRowspans();
+}
+window.recomputeAlertsAndRerender = recomputeAlertsAndRerender;
+
 function setupGlobalToolbar() {
     const table = document.getElementById('forecast-table');
     if (!table) return;
@@ -319,8 +332,9 @@ function setupGlobalToolbar() {
         tafCb.checked = pbState.defaultShowTaf;
         table.classList.toggle('hide-taf-global', !tafCb.checked);
         tafCb.onchange = (e) => { 
+            pbState.defaultShowTaf = e.target.checked;
             table.classList.toggle('hide-taf-global', !e.target.checked); 
-            if(window.updateAllRowspans) window.updateAllRowspans();
+            recomputeAlertsAndRerender();
         };
     }
     
@@ -329,8 +343,9 @@ function setupGlobalToolbar() {
         ecCb.checked = pbState.defaultShowEc;
         table.classList.toggle('hide-ec-global', !ecCb.checked);
         ecCb.onchange = (e) => { 
+            pbState.defaultShowEc = e.target.checked;
             table.classList.toggle('hide-ec-global', !e.target.checked); 
-            if(window.updateAllRowspans) window.updateAllRowspans();
+            recomputeAlertsAndRerender();
         };
     }
     
@@ -1187,7 +1202,8 @@ async function loadForecastData(retainOrder = false) {
             const tafRaw = tafObj.raw.length > 0 ? tafObj.raw[0] : '';
             const tafHourly = tafObj.hourly;
             
-            let hasAlert = false;
+            let hasAlertEC = false;
+            let hasAlertTAF = false;
             let autoAdoptEC = false;
             let autoAdoptReason = "";
             
@@ -1197,7 +1213,7 @@ async function loadForecastData(retainOrder = false) {
                     const ws = calcWindSpeed(nwp.wind_speed_10m[i], nwp.wind_gusts_10m[i]);
                     const v = nwp.visibility[i];
                     let ext = getAlertElements(wx, v, ws);
-                    if (ext.w !== '') { hasAlert = true; } 
+                    if (ext.w !== '') { hasAlertEC = true; } 
                     
                     // 🌟 需求C：极寒与积冰自动采纳条件判定系统
                     if (!autoAdoptEC && nwp.start_idx !== -1) {
@@ -1233,7 +1249,7 @@ async function loadForecastData(retainOrder = false) {
                     }
                 }
             }
-            if (!hasAlert && tafHourly) {
+            if (tafHourly) {
                 for (let i = 0; i <= pbState.validityHours; i++) {
                     const targetUTC = new Date(startMs + i * 3600000);
                     const hourKey = `${String(targetUTC.getUTCDate()).padStart(2, '0')}${String(targetUTC.getUTCHours()).padStart(2, '0')}`;
@@ -1247,11 +1263,14 @@ async function loadForecastData(retainOrder = false) {
                         const vis = dataToRead.visibility !== undefined ? dataToRead.visibility : 9999;
                         
                         let ext = getAlertElements(wx, vis, spd);
-                        if (ext.w !== '') { hasAlert = true; break; }
+                        if (ext.w !== '') { hasAlertTAF = true; break; }
                     }
                 }
             }
-            return { icao, hasAlert, nwp, tafRaw, tafHourly };
+            // 🌟 需求：EC/TAF 未勾选时不作为筛选依据。hasAlert 只由被勾选的数据源决定。
+            // （常驻机场、手动追加、已确认机场不受此限制，在过滤/排序环节另行豁免）
+            const hasAlert = (pbState.defaultShowEc && hasAlertEC) || (pbState.defaultShowTaf && hasAlertTAF);
+            return { icao, hasAlert, hasAlertEC, hasAlertTAF, nwp, tafRaw, tafHourly, autoAdoptEC, autoAdoptReason };
         });
 
         setProgress('6/6 正在排版...');
@@ -1395,7 +1414,8 @@ function renderPublishTableTriRow(apAnalysis) {
                 
                 let subHtml = `<td colspan="2" class="col-desc" style="padding:4px;" title="右键唤出撤销菜单"><input type="text" class="edit-note-input" value="${notesToRender[r] || ''}" style="width:100%; height:100%; min-height:26px; border:1px solid #ccc; border-radius:4px; text-align:center; font-size:11px; font-weight:bold; color:#1e40af; background:transparent;"></td>`;
                 for (let i = 0; i < numCells; i++) {
-                    const c = rowsToRender[r][i];
+                    // 🌟 防崩溃：已确认数据按旧的时长(cell 数)保存，切到更长时段(如 24h→48h)时尾部 cell 不存在，需兜底
+                    const c = (rowsToRender[r] && rowsToRender[r][i]) ? rowsToRender[r][i] : { text: '', bg: 'transparent', fg: '#1e293b', ts: 'none' };
                     subHtml += `<td class="col-time td-data edit-cell data-cell-editable" data-c="${i}" style="${cellStyle} font-weight:bold; background:${c.bg}; color:${c.fg}; text-shadow:${c.ts};">${c.text}</td>`;
                 }
                 subTr.innerHTML = subHtml;
@@ -1709,8 +1729,23 @@ function syncTimelineHeader() {
         headLead.forEach((w, i) => { if (cols[i]) cols[i].style.width = w + 'px'; total += w; });
         hourWidths.forEach((w, i) => { const col = cols[4 + i]; if (col) { col.style.width = w + 'px'; total += w; } });
 
-        // 表头总宽严格等于各列实测宽之和（不用 scrollWidth，fixed 布局下 scrollWidth 会以 col 为准被撑大）
-        if (total) tlTable.style.width = total + 'px';
+        if (total) {
+            tlTable.style.width = total + 'px';
+            // 🌟 修复右侧“外框”：表头容器(#pb-timeline-header)靠负 margin 撑满 export-header 全宽，
+            // 但内部表只有 total 宽。当 total 小于可视全宽时(如24h)，右侧会露出容器
+            // 深色背景形成外框——收紧到 total 即可。当内容超宽时(如48h)，容器须
+            // 保持可视全宽以便 overflow:hidden 裁剪 + scrollLeft 同步滚动，不能撑到 total。
+            const header = document.getElementById('pb-timeline-header');
+            if (header) {
+                // 先复位 wrapper 宽度再量可视全宽，避免上一次收紧后读到陈旧值
+                if (tw) tw.style.width = '';
+                const fullW = tw ? tw.getBoundingClientRect().width : total;
+                header.style.width = Math.min(total, fullW) + 'px';
+                // 🌟 正文 wrapper 也同步：内容窄时收紧到 total，使表头/正文/容器右边界统一；
+                // 内容超宽时保持 100% 以便 overflow-x 滚动。
+                if (tw && total <= fullW + 1) tw.style.width = total + 'px';
+            }
+        }
     }
     // 横向滚动同步：初始对齐当前 scrollLeft
     const header = document.getElementById('pb-timeline-header');

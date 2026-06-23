@@ -11,6 +11,9 @@ block_cipher = None
 # 收集 backend/logic 文件夹到打包后的 backend/logic (确保逻辑模块能被找到)
 datas = [
     ('frontend', 'frontend'),
+    # 🌟 打包配置模板（只读种子），首次启动从它落地到 exe 同级 runtime/ 持久目录。
+    # 不打包真实的 settings_config.json（那是本地持久数据）。
+    ('runtime/settings_config.example.json', 'runtime'),
 ]
 
 # 如果使用了 avwx 库，收集其数据文件

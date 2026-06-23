@@ -105,8 +105,18 @@
         if (headerSrc) {
             const h = headerSrc.cloneNode(true);
             h.style.borderRadius = '0';
-            h.style.padding = '14px 18px 28px 18px';
+            // 🌟 底部 padding 置 0：消除时间轴与正文表之间露出的深色头部背景条（原本 28px padding-bottom + 时间轴 -20px margin 净剩 8px）
+            h.style.padding = '14px 18px 0 18px';
             clonedTimeline = h.querySelector('#pb-timeline-table');
+            // 🌟 时间轴容器：负 margin 与新 padding(18px) 严格匹配，使时间轴左右边界与正文表齐；
+            // 底部 margin 置 0，让时间轴紧贴正文表（不再露背景条）。
+            const clonedTlHeader = h.querySelector('#pb-timeline-header');
+            if (clonedTlHeader) {
+                clonedTlHeader.style.margin = '16px -18px 0 -18px';
+                clonedTlHeader.style.overflow = 'hidden';
+                // 🌟 清掉 syncTimelineHeader 给 live 元素设的内联 width，避免与导出 tableWidth 不一致被裁剪
+                clonedTlHeader.style.width = '';
+            }
             h.querySelectorAll('select,input').forEach(el => {
                 const display = document.createElement('span');
                 display.textContent = el.tagName === 'SELECT' ? (el.options[el.selectedIndex]?.text || el.value || '') : (el.value || '');
@@ -321,7 +331,9 @@
 
         if (state.mode === 'excel') {
             // Excel 预览：用 HTML 表格近似展示将写入的机场数据
-            const pages = [state.rows];
+            // 🌟 隐藏图片分页专属的“单页机场数”控件（先点分割图片再切 Excel 时会残留）
+            const sizeBox = document.getElementById('export-page-size-controls');
+            if (sizeBox) { sizeBox.style.display = 'none'; sizeBox.innerHTML = ''; }
             renderExcelPreview(body, info, state.rows);
             return;
         }

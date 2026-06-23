@@ -20,7 +20,32 @@ def resolve_auth_token(provided_token=None):
     """OMICS 后端不再保存/读取统一登录态；业务接口使用前端传入的 token。"""
     return provided_token
 
-PERSONNEL_MAP_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'personnel_mapping.json'))
+def _persistent_base_dir():
+    """运行时可写配置的持久目录。
+    🌟 修复“配置一段时间后还原”：frozen 后不能用 __file__（指向 bundle 内部，
+    onefile 是临时目录会被清理，onedir 是 _internal 重装/更新会被覆盖）。
+    改为写在 exe 同级目录（持久）。源码模式保持原来的 backend 上级目录。"""
+    if getattr(sys, 'frozen', False):
+        return os.path.dirname(sys.executable)
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+
+
+def _bundle_resource_dir():
+    """只读资源（打包进包的模板）目录。frozen 时为 _MEIPASS。"""
+    if getattr(sys, 'frozen', False):
+        return getattr(sys, '_MEIPASS', os.path.dirname(sys.executable))
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+
+
+_PERSIST_DIR = _persistent_base_dir()
+_BUNDLE_DIR = _bundle_resource_dir()
+
+PERSONNEL_MAP_PATH = os.path.join(_PERSIST_DIR, 'personnel_mapping.json')
+SETTINGS_CONFIG_PATH = os.path.join(_PERSIST_DIR, 'runtime', 'settings_config.json')
+# 模板优先找持久目录，再找打包进包的只读资源目录
+_SETTINGS_EXAMPLE_PERSIST = os.path.join(_PERSIST_DIR, 'runtime', 'settings_config.example.json')
+_SETTINGS_EXAMPLE_BUNDLE = os.path.join(_BUNDLE_DIR, 'runtime', 'settings_config.example.json')
+SETTINGS_CONFIG_EXAMPLE_PATH = _SETTINGS_EXAMPLE_PERSIST if os.path.exists(_SETTINGS_EXAMPLE_PERSIST) else _SETTINGS_EXAMPLE_BUNDLE
 SETTINGS_CONFIG_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'runtime', 'settings_config.json'))
 SETTINGS_CONFIG_EXAMPLE_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'runtime', 'settings_config.example.json'))
 DEFAULT_PERSONNEL_MAP = {"41060711": "吴霄"}
@@ -96,7 +121,16 @@ def load_settings_config():
 
 
 def save_settings_config(settings):
-    data = deep_merge_dict(DEFAULT_SETTINGS_CONFIG, settings if isinstance(settings, dict) else {})
+    # 🌟 健壮性：以 默认 -> 磁盘已存 -> 本次传入 的顺序逐层叠加，
+    # 避免某次只传部分字段的 sync 把磁盘上其他已保存配置抹掉。
+    data = copy.deepcopy(DEFAULT_SETTINGS_CONFIG)
+    try:
+        if os.path.exists(SETTINGS_CONFIG_PATH):
+            with open(SETTINGS_CONFIG_PATH, 'r', encoding='utf-8') as f:
+                data = deep_merge_dict(data, json.load(f))
+    except Exception as exc:
+        LOG.warning("读取已存配置作为合并基底失败: %s", exc)
+    data = deep_merge_dict(data, settings if isinstance(settings, dict) else {})
     # Also keep personnel_mapping.json in sync for launcher/legacy readers.
     if isinstance(data.get("personnel_dict"), dict):
         save_personnel_mapping(data["personnel_dict"])

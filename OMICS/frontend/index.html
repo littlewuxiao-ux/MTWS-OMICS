@@ -358,7 +358,7 @@
                             <span class="spinner"></span> 正在读取及分析预报数据,请稍候...
                         </div>
 
-                        <div id="top-scrollbar" style="overflow-x: auto; overflow-y: hidden; height: 0; position: absolute; opacity: 0; pointer-events: none; z-index: -1;">
+                        <div id="top-scrollbar" style="position: fixed; bottom: 0; left: 0; right: 0; height: 16px; overflow-x: auto; overflow-y: hidden; z-index: 55; background: rgba(248,250,252,0.97); border-top: 1px solid #c8d5e5; box-shadow: 0 -2px 6px rgba(0,0,0,0.08); display: none;">
                             <div id="top-scroll-content" style="height: 1px;"></div>
                         </div>
 
@@ -623,11 +623,30 @@
                     tw.scrollLeft = ts.scrollLeft;
                     if (tlHeader) tlHeader.scrollLeft = ts.scrollLeft;
                 });
-                const observer = new MutationObserver(() => {
+                // 🌟 底部常驻横向滚动条：仅在正文表内容超宽(如48h预报)且发布视图可见时显示。
+                const syncBottomScrollbar = () => {
                     const table = tw.querySelector('table');
-                    if (table) tsc.style.width = table.scrollWidth + 'px';
-                });
+                    if (!table) { ts.style.display = 'none'; return; }
+                    tsc.style.width = table.scrollWidth + 'px';
+                    const overflowing = tw.scrollWidth > tw.clientWidth + 1;
+                    const ws = document.getElementById('publish-workspace');
+                    const visible = overflowing && ws && ws.offsetParent !== null && tw.offsetParent !== null;
+                    if (visible) {
+                        // 让滚动条宽度与正文表可视区对齐
+                        const rect = tw.getBoundingClientRect();
+                        ts.style.left = rect.left + 'px';
+                        ts.style.right = (window.innerWidth - rect.right) + 'px';
+                        ts.style.display = 'block';
+                        ts.scrollLeft = tw.scrollLeft;
+                    } else {
+                        ts.style.display = 'none';
+                    }
+                };
+                const observer = new MutationObserver(syncBottomScrollbar);
                 observer.observe(tw, { childList: true, subtree: true });
+                window.addEventListener('resize', syncBottomScrollbar);
+                window.addEventListener('scroll', syncBottomScrollbar, { passive: true });
+                window.OMICS_syncBottomScrollbar = syncBottomScrollbar;
             }
 
             document.getElementById('global-export-image-btn')?.addEventListener('click', () => {

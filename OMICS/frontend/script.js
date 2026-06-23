@@ -1058,6 +1058,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         resultsContainer = document.getElementById('results-' + currentMode) || document.getElementById('results-stats');
 
         if (typeof updateTimeRangeInputs === 'function') updateTimeRangeInputs();
+        // 🌟 切换视图后同步底部常驻滚动条可见性（离开发布页时隐藏）
+        if (typeof window.OMICS_syncBottomScrollbar === 'function') setTimeout(window.OMICS_syncBottomScrollbar, 0);
     }
 
     timeRadios.forEach(radio => { radio.addEventListener('change', updateTimeRangeInputs); });
