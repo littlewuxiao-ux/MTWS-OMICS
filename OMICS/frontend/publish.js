@@ -540,6 +540,14 @@ document.getElementById('add-pb-group-btn')?.addEventListener('click', () => {
     renderAirportGroupsConfig();
 });
 
+// 🌟 从 localStorage 构造 publish 配置块，供分块 PATCH 使用
+function buildPublishBlockFromLocal() {
+    return {
+        airport_groups: localStorage.getItem('pb_airport_groups') ? JSON.parse(localStorage.getItem('pb_airport_groups')) : [],
+        auto_ec_cfg: localStorage.getItem('pb_auto_ec_cfg') ? JSON.parse(localStorage.getItem('pb_auto_ec_cfg')) : {}
+    };
+}
+
 function saveAirportGroupsConfig() {
     const items = document.querySelectorAll('.ap-group-item');
     const newGroups = [];
@@ -552,7 +560,9 @@ function saveAirportGroupsConfig() {
     });
     pbState.airportGroups = newGroups;
     localStorage.setItem('pb_airport_groups', JSON.stringify(newGroups));
-    if (typeof window.OMICS_syncSettingsConfig === 'function') window.OMICS_syncSettingsConfig();
+    // 🌟 只 PATCH publish 块，不全量覆盖（避免冲掉阈值/人员等）
+    if (typeof window.OMICS_patchSettingsConfig === 'function') window.OMICS_patchSettingsConfig({ publish: buildPublishBlockFromLocal() });
+    else if (typeof window.OMICS_syncSettingsConfig === 'function') window.OMICS_syncSettingsConfig();
 }
 
 function populateModalForm() {
@@ -607,7 +617,8 @@ function saveModalForm() {
       iceTemp: pbState.cfgIceTemp, iceDew: pbState.cfgIceDew,
       iceVis: pbState.cfgIceVis, extCold: pbState.cfgExtColdTemp
   }));
-  if (typeof window.OMICS_syncSettingsConfig === 'function') window.OMICS_syncSettingsConfig();
+  if (typeof window.OMICS_patchSettingsConfig === 'function') window.OMICS_patchSettingsConfig({ publish: buildPublishBlockFromLocal() });
+  else if (typeof window.OMICS_syncSettingsConfig === 'function') window.OMICS_syncSettingsConfig();
 
   saveAirportGroupsConfig(); 
   

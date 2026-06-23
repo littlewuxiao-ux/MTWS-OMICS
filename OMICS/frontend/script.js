@@ -4,12 +4,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     const exitAppBtn = document.getElementById('exit-app-btn');
     const userInfoDiv = document.getElementById('user-info');
     const userIdDisplay = document.getElementById('user-id-display');
-    
+
     const loginModal = document.getElementById('login-modal');
     const qrImage = document.getElementById('qr-image');
     const qrStatusText = document.getElementById('qr-status-text');
     const closeLoginModalBtn = document.getElementById('close-login-modal');
-    
+
     const settingsBtn = document.getElementById('settings-toggle-btn');
 
     const modeRadios = document.querySelectorAll('input[name="forecast-mode"]');
@@ -17,22 +17,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     const customStartInput = document.getElementById('custom-start-time');
     const customEndInput = document.getElementById('custom-end-time');
     const datePickerInput = document.getElementById('base-date-picker');
-    
+
     const startTimeHidden = document.getElementById('start-time');
     const endTimeHidden = document.getElementById('end-time');
-    
+
     const downloadAirports = document.getElementById('download-airports');
     const fetchManualBtn = document.getElementById('fetch-manual-btn');
     const fetchTafListBtn = document.getElementById('fetch-taf-list-btn');
-    const importTafMetarBtn = document.getElementById('import-taf-metar-btn'); 
-    
+    const importTafMetarBtn = document.getElementById('import-taf-metar-btn');
+
     const metarInput = document.getElementById('metar-input');
     const addMetarBtn = document.getElementById('add-metar-btn');
     const airportBtnsContainer = document.getElementById('dynamic-airport-buttons-container');
-    
+
     const scoreButton = document.getElementById('score-button');
     const loader = document.getElementById('loader');
-    let resultsContainer; 
+    let resultsContainer;
     const manualGridContainer = document.getElementById('manual-forecast-grid-container');
     const generateGridBtn = document.getElementById('generate-grid-btn');
     const pasteExcelBtn = document.getElementById('paste-excel-btn');
@@ -41,10 +41,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     const modalTitle = document.getElementById('modal-title');
     const modalDisplay = document.getElementById('modal-metar-display');
     const closeMetarModalBtn = document.getElementById('close-metar-modal');
-    
+
     const phenomenaContainer = document.getElementById('phenomena-settings-container');
     const resetPhenomenaBtn = document.getElementById('reset-phenomena-btn');
-    
+
     let apiToken = null;
 
     const UNIFIED_AUTH_STATUS_URL = '/auth/status';
@@ -58,32 +58,46 @@ document.addEventListener('DOMContentLoaded', async () => {
             const data = await res.json();
             if (data.success && data.data) return data.data;
         } catch (e) {
-            console.warn('读取系统设置配置文件失败，回退 localStorage', e);
+            console.warn('读取系统设置配置文件失败,回退 localStorage', e);
         }
         return null;
+    }
+
+    // 🌟 各配置块的构造函数,供全量 snapshot 与分块 PATCH 共用
+    function buildPathsBlock() {
+        return {
+            taf_excel_path: localStorage.getItem('taf_excel_path') || '',
+            manual_excel_path: localStorage.getItem('manual_excel_path') || '',
+            backup_save_path: localStorage.getItem('backup_save_path') || ''
+        };
+    }
+    function buildDefaultAirportsBlock() {
+        return {
+            manual: localStorage.getItem('sf_def_manual_aps') || 'ZBAA ZGSZ ZHEC ZSHC',
+            taf: localStorage.getItem('sf_def_taf_aps') || 'ZHEC'
+        };
+    }
+    function buildThresholdsBlock() {
+        return {
+            global: globalThresholds || {},
+            custom_airports: customAirportsThresholds || {}
+        };
+    }
+    function buildPublishBlock() {
+        return {
+            airport_groups: localStorage.getItem('pb_airport_groups') ? JSON.parse(localStorage.getItem('pb_airport_groups')) : [],
+            auto_ec_cfg: localStorage.getItem('pb_auto_ec_cfg') ? JSON.parse(localStorage.getItem('pb_auto_ec_cfg')) : {}
+        };
     }
 
     function buildSettingsConfigSnapshot() {
         return {
             personnel_dict: personnelDict || {},
-            paths: {
-                taf_excel_path: localStorage.getItem('taf_excel_path') || '',
-                manual_excel_path: localStorage.getItem('manual_excel_path') || '',
-                backup_save_path: localStorage.getItem('backup_save_path') || ''
-            },
-            default_airports: {
-                manual: localStorage.getItem('sf_def_manual_aps') || 'ZBAA ZGSZ ZHEC ZSHC',
-                taf: localStorage.getItem('sf_def_taf_aps') || 'ZHEC'
-            },
+            paths: buildPathsBlock(),
+            default_airports: buildDefaultAirportsBlock(),
             phenomena_config: phenomenaSettings || {},
-            thresholds: {
-                global: globalThresholds || {},
-                custom_airports: customAirportsThresholds || {}
-            },
-            publish: {
-                airport_groups: localStorage.getItem('pb_airport_groups') ? JSON.parse(localStorage.getItem('pb_airport_groups')) : [],
-                auto_ec_cfg: localStorage.getItem('pb_auto_ec_cfg') ? JSON.parse(localStorage.getItem('pb_auto_ec_cfg')) : {}
-            }
+            thresholds: buildThresholdsBlock(),
+            publish: buildPublishBlock()
         };
     }
 
@@ -109,6 +123,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     function syncSettingsConfigToServer() {
         return saveSettingsConfigToServer(buildSettingsConfigSnapshot());
     }
+
+    // 🌟 分块 PATCH:只提交改动的那一块,后端读盘叠加保留其余字段。
+    // 避免改 A 设置时拿整个内存快照覆盖 B/C(阈值/人员/权限被冲的根因)。
+    function patchSettingsConfig(partial) {
+        return saveSettingsConfigToServer(partial);
+    }
+    window.OMICS_patchSettingsConfig = patchSettingsConfig;
 
     window.OMICS_syncSettingsConfig = syncSettingsConfigToServer;
 
@@ -148,8 +169,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    // 控制台后台定期校验 token，过期时会清空统一登录态。
-    // OMICS 轮询发现统一态被清空（且本页面仍认为已登录）时，自动登出并提示重新登录。
+    // 控制台后台定期校验 token,过期时会清空统一登录态。
+    // OMICS 轮询发现统一态被清空(且本页面仍认为已登录)时,自动登出并提示重新登录。
     let unifiedAuthWatchTimer = null;
     function startUnifiedAuthWatch() {
         if (unifiedAuthWatchTimer) return;
@@ -159,11 +180,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (!unified) return; // 接口异常不误判
             if (!unified.logged_in) {
                 if (unified.expired) {
-                    console.warn('统一登录态已失效（控制台校验），OMICS 自动登出');
+                    console.warn('统一登录态已失效(控制台校验),OMICS 自动登出');
                     performAutoLogout();
                 } else {
-                    // 控制台重启后状态丢失（非过期）-> 回灌本地 token，无需刷新页面
-                    console.info('检测到控制台统一登录态为空（可能刚重启），回灌本地 token');
+                    // 控制台重启后状态丢失(非过期)-> 回灌本地 token,无需刷新页面
+                    console.info('检测到控制台统一登录态为空(可能刚重启),回灌本地 token');
                     const uid = localStorage.getItem('sf_userId') || null;
                     await updateUnifiedAuth(apiToken, uid, personnelDict[uid] || null);
                 }
@@ -187,7 +208,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             adminSection.style.display = 'none';
         }
         try { updateDisplayUserName(); } catch (e) {}
-        alert('登录已过期或异地登录，已自动登出，请重新扫码登录。');
+        alert('登录已过期或异地登录,已自动登出,请重新扫码登录。');
     }
 
     function saveTokenForBothApps(token, userCode = null) {
@@ -211,9 +232,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     let pollTimer = null;
     let currentMode = 'manual';
-    let baseDate = new Date(); 
-    let storedMetars = {}; 
-    // 🌟 需求3：从纯文本配置缓存中提取机场字典
+    let baseDate = new Date();
+    let storedMetars = {};
+    // 🌟 需求3:从纯文本配置缓存中提取机场字典
     let savedAirportTextDict = localStorage.getItem('sf_custom_airport_text_dict');
     if (savedAirportTextDict) {
         try {
@@ -226,10 +247,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     const AIRPORT_NAME_MAP = window.GLOBAL_AIRPORT_NAME_MAP || {};
 
     const DEFAULT_PHEN_CATEGORIES = {
-        '雷雨类': ['TSRA'], 
-        '积冰类': ['FZDZ', 'FZRA', 'SN', 'SG', 'PL'], 
-        '强降水(无雷)类': ['RA'], 
-        '特殊类': ['GR', 'GS', 'FC', 'SQ'] 
+        '雷雨类': ['TSRA'],
+        '积冰类': ['FZDZ', 'FZRA', 'SN', 'SG', 'PL'],
+        '强降水(无雷)类': ['RA'],
+        '特殊类': ['GR', 'GS', 'FC', 'SQ']
     };
     const serverSettingsConfig = await loadSettingsConfigFromServer();
     window.OMICS_SETTINGS_CONFIG = serverSettingsConfig || {};
@@ -244,10 +265,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (serverDefaultAirports.taf) localStorage.setItem('sf_def_taf_aps', serverDefaultAirports.taf);
     if (serverPublish.airport_groups && serverPublish.airport_groups.length) localStorage.setItem('pb_airport_groups', JSON.stringify(serverPublish.airport_groups));
     if (serverPublish.auto_ec_cfg && Object.keys(serverPublish.auto_ec_cfg).length) localStorage.setItem('pb_auto_ec_cfg', JSON.stringify(serverPublish.auto_ec_cfg));
-    
+
     let phenomenaSettings = serverSettingsConfig?.phenomena_config || JSON.parse(localStorage.getItem('phenomena_config')) || JSON.parse(JSON.stringify(DEFAULT_PHEN_CATEGORIES));
-    
-    const ADMIN_ID = '41060711'; 
+
+    const ADMIN_ID = '41060711';
     const DEFAULT_PERSONNEL = {
         "40690141": "曹骏", "347657": "崔云云", "41060711": "吴霄",
         "41984815": "杨风良", "41917213": "罗亦杰", "42464638": "张倩", "42623776": "苏永发"
@@ -303,7 +324,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         toggleMetarBtn.onclick = () => {
             if (metarContent.style.display === 'none' || metarContent.style.display === '') {
                 metarContent.style.display = 'block';
-                metarContent.classList.remove('hidden'); 
+                metarContent.classList.remove('hidden');
             } else {
                 metarContent.style.display = 'none';
             }
@@ -322,7 +343,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         };
     }
-    
+
     document.getElementById('add-emp-btn')?.addEventListener('click', () => {
         const newId = document.getElementById('new-emp-id').value.trim();
         const newName = document.getElementById('new-emp-name').value.trim();
@@ -330,21 +351,21 @@ document.addEventListener('DOMContentLoaded', async () => {
             personnelDict[newId] = newName;
             localStorage.setItem('personnel_dict', JSON.stringify(personnelDict));
             syncPersonnelMappingToServer();
-            syncSettingsConfigToServer();
+            patchSettingsConfig({ personnel_dict: personnelDict });
             renderPersonnelList();
             document.getElementById('new-emp-id').value = '';
             document.getElementById('new-emp-name').value = '';
             updateDisplayUserName();
-        } else { alert("工号和姓名不能为空！"); }
+        } else { alert("工号和姓名不能为空!"); }
     });
 
     window.deletePersonnel = function(empId) {
-        if (empId === ADMIN_ID) return alert("吴霄作为超级管理员，无法被删除。");
-        if (confirm(`确定要删除工号 ${empId} 的人员映射吗？`)) {
+        if (empId === ADMIN_ID) return alert("吴霄作为超级管理员,无法被删除。");
+        if (confirm(`确定要删除工号 ${empId} 的人员映射吗?`)) {
             delete personnelDict[empId];
             localStorage.setItem('personnel_dict', JSON.stringify(personnelDict));
             syncPersonnelMappingToServer();
-            syncSettingsConfigToServer();
+            patchSettingsConfig({ personnel_dict: personnelDict });
             renderPersonnelList();
             updateDisplayUserName();
         }
@@ -355,15 +376,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (newPwd) {
             settingsPassword = newPwd;
             localStorage.setItem('settings_pwd', settingsPassword);
-            syncSettingsConfigToServer();
-            alert("通用设置密码已更新！");
+            // 密码仅存本地 localStorage,不在统一配置 schema 中,无需推送配置文件
+            alert("通用设置密码已更新!");
         }
     });
 
     // 🌟 清理了重复嵌套的函数
     function updateDisplayUserName(userCode = null, isOffline = false, displayName = null) {
-        const currentUserId = userCode || localStorage.getItem('sf_userId') || ''; 
-        const pbForecaster = document.getElementById('pb-forecaster'); 
+        const currentUserId = userCode || localStorage.getItem('sf_userId') || '';
+        const pbForecaster = document.getElementById('pb-forecaster');
 
         if (currentUserId) {
             const chineseName = displayName || personnelDict[currentUserId] || (isOffline ? "离线模式" : "未知");
@@ -375,9 +396,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             const adminSection = document.getElementById('admin-only-section');
             if (adminSection) {
-                if (currentUserId === '41060711' || chineseName === '吴霄') {
+                // 🌟 只认吴霄工号常量,不依赖会被配置同步覆盖的姓名映射
+                if (currentUserId === ADMIN_ID) {
                     adminSection.classList.remove('hidden');
-                    adminSection.style.display = 'block'; 
+                    adminSection.style.display = 'block';
                 } else {
                     adminSection.classList.add('hidden');
                     adminSection.style.display = 'none';
@@ -401,21 +423,21 @@ document.addEventListener('DOMContentLoaded', async () => {
         e.target.textContent = "打开中...";
         try {
             const res = await fetch('/api/select_folder'); const data = await res.json();
-            if (data.success) { tafExcelPathInput.value = data.path; localStorage.setItem('taf_excel_path', data.path); syncSettingsConfigToServer(); }
+            if (data.success) { tafExcelPathInput.value = data.path; localStorage.setItem('taf_excel_path', data.path); patchSettingsConfig({ paths: buildPathsBlock() }); }
         } catch (err) {} e.target.textContent = "浏览";
     });
     document.getElementById('browse-manual-btn')?.addEventListener('click', async (e) => {
         e.target.textContent = "打开中...";
         try {
             const res = await fetch('/api/select_folder'); const data = await res.json();
-            if (data.success) { manualExcelPathInput.value = data.path; localStorage.setItem('manual_excel_path', data.path); syncSettingsConfigToServer(); }
+            if (data.success) { manualExcelPathInput.value = data.path; localStorage.setItem('manual_excel_path', data.path); patchSettingsConfig({ paths: buildPathsBlock() }); }
         } catch (err) {} e.target.textContent = "浏览";
     });
     document.getElementById('browse-backup-btn')?.addEventListener('click', async (e) => {
         e.target.textContent = "打开中...";
         try {
             const res = await fetch('/api/select_folder'); const data = await res.json();
-            if (data.success && backupSavePathInput) { backupSavePathInput.value = data.path; localStorage.setItem('backup_save_path', data.path); syncSettingsConfigToServer(); }
+            if (data.success && backupSavePathInput) { backupSavePathInput.value = data.path; localStorage.setItem('backup_save_path', data.path); patchSettingsConfig({ paths: buildPathsBlock() }); }
         } catch (err) {} e.target.textContent = "浏览";
     });
 
@@ -425,14 +447,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         evalPersonSelect.innerHTML = '<option value="">请选择人员</option>';
         const statsSelect = document.getElementById('stats-person-select');
         if (statsSelect) statsSelect.innerHTML = '<option value="ALL">全部人员</option>';
-        
+
         const names = [...new Set(Object.values(personnelDict))];
-        
+
         names.forEach(name => {
             const opt = document.createElement('option');
             opt.value = name; opt.textContent = name;
             evalPersonSelect.appendChild(opt);
-            
+
             if (statsSelect) {
                 const sOpt = document.createElement('option');
                 sOpt.value = name; sOpt.textContent = name;
@@ -446,7 +468,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         renderEvalPersonSelect();
         updateDisplayUserName();
         syncPersonnelMappingToServer();
-        syncSettingsConfigToServer();
+        // 🌟 初始加载只回写人员映射,不全量推送(避免初始化时用可能还不完整的快照覆盖阈值等)
+        patchSettingsConfig({ personnel_dict: personnelDict });
     });
 
     const adminDefManual = document.getElementById('admin-default-manual');
@@ -457,8 +480,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('save-default-aps-btn')?.addEventListener('click', () => {
         if (adminDefManual) localStorage.setItem('sf_def_manual_aps', adminDefManual.value.trim());
         if (adminDefTaf) localStorage.setItem('sf_def_taf_aps', adminDefTaf.value.trim());
-        syncSettingsConfigToServer();
-        alert("✅ 默认机场配置已保存！");
+        patchSettingsConfig({ default_airports: buildDefaultAirportsBlock() });
+        alert("✅ 默认机场配置已保存!");
     });
 
     const customStartInputEl = document.getElementById('custom-start-time');
@@ -467,7 +490,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     customEndInputEl?.addEventListener('input', updateTimeRangeInputs);
 
     let customAirportsThresholds = serverThresholds.custom_airports || JSON.parse(localStorage.getItem('sf_custom_ap_thresholds') || '{}');
-    
+
     let globalThresholds = serverThresholds.global || JSON.parse(localStorage.getItem('sf_global_thresholds')) || {
         vis_takeoff: 400, vis_landing: 800, vis_warning: 1000,
         cld_takeoff: 60, cld_landing: 60, cld_warning: 90, wind_warning: 17
@@ -482,21 +505,21 @@ document.addEventListener('DOMContentLoaded', async () => {
         const container = document.getElementById('global-thresholds-display');
         if (!container) return;
         const t = globalThresholds;
-        
+
         container.innerHTML = `
             <div style="display:flex; justify-content:space-between; align-items:flex-start;">
                 <div style="color:#005A9C; font-size:12px; font-weight: bold; line-height: 1.5;">
-                    全局生效标准：<br>
+                    全局生效标准:<br>
                     <span style="color:#333; font-weight: normal; font-size: 10px;">
-                        能见度 ${t.vis_takeoff}/${t.vis_landing}/${t.vis_warning} 米 | 
-                        云底高 ${t.cld_takeoff}/${t.cld_landing}/${t.cld_warning} 米 | 
+                        能见度 ${t.vis_takeoff}/${t.vis_landing}/${t.vis_warning} 米 |
+                        云底高 ${t.cld_takeoff}/${t.cld_landing}/${t.cld_warning} 米 |
                         大风基准 ${t.wind_warning} m/s
                     </span>
                 </div>
                 <button id="save-global-thresh-btn" class="mini-btn" style="background:#005A9C; color:white; padding:2px 8px; font-size:10px;">💾 保存</button>
             </div>
         `;
-        
+
         document.getElementById('save-global-thresh-btn').addEventListener('click', () => {
             globalThresholds = {
                 vis_takeoff: document.getElementById('vis_takeoff').value,
@@ -508,7 +531,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 wind_warning: document.getElementById('wind_warning').value
             };
             localStorage.setItem('sf_global_thresholds', JSON.stringify(globalThresholds));
-            syncSettingsConfigToServer();
+            patchSettingsConfig({ thresholds: buildThresholdsBlock() });
             renderGlobalThresholds();
             alert("✅ 全局参数已保存并生效！");
         });
@@ -530,17 +553,17 @@ document.addEventListener('DOMContentLoaded', async () => {
                 </div>`;
         }
     }
-    
+
     window.deleteCustomApThresh = function(ap) {
         delete customAirportsThresholds[ap];
         localStorage.setItem('sf_custom_ap_thresholds', JSON.stringify(customAirportsThresholds));
-        syncSettingsConfigToServer();
+        patchSettingsConfig({ thresholds: buildThresholdsBlock() });
         renderCustomAirports();
     };
 
     document.getElementById('add-custom-thresh-btn')?.addEventListener('click', () => {
         const ap = document.getElementById('custom-thresh-ap').value.trim().toUpperCase();
-        if (!ap) return alert("请输入机场代码！");
+        if (!ap) return alert("请输入机场代码!");
         customAirportsThresholds[ap] = {
             vt: document.getElementById('vis_takeoff').value,
             vl: document.getElementById('vis_landing').value,
@@ -551,7 +574,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             ww: document.getElementById('wind_warning').value
         };
         localStorage.setItem('sf_custom_ap_thresholds', JSON.stringify(customAirportsThresholds));
-        syncSettingsConfigToServer();
+        patchSettingsConfig({ thresholds: buildThresholdsBlock() });
         document.getElementById('custom-thresh-ap').value = '';
         renderCustomAirports();
     });
@@ -562,42 +585,42 @@ document.addEventListener('DOMContentLoaded', async () => {
     function renderPhenomenaSettings() {
         phenomenaContainer.innerHTML = '';
         const rulesText = {
-            '雷雨类': '强度一致完美, 差一级优秀。无中生有或强报弱为空报，有而未报或弱报强为漏报。',
-            '强降水(无雷)类': '强/中档位一致完美, 差一档优秀。预报偏强为空报，偏弱为漏报。实况与预报均为弱或无则不评。',
-            '积冰类': '强度一致完美, 差一级优秀。无中生有或强报弱为空报，有而未报或弱报强为漏报。',
-            '特殊类': '不区分强度，报中即完美。多报(无中生有)为空报，少报(有而未报)为漏报。'
+            '雷雨类': '强度一致完美, 差一级优秀。无中生有或强报弱为空报,有而未报或弱报强为漏报。',
+            '强降水(无雷)类': '强/中档位一致完美, 差一档优秀。预报偏强为空报,偏弱为漏报。实况与预报均为弱或无则不评。',
+            '积冰类': '强度一致完美, 差一级优秀。无中生有或强报弱为空报,有而未报或弱报强为漏报。',
+            '特殊类': '不区分强度,报中即完美。多报(无中生有)为空报,少报(有而未报)为漏报。'
         };
 
         for (const [category, codes] of Object.entries(phenomenaSettings)) {
             const div = document.createElement('div');
             div.style.marginBottom = '8px'; div.style.borderBottom = '1px dashed #eee'; div.style.paddingBottom = '5px';
-            
+
             const titleLine = document.createElement('div');
-            const title = document.createElement('strong'); title.textContent = category + ": "; 
+            const title = document.createElement('strong'); title.textContent = category + ": ";
             title.style.fontSize = '12px';
-            const codeList = document.createElement('span'); codeList.textContent = codes.join(', '); 
+            const codeList = document.createElement('span'); codeList.textContent = codes.join(', ');
             codeList.style.color = '#555'; codeList.style.fontSize = '11px';
             titleLine.appendChild(title); titleLine.appendChild(codeList);
             div.appendChild(titleLine);
 
             if (rulesText[category]) {
                 const ruleP = document.createElement('div');
-                ruleP.textContent = "评分规则：" + rulesText[category];
+                ruleP.textContent = "评分规则:" + rulesText[category];
                 ruleP.style.fontSize = '10px';
                 ruleP.style.color = '#888';
                 ruleP.style.marginTop = '2px';
                 div.appendChild(ruleP);
             }
 
-            const inputContainer = document.createElement('div'); 
+            const inputContainer = document.createElement('div');
             inputContainer.style.marginTop = '4px'; inputContainer.style.display = 'flex'; inputContainer.style.gap = '5px';
             const input = document.createElement('input'); input.type = 'text'; input.placeholder = '添加代码'; input.style.width = '80px'; input.style.fontSize = '10px'; input.style.padding = '2px';
             const addBtn = document.createElement('button'); addBtn.textContent = '+'; addBtn.className = 'mini-btn'; addBtn.style.padding = '2px 8px';
-            
+
             addBtn.onclick = () => {
                 const val = input.value.trim().toUpperCase();
                 if (val && !codes.includes(val)) {
-                    codes.push(val); localStorage.setItem('phenomena_config', JSON.stringify(phenomenaSettings)); syncSettingsConfigToServer(); renderPhenomenaSettings();
+                    codes.push(val); localStorage.setItem('phenomena_config', JSON.stringify(phenomenaSettings)); patchSettingsConfig({ phenomena_config: phenomenaSettings }); renderPhenomenaSettings();
                 }
             };
             inputContainer.appendChild(input); inputContainer.appendChild(addBtn); div.appendChild(inputContainer); phenomenaContainer.appendChild(div);
@@ -605,8 +628,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     resetPhenomenaBtn.onclick = () => {
-        if(confirm("确定要重置天气配置为默认值吗？")) {
-            phenomenaSettings = JSON.parse(JSON.stringify(DEFAULT_PHEN_CATEGORIES)); localStorage.removeItem('phenomena_config'); syncSettingsConfigToServer(); renderPhenomenaSettings();
+        if(confirm("确定要重置天气配置为默认值吗?")) {
+            phenomenaSettings = JSON.parse(JSON.stringify(DEFAULT_PHEN_CATEGORIES)); localStorage.removeItem('phenomena_config'); patchSettingsConfig({ phenomena_config: phenomenaSettings }); renderPhenomenaSettings();
         }
     };
     renderPhenomenaSettings();
@@ -621,12 +644,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             } else {
                 const res = await fetch('/api/auth/status');
                 data = await res.json();
-                // Nginx 统一态为空时，允许 OMICS 前端继续使用自己保存的登录信息。
+                // Nginx 统一态为空时,允许 OMICS 前端继续使用自己保存的登录信息。
                 const localToken = localStorage.getItem('sf_weather_token') || localStorage.getItem('mtws_token');
                 const localUserCode = localStorage.getItem('sf_userId') || localStorage.getItem('mtws_userCode');
                 if ((!data || !data.logged_in) && localToken && localUserCode) {
                     data = { logged_in: true, token: localToken, userCode: localUserCode, displayName: personnelDict[localUserCode], isOffline: false, source: '浏览器缓存' };
-                    // 浏览器缓存里仍有可用 token 时，主动回灌到 Nginx 统一登录态，让启动器信息框和 MTWS 立即识别真实登录状态。
+                    // 浏览器缓存里仍有可用 token 时,主动回灌到 Nginx 统一登录态,让启动器信息框和 MTWS 立即识别真实登录状态。
                     await updateUnifiedAuth(localToken, localUserCode, personnelDict[localUserCode]);
                 }
             }
@@ -660,7 +683,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         onChange: (selectedDates) => {
             if (selectedDates.length > 0) {
                 baseDate = selectedDates[0];
-                baseDate.setHours(0,0,0,0); 
+                baseDate.setHours(0,0,0,0);
                 updateTimeRangeInputs();
             }
         }
@@ -668,37 +691,40 @@ document.addEventListener('DOMContentLoaded', async () => {
     if(fp.selectedDates.length > 0) {
         baseDate = fp.selectedDates[0];
         baseDate.setHours(0,0,0,0);
-        updateTimeRangeInputs(); 
+        updateTimeRangeInputs();
     }
 
     downloadAirports.value = "ZBAA ZGSZ ZHEC ZSHC";
 
     // 🌟 全局设置弹窗交互逻辑 (清理重复代码)
     const globalSettingsModal = document.getElementById('global-settings-modal');
-    
+
     settingsBtn.addEventListener('click', () => {
         const currentUserId = localStorage.getItem('sf_userId') || '';
         const currentToken = apiToken || localStorage.getItem('sf_weather_token') || '';
         const isLoggedIn = !!currentToken && !!currentUserId;
-        // 权限规则：未登录必须输入设置密码；已登录账号可进入普通设置。
-        if (!isLoggedIn) {
-            const inputPwd = prompt("安全验证：未登录状态访问系统配置需输入管理密码。");
+        // 🌟 权限规则(只认吴霄工号常量,不依赖会被配置同步覆盖的 personnelDict):
+        //   1. 吴霄(工号 ADMIN_ID)扫码登录 → 免密进入,并显示高级管理员配置。
+        //   2. 其他任何情况(未登录 / 登录的不是吴霄)→ 必须输入管理密码才能进入系统设置,
+        //      且只能进普通设置,看不到高级管理员配置。
+        const isAdminUser = isLoggedIn && currentUserId === ADMIN_ID;
+        if (!isAdminUser) {
+            const inputPwd = prompt("安全验证:仅管理员(吴霄)可免密进入,其他账号需输入管理密码。");
             if (inputPwd !== settingsPassword) {
-                alert("密码错误，拒绝访问！");
-                return; 
+                alert("密码错误,拒绝访问!");
+                return;
             }
         }
         globalSettingsModal.style.display = 'flex';
         renderPersonnelList();
-        
+
         const adminSection = document.getElementById('admin-only-section');
         const adminNavBtn = document.querySelector('.set-nav[data-target="pane-admin"]');
         if (adminSection) {
-            // 只有吴霄账号能看到高级管理员配置；未登录输密码只能进普通设置。
-            const isAdmin = isLoggedIn && (currentUserId === ADMIN_ID || personnelDict[currentUserId] === '吴霄');
-            if (isAdmin) {
+            // 只有吴霄账号能看到高级管理员配置;输密码进来的只能进普通设置。
+            if (isAdminUser) {
                 adminSection.classList.remove('hidden');
-                adminSection.style.display = 'block'; 
+                adminSection.style.display = 'block';
                 if (adminNavBtn) adminNavBtn.style.display = 'block';
                 const pwdInput = document.getElementById('admin-pwd-input');
                 if(pwdInput) pwdInput.value = settingsPassword;
@@ -718,12 +744,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         globalSettingsModal.style.display = 'none';
     });
 
-    // 左右面板切换逻辑 (纯净版，样式交由 CSS .active 控制)
+    // 左右面板切换逻辑 (纯净版,样式交由 CSS .active 控制)
     document.querySelectorAll('.set-nav').forEach(nav => {
         nav.addEventListener('click', (e) => {
             document.querySelectorAll('.set-nav').forEach(n => n.classList.remove('active'));
             document.querySelectorAll('.set-pane').forEach(p => p.style.display = 'none');
-            
+
             e.target.classList.add('active');
             document.getElementById(e.target.dataset.target).style.display = 'block';
         });
@@ -743,61 +769,61 @@ document.addEventListener('DOMContentLoaded', async () => {
         stopUnifiedAuthWatch();
         await clearUnifiedAuth();
         clearLocalAuthState();
-        userInfoDiv.classList.add('hidden'); 
-        loginBtn.classList.remove('hidden'); 
-        
+        userInfoDiv.classList.add('hidden');
+        loginBtn.classList.remove('hidden');
+
         const adminSection = document.getElementById('admin-only-section');
         if (adminSection) {
             adminSection.classList.add('hidden');
             adminSection.style.display = 'none';
         }
-        alert("账号已注销"); 
+        alert("账号已注销");
     });
-    
+
     exitAppBtn.addEventListener('click', async () => {
-        if(confirm("确定要退出整个预报评定系统吗？")) {
+        if(confirm("确定要退出整个预报评定系统吗?")) {
             try { navigator.sendBeacon('/api/shutdown'); } catch(e) {}
             setTimeout(() => { window.close(); document.body.innerHTML = "<h2 style='text-align:center;'>系统已安全退出</h2>"; }, 500);
         }
     });
 
     async function startLogin() {
-        loginModal.style.display = 'flex'; 
+        loginModal.style.display = 'flex';
         if (pollTimer) clearInterval(pollTimer);
-        
+
         const offlineContainer = document.getElementById('offline-login-container');
         if (offlineContainer) offlineContainer.remove();
-        
+
         qrImage.style.display = "none";
         qrStatusText.style.display = "block";
         qrStatusText.innerHTML = `<div style="margin-bottom:10px; color:#555;">正在获取二维码...</div>`;
-        
+
         const redBtn = document.createElement('button');
-        redBtn.innerText = "⏳ 连不上？直接进入离线模式";
+        redBtn.innerText = "⏳ 连不上?直接进入离线模式";
         redBtn.style.cssText = "background:#dc3545; color:white; padding:8px 16px; border:none; border-radius:4px; cursor:pointer; font-size:12px; box-shadow: 0 2px 4px rgba(220,53,69,0.3);";
-        
+
         redBtn.onclick = (e) => {
-            e.preventDefault(); 
+            e.preventDefault();
             showOfflineLoginForm("已手动切换至离线模式");
         };
         qrStatusText.appendChild(redBtn);
-        
+
         try {
-            const res = await fetch('/api/auth/qrcode'); 
+            const res = await fetch('/api/auth/qrcode');
             const data = await res.json();
             if (document.getElementById('offline-login-container')) return;
 
             if (data.success) {
-                qrImage.src = "data:image/png;base64," + data.qr_img_base64; 
-                qrImage.style.display = "block"; 
+                qrImage.src = "data:image/png;base64," + data.qr_img_base64;
+                qrImage.style.display = "block";
                 qrStatusText.textContent = "请使用 SF App 扫码登录";
                 pollTimer = setInterval(checkLoginStatus, 2000);
-            } else { 
-                showOfflineLoginForm("获取失败: " + data.error); 
+            } else {
+                showOfflineLoginForm("获取失败: " + data.error);
             }
-        } catch (e) { 
+        } catch (e) {
             if (!document.getElementById('offline-login-container')) {
-                showOfflineLoginForm("网络不通，请使用离线模式登录"); 
+                showOfflineLoginForm("网络不通,请使用离线模式登录");
             }
         }
     }
@@ -814,25 +840,25 @@ document.addEventListener('DOMContentLoaded', async () => {
         container.innerHTML = `
             <p style="color: #dc3545; font-size: 13px; margin: 0 0 15px 0;"><b>${errorMsg}</b></p>
             <div style="margin-bottom: 10px;">
-                <label style="display:block; font-size:12px; margin-bottom:4px;">账号 (工号)：</label>
+                <label style="display:block; font-size:12px; margin-bottom:4px;">账号 (工号):</label>
                 <input type="text" id="offline-username" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box;">
             </div>
             <div style="margin-bottom: 15px;">
-                <label style="display:block; font-size:12px; margin-bottom:4px;">密码：</label>
+                <label style="display:block; font-size:12px; margin-bottom:4px;">密码:</label>
                 <input type="password" id="offline-password" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box;">
             </div>
             <button id="offline-submit-btn" class="step-button" style="width:100%; background:#6c757d; color:white; padding:10px; border:none; border-radius:4px; cursor:pointer;">立即登录</button>
         `;
-        
+
         qrImage.parentNode.insertBefore(container, qrImage.nextSibling);
 
         document.getElementById('offline-submit-btn').onclick = async (e) => {
-            e.preventDefault(); 
-            const username = document.getElementById('offline-username').value.trim(); 
+            e.preventDefault();
+            const username = document.getElementById('offline-username').value.trim();
             const password = document.getElementById('offline-password').value;
 
             if (!username || !personnelDict[username]) {
-                return alert("登录失败：该工号未录入系统，无权登录！");
+                return alert("登录失败:该工号未录入系统,无权登录!");
             }
 
             const btn = document.getElementById('offline-submit-btn');
@@ -845,14 +871,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ username, password })
                 });
-                
+
                 if (!res.ok) throw new Error(`服务器异常 ${res.status}`);
                 const data = await res.json();
-                
+
                 if (data.success) {
-                    location.reload(); 
+                    location.reload();
                 } else {
-                    alert("登录失败：" + data.message);
+                    alert("登录失败:" + data.message);
                     btn.innerText = originalText; btn.disabled = false;
                 }
             } catch (err) {
@@ -868,7 +894,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const data = await res.json();
             if (data.success && data.status === 'SCANNED') {
                 clearInterval(pollTimer);
-                qrStatusText.textContent = "扫码成功，正在验证...";
+                qrStatusText.textContent = "扫码成功,正在验证...";
                 const valRes = await fetch('/api/auth/validate', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
@@ -883,9 +909,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                     userInfoDiv.classList.remove('hidden');
                     const currentMode = document.querySelector('input[name="forecast-mode"]:checked')?.value;
                     if (currentMode === 'publish' && typeof window.loadForecastData === 'function') {
-                        window.loadForecastData(); 
+                        window.loadForecastData();
                     }
-                    
+
                     const statusRes = await fetch('/api/auth/status');
                     const statusData = await statusRes.json();
                     if(statusData.userCode) {
@@ -910,7 +936,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const res = await fetch('/api/get_desktop_path');
             const data = await res.json();
             if (data.success) {
-                window.tempExcelRoot = data.path; 
+                window.tempExcelRoot = data.path;
                 return data.path;
             }
         } catch (err) { console.error("获取桌面路径失败"); }
@@ -921,13 +947,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         radio.addEventListener('change', async (e) => {
             if (e.target.value === 'desktop') {
                 const path = await applyDesktopStorage();
-                if (path) alert(`已切换至【桌面存储】模式！\nExcel表格将保存在您桌面的【SF预报评定导出】文件夹中。`);
+                if (path) alert(`已切换至【桌面存储】模式!\nExcel表格将保存在您桌面的【SF预报评定导出】文件夹中。`);
             } else {
-                window.tempExcelRoot = null; 
+                window.tempExcelRoot = null;
             }
         });
     });
-    
+
     const checkedStorage = document.querySelector('input[name="storage-mode"]:checked');
     if (checkedStorage && checkedStorage.value === 'desktop') {
         applyDesktopStorage();
@@ -946,9 +972,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         syncExcelBtn.addEventListener('click', async () => {
             const excelRoot = getFinalExcelRoot(document.getElementById('stats-type-select')?.value || 'manual');
             const backupPath = document.getElementById('backup-save-path').value.trim();
-            if (!excelRoot) return alert("⚠️ 同步前请必须配置好正确的【Excel导出根目录】（云盘同步盘路径）！");
-            
-            syncExcelBtn.disabled = true; syncExcelBtn.textContent = "⏳ 正在逆向提取并同步数据，请耐心稍候...";
+            if (!excelRoot) return alert("⚠️ 同步前请必须配置好正确的【Excel导出根目录】(云盘同步盘路径)!");
+
+            syncExcelBtn.disabled = true; syncExcelBtn.textContent = "⏳ 正在逆向提取并同步数据,请耐心稍候...";
             try {
                 const res = await fetch('/api/sync_excel', {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -956,7 +982,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 });
                 const data = await res.json();
                 if (data.success) alert(data.message); else alert("同步失败: " + data.error);
-            } catch (e) { alert("请求异常: " + e.message); } 
+            } catch (e) { alert("请求异常: " + e.message); }
             finally { syncExcelBtn.disabled = false; syncExcelBtn.textContent = "🔄 从 Excel 逆向同步数据到 JSON"; }
         });
     }
@@ -964,7 +990,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (backupSavePathInput) {
         backupSavePathInput.addEventListener('change', () => {
             localStorage.setItem('backup_save_path', backupSavePathInput.value.trim());
-            syncSettingsConfigToServer();
+            patchSettingsConfig({ paths: buildPathsBlock() });
         });
     }
 
@@ -973,31 +999,31 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!checkedRadio) return;
         const currentMode = checkedRadio.value;
         const modeSwitcher = document.querySelector('.mode-switcher');
-        
-        const publishWorkspace = document.getElementById('publish-workspace'); 
-        const evalWorkspace = document.getElementById('evaluation-workspace'); 
-        const statsWorkspace = document.getElementById('stats-workspace');  
-        
+
+        const publishWorkspace = document.getElementById('publish-workspace');
+        const evalWorkspace = document.getElementById('evaluation-workspace');
+        const statsWorkspace = document.getElementById('stats-workspace');
+
         const resMan = document.getElementById('results-manual');
         const resTaf = document.getElementById('results-taf');
         const resStats = document.getElementById('results-stats');
 
         if (modeSwitcher) modeSwitcher.style.display = 'flex';
-        
+
         if (currentMode === 'publish') {
             if (publishWorkspace) publishWorkspace.style.display = 'block';
             if (evalWorkspace) evalWorkspace.style.display = 'none';
             if (statsWorkspace) statsWorkspace.style.display = 'none';
-            
+
             if (typeof window.initPublishModule === 'function' && !window.publishInitialized) {
                 window.initPublishModule();
             }
-            
+
         } else if (currentMode === 'stats') {
             if (publishWorkspace) publishWorkspace.style.display = 'none';
             if (evalWorkspace) evalWorkspace.style.display = 'none';
             if (statsWorkspace) statsWorkspace.style.display = 'block';
-            
+
         } else {
             if (publishWorkspace) publishWorkspace.style.display = 'none';
             if (evalWorkspace) evalWorkspace.style.display = 'block';
@@ -1011,9 +1037,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             const fetchTafListBtn = document.getElementById('fetch-taf-list-btn');
             const tafSelectionArea = document.getElementById('taf-selection-area');
             const importTafMetarContainer = document.getElementById('import-taf-metar-container');
-            const forecastManualGroup = document.getElementById('forecast-manual-group'); 
+            const forecastManualGroup = document.getElementById('forecast-manual-group');
 
-            if (currentMode === 'manual') { 
+            if (currentMode === 'manual') {
                 const downloadAirports = document.getElementById('download-airports');
                 if (downloadAirports) downloadAirports.value = localStorage.getItem('sf_def_manual_aps') || "ZBAA ZGSZ ZHEC ZSHC";
 
@@ -1026,7 +1052,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (tafSelectionArea) tafSelectionArea.classList.add('hidden');
                 if (importTafMetarContainer) importTafMetarContainer.classList.add('hidden');
                 if (forecastManualGroup) forecastManualGroup.style.display = 'none';
-            } else if (currentMode === 'taf') { 
+            } else if (currentMode === 'taf') {
                 const downloadAirports = document.getElementById('download-airports');
                 if (downloadAirports) downloadAirports.value = localStorage.getItem('sf_def_taf_aps') || "ZHEC";
 
@@ -1037,7 +1063,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (fetchManualBtn) fetchManualBtn.classList.add('hidden');
                 if (fetchTafListBtn) fetchTafListBtn.classList.remove('hidden');
                 if (forecastManualGroup) forecastManualGroup.style.display = 'block';
-                
+
                 const tafListItems = document.getElementById('taf-list-items');
                 const hasData = tafListItems && tafListItems.children.length > 0;
                 if (tafSelectionArea) {
@@ -1058,7 +1084,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         resultsContainer = document.getElementById('results-' + currentMode) || document.getElementById('results-stats');
 
         if (typeof updateTimeRangeInputs === 'function') updateTimeRangeInputs();
-        // 🌟 切换视图后同步底部常驻滚动条可见性（离开发布页时隐藏）
+        // 🌟 切换视图后同步底部常驻滚动条可见性(离开发布页时隐藏)
         if (typeof window.OMICS_syncBottomScrollbar === 'function') setTimeout(window.OMICS_syncBottomScrollbar, 0);
     }
 
@@ -1068,14 +1094,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         const d = String(date.getUTCDate()).padStart(2, '0'); const h = String(date.getUTCHours()).padStart(2, '0');
         return `${y}${m}${d}${h}00`;
     }
-    
+
     function updateTimeRangeInputs() {
         if (currentMode === 'taf') {
             startTimeHidden.value = ""; endTimeHidden.value = ""; return;
         }
 
         const checkedRadio = document.querySelector('input[name="time-range"]:checked');
-        if (!checkedRadio) return; 
+        if (!checkedRadio) return;
 
         const selectedOption = checkedRadio.value;
         const customTimeInputs = document.getElementById('custom-time-inputs');
@@ -1098,7 +1124,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             let startHour = parseInt(customStartInput.value);
             let endHour = parseInt(customEndInput.value);
             if (isNaN(startHour) || isNaN(endHour)) {
-                startTimeHidden.value = ""; endTimeHidden.value = ""; return; 
+                startTimeHidden.value = ""; endTimeHidden.value = ""; return;
             }
             sDate.setHours(startHour, 0, 0, 0);
             eDate.setHours(endHour, 0, 0, 0);
@@ -1113,7 +1139,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (isNaN(d.getTime())) return "";
             return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}${String(d.getHours()).padStart(2, '0')}00`;
         };
-        
+
         startTimeHidden.value = fmt(sDate);
         endTimeHidden.value = fmt(eDate);
     }
@@ -1128,16 +1154,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             });
             const result = await res.json();
             if (result.success && result.data) { callback(result.data); } else { alert(result.message || "未下载到数据"); }
-        } catch(err) { console.error(err); alert("下载出错: " + err.message); } 
+        } catch(err) { console.error(err); alert("下载出错: " + err.message); }
         finally { btn.textContent = originalText; btn.disabled = false; }
     }
 
     fetchManualBtn.addEventListener('click', async () => {
         if (!apiToken) return alert("请先登录");
-        
+
         const sTime = startTimeHidden.value;
         const eTime = endTimeHidden.value;
-        if (!sTime || !eTime) return alert("时间无效，请检查时间范围设置！");
+        if (!sTime || !eTime) return alert("时间无效,请检查时间范围设置!");
 
         function resolveToUtcForFetch(bjtStr, offsetHour = 0) {
             if (!bjtStr || bjtStr.length !== 12) return bjtStr;
@@ -1163,18 +1189,18 @@ document.addEventListener('DOMContentLoaded', async () => {
             } else if (typeof data === 'object' && data !== null) {
                 Object.values(data).forEach(list => { if (Array.isArray(list)) arr.push(...list); });
             }
-            if (arr.length === 0) return alert(`未查到实况数据！\n(已按 UTC 纠正区间: ${fetchStartTime} - ${fetchEndTime})`);
-            
+            if (arr.length === 0) return alert(`未查到实况数据!\n(已按 UTC 纠正区间: ${fetchStartTime} - ${fetchEndTime})`);
+
             const cleanedArr = arr.map(line => {
                 let text = line.trim();
                 const matchIndex = text.search(/(METAR|SPECI|[A-Z]{4}\s+\d{6}Z)/);
                 if (matchIndex > 0) text = text.substring(matchIndex);
                 return text;
             });
-            
+
             metarInput.value = cleanedArr.join('\n');
-            if (addMetarBtn) addMetarBtn.click(); 
-            alert(`✅ 成功导入并解析 ${cleanedArr.length} 条实况！(时区映射已对齐北京时)`);
+            if (addMetarBtn) addMetarBtn.click();
+            alert(`✅ 成功导入并解析 ${cleanedArr.length} 条实况!(时区映射已对齐北京时)`);
         });
     });
 
@@ -1182,8 +1208,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!apiToken) return alert("请先登录");
         const y = baseDate.getFullYear(), m = baseDate.getMonth(), d = baseDate.getDate();
         const utcBase = new Date(Date.UTC(y, m, d));
-        const searchDate = new Date(utcBase); searchDate.setUTCDate(d - 2); const targetDay = searchDate.getUTCDate(); 
-        const searchStart = new Date(searchDate); searchStart.setUTCHours(0); 
+        const searchDate = new Date(utcBase); searchDate.setUTCDate(d - 2); const targetDay = searchDate.getUTCDate();
+        const searchStart = new Date(searchDate); searchStart.setUTCHours(0);
         const searchEnd = new Date(searchDate); searchEnd.setUTCDate(searchDate.getUTCDate() + 1); searchEnd.setUTCHours(0);
         await downloadData(formatFullTime(searchStart), formatFullTime(searchEnd), downloadAirports.value, ["FT", "FC"], (text) => {
             if(!text) return alert("该时段未查询到 TAF 报文"); renderTafList(text, targetDay);
@@ -1193,27 +1219,27 @@ document.addEventListener('DOMContentLoaded', async () => {
     function renderTafList(text, targetDay) {
         const forecastInputGroup = document.getElementById('forecast-input-group');
         if (forecastInputGroup) forecastInputGroup.style.display = 'block';
-        
-        // 🌟 修复：补充声明这三个关键组件
+
+        // 🌟 修复:补充声明这三个关键组件
         const tafSelectionArea = document.getElementById('taf-selection-area');
         const importTafMetarContainer = document.getElementById('import-taf-metar-container');
         const tafListItems = document.getElementById('taf-list-items');
-        
+
         if (tafSelectionArea) {
             tafSelectionArea.classList.remove('hidden');
-            tafSelectionArea.style.display = 'block'; 
+            tafSelectionArea.style.display = 'block';
         }
         if (importTafMetarContainer) {
             importTafMetarContainer.classList.remove('hidden');
-            importTafMetarContainer.style.display = 'block'; 
+            importTafMetarContainer.style.display = 'block';
         }
-        
+
         tafListItems.innerHTML = '';
         const raws = text.split('\n').filter(s => s.trim().length > 5);
         let count = 0;
         raws.forEach((raw) => {
             const match = raw.match(/\s(\d{2})(\d{2})(\d{2})Z\s/);
-            if (match && parseInt(match[1]) !== targetDay) return; 
+            if (match && parseInt(match[1]) !== targetDay) return;
             const div = document.createElement('div'); div.className = 'taf-item-row';
             const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = true; checkbox.dataset.raw = raw;
             const content = document.createElement('div'); content.className = 'taf-content'; content.textContent = raw;
@@ -1226,12 +1252,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!apiToken) return alert("请先登录");
 
         const selectedTafs = Array.from(document.querySelectorAll('#taf-list-items input:checked'));
-        if (selectedTafs.length === 0) return alert('请先选择需要评定的 TAF 报文！');
+        if (selectedTafs.length === 0) return alert('请先选择需要评定的 TAF 报文!');
 
         const rawTexts = selectedTafs
             .map(cb => cb.dataset.raw || cb.getAttribute('data-raw') || '')
             .filter(Boolean);
-        if (rawTexts.length === 0) return alert("报文内容为空，请重新查询");
+        if (rawTexts.length === 0) return alert("报文内容为空,请重新查询");
 
         function resolveTafUtcDate(day, hour, baseDateObj) {
             let d = parseInt(day, 10), h = parseInt(hour, 10);
@@ -1262,7 +1288,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (!minValidTime || !maxValidTime) return alert("无法从选中报文中识别出有效时间段");
 
-        // 下载实况必须覆盖所有选中 TAF 的完整 UTC 有效期；允许前后扩大，不能缩小。
+        // 下载实况必须覆盖所有选中 TAF 的完整 UTC 有效期;允许前后扩大,不能缩小。
         const fetchStartDate = new Date(minValidTime.getTime() - 1 * 3600 * 1000);
         const fetchEndDate = new Date(maxValidTime.getTime() + 1 * 3600 * 1000);
         startTimeHidden.value = formatUtcForApi(minValidTime);
@@ -1271,7 +1297,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const fetchEndTime = formatUtcForApi(fetchEndDate);
         const airportsInput = document.getElementById('download-airports').value;
         const aps = airportsInput.split(/[\s,]+/).filter(x => x.length > 0);
-        if (aps.length === 0) return alert("请输入机场代码！");
+        if (aps.length === 0) return alert("请输入机场代码!");
 
         resultsContainer.innerHTML = '<div class="loader" style="display:block;"></div>';
         const originalText = importTafMetarBtn.textContent;
@@ -1293,8 +1319,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 });
             }
 
-            if (allArr.length === 0) return alert(`未查到实况数据！\n(已查询 UTC 区间: ${fetchStartTime} - ${fetchEndTime})`);
-            
+            if (allArr.length === 0) return alert(`未查到实况数据!\n(已查询 UTC 区间: ${fetchStartTime} - ${fetchEndTime})`);
+
             const cleanedArr = allArr.map(line => {
                 let text = line.trim();
                 const matchIndex = text.search(/(METAR|SPECI|[A-Z]{4}\s+\d{6}Z)/);
@@ -1304,11 +1330,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             const metarInput = document.getElementById('metar-input');
             const addMetarBtn = document.getElementById('add-metar-btn');
-            
+
             metarInput.value = cleanedArr.join('\n');
-            if (addMetarBtn) addMetarBtn.click(); 
-            
-            alert(`✅ 成功导入并解析 ${cleanedArr.length} 条实况！(包含 ${aps.length} 个机场)`);
+            if (addMetarBtn) addMetarBtn.click();
+
+            alert(`✅ 成功导入并解析 ${cleanedArr.length} 条实况!(包含 ${aps.length} 个机场)`);
         } catch (e) {
             alert("❌ 批量导入过程出错: " + e.message);
         } finally {
@@ -1319,11 +1345,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     generateGridBtn.addEventListener('click', () => {
-        updateTimeRangeInputs(); 
+        updateTimeRangeInputs();
         const sTime = startTimeHidden.value;
         const eTime = endTimeHidden.value;
-        if (!sTime || !eTime) return alert("请先在上方设置并确认时间范围！");
-        
+        if (!sTime || !eTime) return alert("请先在上方设置并确认时间范围!");
+
         const headers = generateHourlyHeaders(sTime, eTime);
         const aps = downloadAirports.value.split(/[\s,]+/).filter(x => x).map(x => x.toUpperCase());
         let html = `<table class="manual-grid-table" id="manual-grid"><thead><tr><th class="header-col">机场</th>`;
@@ -1336,7 +1362,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             html += `<td class="actions-cell"><button class="add-row-btn" title="复制">+</button></td></tr>`;
         });
         html += `</tbody></table>`;
-        manualGridContainer.innerHTML = html; 
+        manualGridContainer.innerHTML = html;
         pasteExcelBtn.classList.remove('hidden');
     });
 
@@ -1374,11 +1400,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (event.target.classList.contains('add-row-btn')) {
             const currentRow = event.target.closest('tr');
             const newRow = currentRow.cloneNode(true);
-            newRow.querySelectorAll('input').forEach(input => input.value = ''); 
+            newRow.querySelectorAll('input').forEach(input => input.value = '');
             newRow.querySelector('.actions-cell').innerHTML = `<button class="delete-row-btn">X</button>`;
             currentRow.insertAdjacentElement('afterend', newRow);
         }
-        if (event.target.classList.contains('delete-row-btn')) event.target.closest('tr').remove(); 
+        if (event.target.classList.contains('delete-row-btn')) event.target.closest('tr').remove();
     });
 
     pasteExcelBtn.addEventListener('click', async () => {
@@ -1398,10 +1424,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function renderAirportTags() {
         airportBtnsContainer.innerHTML = '';
-        airportBtnsContainer.style.display = 'block'; 
-        
+        airportBtnsContainer.style.display = 'block';
+
         const metarKeys = Object.keys(storedMetars).sort();
-        
+
         if (metarKeys.length > 0) {
             document.getElementById('forecast-input-group').style.display = 'block';
         } else {
@@ -1427,7 +1453,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             btn.style.fontWeight = 'bold';
             btn.style.cursor = 'pointer';
             btn.innerText = `${AIRPORT_NAME_MAP[ap] || ap} (${storedMetars[ap].length}条)`;
-            
+
             btn.onclick = (e) => {
                 e.preventDefault();
                 modalTitle.textContent = `机场 ${ap} 实况`;
@@ -1443,9 +1469,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             delBtn.style.padding = '6px 10px';
             delBtn.style.cursor = 'pointer';
             delBtn.onclick = (e) => {
-                e.stopPropagation(); 
-                delete storedMetars[ap]; 
-                renderAirportTags(); 
+                e.stopPropagation();
+                delete storedMetars[ap];
+                renderAirportTags();
             };
 
             wrapper.appendChild(btn);
@@ -1473,31 +1499,31 @@ document.addEventListener('DOMContentLoaded', async () => {
         addTafBtn.addEventListener('click', () => {
             const tafInput = document.getElementById('taf-input');
             const text = tafInput.value.trim().toUpperCase();
-            if (!text) return alert("请先在框内粘贴 TAF 报文！");
+            if (!text) return alert("请先在框内粘贴 TAF 报文!");
 
             const raws = text.split('\n').filter(s => s.trim().length > 5);
             const tafListItems = document.getElementById('taf-list-items');
             let count = 0;
 
             raws.forEach((raw) => {
-                const div = document.createElement('div'); 
+                const div = document.createElement('div');
                 div.className = 'taf-item-row';
-                div.style.display = 'flex';       
+                div.style.display = 'flex';
                 div.style.alignItems = 'center';
                 div.style.marginBottom = '6px';
-                
-                const checkbox = document.createElement('input'); 
-                checkbox.type = 'checkbox'; 
-                checkbox.checked = true; 
+
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.checked = true;
                 checkbox.dataset.raw = raw;
-                
-                const content = document.createElement('div'); 
-                content.className = 'taf-content'; 
+
+                const content = document.createElement('div');
+                content.className = 'taf-content';
                 content.textContent = raw;
-                content.style.color = '#005A9C'; 
+                content.style.color = '#005A9C';
                 content.style.fontWeight = 'bold';
-                content.style.flex = '1';         
-                
+                content.style.flex = '1';
+
                 const delBtn = document.createElement('button');
                 delBtn.innerText = '✖ 删除';
                 delBtn.style.cssText = 'border:none; background:#ff4d4f; color:white; padding:3px 8px; border-radius:4px; font-size:12px; cursor:pointer; margin-left:15px;';
@@ -1508,25 +1534,25 @@ document.addEventListener('DOMContentLoaded', async () => {
                         document.getElementById('import-taf-metar-container').style.display = 'none';
                     }
                 };
-                
-                div.appendChild(checkbox); 
-                div.appendChild(content); 
-                div.appendChild(delBtn); 
+
+                div.appendChild(checkbox);
+                div.appendChild(content);
+                div.appendChild(delBtn);
                 tafListItems.appendChild(div);
                 count++;
             });
 
             if (count > 0) {
-                tafInput.value = ''; 
+                tafInput.value = '';
                 const forecastInputGroup = document.getElementById('forecast-input-group');
                 const tafSelectionArea = document.getElementById('taf-selection-area');
                 const importTafMetarContainer = document.getElementById('import-taf-metar-container');
-                
+
                 if (forecastInputGroup) forecastInputGroup.style.display = 'block';
                 if (tafSelectionArea) { tafSelectionArea.classList.remove('hidden'); tafSelectionArea.style.display = 'block'; }
                 if (importTafMetarContainer) { importTafMetarContainer.classList.remove('hidden'); importTafMetarContainer.style.display = 'block'; }
-                
-                alert(`✅ 成功添加 ${count} 份手工 TAF 报文到评定列表！\n请勾选后点击下方按钮下载实况。`);
+
+                alert(`✅ 成功添加 ${count} 份手工 TAF 报文到评定列表!\n请勾选后点击下方按钮下载实况。`);
             }
         });
     }
@@ -1543,9 +1569,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 cld_warning: document.getElementById('cld_warning').value,
                 wind_warning: document.getElementById('wind_warning') ? document.getElementById('wind_warning').value : 17
             };
-            let payload = { 
-                standards: standards, 
-                forecast_mode: currentMode, 
+            let payload = {
+                standards: standards,
+                forecast_mode: currentMode,
                 phenomena_config: phenomenaSettings,
                 custom_thresholds: customAirportsThresholds,
                 recognize_amd: document.getElementById('admin-recognize-amd')?.checked || false
@@ -1560,10 +1586,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             };
 
             if (currentMode === 'manual' && !payload.export_config.eval_person) {
-                throw new Error("席位预报评定必须选择【评定对象】！");
+                throw new Error("席位预报评定必须选择【评定对象】!");
             }
             if (!payload.export_config.base_date_str) {
-                payload.export_config.base_date_str = new Date().toISOString().split('T')[0]; 
+                payload.export_config.base_date_str = new Date().toISOString().split('T')[0];
             }
 
             function bjtToUtcTimestamp(bjtStr) {
@@ -1579,68 +1605,68 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (currentMode === 'manual') {
                 const storedText = Object.values(storedMetars).flat().join('\n');
                 payload.obs_text = storedText + (manualMetarText ? '\n' + manualMetarText : '');
-                
+
                 payload.start_time = bjtToUtcTimestamp(startTimeHidden.value);
                 payload.end_time = bjtToUtcTimestamp(endTimeHidden.value);
 
                 const manualForecasts = {};
                 const gridRows = document.querySelectorAll('#manual-grid tbody tr');
-                
+
                 if (gridRows.length > 0) {
                     gridRows.forEach(tr => {
                         const ap = tr.dataset.airport; manualForecasts[ap] = {};
                         tr.querySelectorAll('input').forEach(input => {
                             let val = input.value.trim();
                             if (!val) { val = 'NSW'; }
-                            
-                            let bjtHour = input.dataset.hour; 
+
+                            let bjtHour = input.dataset.hour;
                             let d = parseInt(bjtHour.slice(0, 2)), h = parseInt(bjtHour.slice(2, 4));
                             let mIndex = baseDate.getMonth();
                             if (d > baseDate.getDate() + 15) mIndex -= 1;
                             else if (d < baseDate.getDate() - 15) mIndex += 1;
-                            
+
                             let utcDate = new Date(Date.UTC(baseDate.getFullYear(), mIndex, d, h - 8, 0));
                             let utcKey = `${String(utcDate.getUTCDate()).padStart(2, '0')}${String(utcDate.getUTCHours()).padStart(2, '0')}`;
-                            
+
                             manualForecasts[ap][utcKey] = val;
                         });
                     });
                 }
-                
+
                 if (Object.keys(manualForecasts).length === 0 || Object.values(manualForecasts).every(f => Object.keys(f).length === 0)) {
-                    throw new Error("请先填写预报表格！(可使用Excel粘贴)");
+                    throw new Error("请先填写预报表格!(可使用Excel粘贴)");
                 }
 
                 payload.manual_forecasts = manualForecasts;
-                
-            } else { 
+
+            } else {
                 const checkedBoxes = document.querySelectorAll('#taf-list-items input:checked');
                 let rawTafText = [...checkedBoxes].map(cb => cb.dataset.raw).join('\n');
-                
+
                 rawTafText = rawTafText.replace(/(\d{2})(\d{2})\/(\d{2})24/g, (match, p1, p2, p3) => {
                      let y = baseDate.getFullYear(), m = baseDate.getMonth(), d = parseInt(p3);
                      if (d > baseDate.getDate() + 15) { m -= 1; } else if (d < baseDate.getDate() - 15) { m += 1; }
-                     let correctedDate = new Date(y, m, d, 24, 0); 
+                     let correctedDate = new Date(y, m, d, 24, 0);
                      return `${p1}${p2}/${String(correctedDate.getDate()).padStart(2, '0')}00`;
                 });
 
                 payload.taf_text = rawTafText;
-                payload.additional_forecast_text = ""; 
-                
+                payload.additional_forecast_text = "";
+
                 let minT = null, maxT = null;
                 const timeRegex = /(\d{2})(\d{2})\/(\d{2})(\d{2})/g;
                 let match;
                 while ((match = timeRegex.exec(rawTafText)) !== null) {
                     let s_d = parseInt(match[1]), s_h = parseInt(match[2]);
                     let e_d = parseInt(match[3]), e_h = parseInt(match[4]);
-                    
+
                     let s_m = baseDate.getMonth(), e_m = baseDate.getMonth();
                     if (s_d > baseDate.getDate() + 5) s_m -= 1; else if (s_d < baseDate.getDate() - 5) s_m += 1;
                     if (e_d > baseDate.getDate() + 5) e_m -= 1; else if (e_d < baseDate.getDate() - 5) e_m += 1;
-                    
+
                     let s_t = Date.UTC(baseDate.getFullYear(), s_m, s_d, s_h, 0);
-                    let e_t = Date.UTC(baseDate.getFullYear(), e_m, e_d, e_h, 0); 
-                    
+                    let e_t = Date.UTC(baseDate.getFullYear(), e_m, e_d, e_h, 0);
+
                     if (minT === null || s_t < minT) minT = s_t;
                     if (maxT === null || e_t > maxT) maxT = e_t;
                 }
@@ -1648,35 +1674,35 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (minT !== null && maxT !== null) {
                     let sd = new Date(minT - 48 * 3600 * 1000); sd.setUTCHours(sd.getUTCHours() + 8);
                     let ed = new Date(maxT + 48 * 3600 * 1000); ed.setUTCHours(ed.getUTCHours() + 8);
-                    
+
                     payload.start_time = `${sd.getUTCFullYear()}${String(sd.getUTCMonth()+1).padStart(2,'0')}${String(sd.getUTCDate()).padStart(2,'0')}000000`;
                     payload.end_time = `${ed.getUTCFullYear()}${String(ed.getUTCMonth()+1).padStart(2,'0')}${String(ed.getUTCDate()).padStart(2,'0')}235959`;
                 } else {
                     payload.start_time = startTimeHidden.value;
                     payload.end_time = endTimeHidden.value;
                 }
-                
+
                 const storedText = Object.values(storedMetars).flat().join('\n');
                 payload.obs_text = storedText ? storedText + (manualMetarText ? '\n' + manualMetarText : '') : manualMetarText;
             }
 
             if (!payload.obs_text || payload.obs_text.trim() === '') {
-                throw new Error("实况数据为空！请先在左上方点击【下载实况】，或在框内手动粘贴实况报文。");
+                throw new Error("实况数据为空!请先在左上方点击【下载实况】,或在框内手动粘贴实况报文。");
             }
 
             const response = await fetch('/api/score', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
             const result = await response.json();
             if (!result.success) throw new Error(result.error);
-            if (Object.keys(result.data).length === 0) { 
-                resultsContainer.innerHTML = '<div class="stats-box">没有生成评分结果。</div>'; 
-            } else { 
+            if (Object.keys(result.data).length === 0) {
+                resultsContainer.innerHTML = '<div class="stats-box">没有生成评分结果。</div>';
+            } else {
                 displayResults(result.data);
-                window.lastScoreResults = result.data; 
+                window.lastScoreResults = result.data;
                 const saveBtn = document.getElementById('manual-save-btn');
-                if (saveBtn) saveBtn.style.display = 'block'; 
+                if (saveBtn) saveBtn.style.display = 'block';
             }
 
-        } catch (e) { resultsContainer.innerHTML = `<div class="error-box">评分失败: ${e.message}</div>`; } 
+        } catch (e) { resultsContainer.innerHTML = `<div class="error-box">评分失败: ${e.message}</div>`; }
         finally { loader.style.display = 'none'; scoreButton.disabled = false; }
     });
 
@@ -1686,14 +1712,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             const airportData = data[resultKey];
             const { scores, observations, statistics } = airportData;
             if (!scores || scores.length === 0) continue;
-            
+
             const baseAirportCode = resultKey.split('_')[0];
             const airportName = AIRPORT_NAME_MAP[baseAirportCode] || baseAirportCode;
             let title = `评定结果: ${airportName}`;
             if (resultKey.includes('_')) title += ` [TAF时段: ${resultKey.split('_')[1]}]`;
-            
+
             let html = `<div class="result-card"><h3>${title}</h3>`;
-            
+
             if (currentMode === 'taf' && airportData.recognized_forecasts) {
                 let recHtml = `
                 <div class="taf-horizontal-recognition">
@@ -1739,15 +1765,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                 html += `<tr class="${rowClass}"><td class="item-header-col copyable-header" title="点击复制该要素两行数据 (无表头)">${item} (实况)</td>`;
                 timeSlots.forEach(time => { html += `<td>${(obsByTime.get(time) || {})[item] || '/'}</td>`; });
                 html += `</tr><tr class="${rowClass}"><td class="item-header-col copyable-header" title="点击复制该要素两行数据 (无表头)">${item} (评分)</td>`;
-                timeSlots.forEach(time => { 
-                    const val = (scoresByTime.get(time) || {})[item] || '不评'; 
+                timeSlots.forEach(time => {
+                    const val = (scoresByTime.get(time) || {})[item] || '不评';
                     const cls = val.replace(/\s+/g, '').replace('/NSW','');
-                    html += `<td class="score-cell score-${cls}">${val}</td>`; 
+                    html += `<td class="score-cell score-${cls}">${val}</td>`;
                 });
                 html += `</tr>`;
             });
             html += `</tbody></table></div>`;
-            
+
             let statsHtml = '';
             if (typeof statistics === 'object' && statistics !== null) {
                 let perf = statistics["完美"] || 0;
@@ -1756,17 +1782,17 @@ document.addEventListener('DOMContentLoaded', async () => {
                 let miss = statistics["漏报"] || 0;
                 let acc = statistics["准确"] || 0;
                 let eval_c = statistics["参评"] || 0;
-                let tot = statistics["总评"] || 1; 
-                if (tot === 0) tot = 1; 
-                
+                let tot = statistics["总评"] || 1;
+                if (tot === 0) tot = 1;
+
                 let perfRate = eval_c > 0 ? (perf / eval_c * 100) : 0;
                 let excRate = eval_c > 0 ? (exc / eval_c * 100) : 0;
                 let faRate = tot > 0 ? (fa / tot * 100) : 0;
                 let missRate = tot > 0 ? (miss / tot * 100) : 0;
                 let accRate = tot > 0 ? (acc / tot * 100) : 0;
-                
+
                 let totalScore = (accRate * 0.5) + (perfRate * 0.3) + (excRate * 0.2) - (faRate * 0.1) - (missRate * 0.1);
-                
+
                 statsHtml = `
                 <div class="table-wrapper" style="margin-top: 15px; border-top: 2px dashed #e2e8f0; padding-top: 15px;">
                     <table class="result-table" style="text-align:center; width: 100%; margin: 0;">
@@ -1809,27 +1835,27 @@ document.addEventListener('DOMContentLoaded', async () => {
                     </table>
                 </div>`;
             } else {
-                statsHtml = `<div class="stats-box">${statistics}</div>`; 
+                statsHtml = `<div class="stats-box">${statistics}</div>`;
             }
-            
+
             html += statsHtml + `</div>`;
             finalHTML += html;
         }
         document.getElementById('results-' + currentMode).innerHTML = finalHTML;
     }
-    
+
     const btnStatsDay = document.getElementById('btn-stats-day');
     const btnStatsMonth = document.getElementById('btn-stats-month');
     const btnStatsYear = document.getElementById('btn-stats-year');
     const btnQueryRawDay = document.getElementById('btn-query-raw-day');
     const statsSaveBtn = document.getElementById('stats-save-btn');
-    
+
     function formatChineseDates(dateString) {
         if (!dateString) return '';
         const dates = dateString.split(',').map(d => new Date(d.trim())).sort((a, b) => a - b);
         if (dates.length === 0) return '';
-        
-        const groups = []; 
+
+        const groups = [];
         let currentGroup = [dates[0]];
         for (let i = 1; i < dates.length; i++) {
             const prev = dates[i - 1], curr = dates[i];
@@ -1839,7 +1865,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         groups.push(currentGroup);
 
-        let result = ''; 
+        let result = '';
         let lastY = null, lastM = null;
 
         for (let i = 0; i < groups.length; i++) {
@@ -1853,13 +1879,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                 let startStr = '';
                 if (sY !== lastY) startStr += `${sY}年`;
                 if (sY !== lastY || sM !== lastM) startStr += `${sM}月`;
-                startStr += `${sD}`; 
-                
+                startStr += `${sD}`;
+
                 let endStr = '';
                 if (eY !== sY) { startStr += '日'; endStr += `${eY}年${eM}月${eD}日`; }
                 else if (eM !== sM) { startStr += '日'; endStr += `${eM}月${eD}日`; }
                 else { endStr += `${eD}日`; }
-                
+
                 groupStr = startStr + '至' + endStr;
                 lastY = eY; lastM = eM;
             } else {
@@ -1875,10 +1901,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function getRealBackupPath() {
         const curId = localStorage.getItem('sf_userId') || '';
-        if (curId === '41060711' || curId === '吴霄') {
+        if (curId === ADMIN_ID) {
             return localStorage.getItem('backup_save_path') || '';
         }
-        return ''; 
+        return '';
     }
 
     async function executeStatsQuery(timeType, customBaseDates = null) {
@@ -1887,14 +1913,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         const airport = document.getElementById('stats-airport-input').value.trim();
         const baseDateStr = customBaseDates || document.getElementById('base-date-picker').value;
 
-        if (!baseDateStr) return alert("请先选择要查询的日期！");
+        if (!baseDateStr) return alert("请先选择要查询的日期!");
         resultsContainer.innerHTML = '<div class="loader" style="display:block;"></div>';
 
         try {
             const res = await fetch('/api/query_stats', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    stats_type: statsType, person: person, airport: airport, 
+                    stats_type: statsType, person: person, airport: airport,
                     time_type: timeType, base_date: baseDateStr, backup_path: getRealBackupPath()
                 })
             });
@@ -1902,10 +1928,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (data.success) {
                 const formattedDates = timeType === 'day' ? formatChineseDates(baseDateStr) : baseDateStr;
                 renderStatsResults(data.data, timeType, statsType, formattedDates);
-                window.lastStatsResults = data.data; 
-                
+                window.lastStatsResults = data.data;
+
                 let titleSuffix = "";
-                const dObj = new Date(baseDateStr.split(',')[0].trim()); 
+                const dObj = new Date(baseDateStr.split(',')[0].trim());
                 if (timeType === 'day') {
                     titleSuffix = `日度汇总-${formattedDates.replace(/,/g, '_').substring(0,20)}`;
                 } else if (timeType === 'month') {
@@ -1914,7 +1940,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     titleSuffix = `${dObj.getFullYear()}年年度汇总`;
                 }
                 window.lastStatsTitle = `${statsType === 'taf' ? '机场预报' : '席位预报'}${titleSuffix}`;
-                
+
                 window.lastStatsTimeType = timeType;
                 window.lastStatsBaseDate = baseDateStr;
             } else { resultsContainer.innerHTML = `<div class="error-box">查询失败: ${data.error}</div>`; }
@@ -1924,11 +1950,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     function showQueryModal(title, inputHTML, onConfirm, modalId, isGreen = false) {
         const oldContainer = document.getElementById(modalId);
         if (oldContainer) oldContainer.remove();
-        
+
         const container = document.createElement('div');
         container.id = modalId;
         const borderColor = isGreen ? '#28a745' : '#005A9C';
-        
+
         const styleTag = document.getElementById('modal-fix-style') || document.createElement('style');
         styleTag.id = 'modal-fix-style';
         styleTag.innerHTML = `
@@ -1938,7 +1964,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!styleTag.parentNode) document.head.appendChild(styleTag);
 
         container.style.cssText = `position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:white; padding:25px; border:2px solid ${borderColor}; border-radius:10px; z-index:10001; box-shadow:0 15px 30px rgba(0,0,0,0.3); width: 380px; box-sizing: border-box;`;
-        
+
         container.innerHTML = `
             <h4 style="margin:0 0 15px 0; color:${borderColor}; font-size:16px; text-align:center;">${title}</h4>
             <div style="width: 100%; box-sizing: border-box;">
@@ -1950,7 +1976,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             </div>
         `;
         document.body.appendChild(container);
-        
+
         document.getElementById(`${modalId}-cancel`).onclick = () => container.remove();
         document.getElementById(`${modalId}-confirm`).onclick = () => { onConfirm(container); };
     }
@@ -1960,13 +1986,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     function attachSmartScroll(inputElement, type, fpInst = null) {
         if (!inputElement) return;
         inputElement.addEventListener('wheel', (e) => {
-            e.preventDefault(); 
-            const dir = e.deltaY < 0 ? 1 : -1; 
-            
+            e.preventDefault();
+            const dir = e.deltaY < 0 ? 1 : -1;
+
             if (type === 'day' && fpInst) {
                 let d = fpInst.selectedDates.length > 0 ? fpInst.selectedDates[0] : new Date();
                 d.setDate(d.getDate() + dir);
-                fpInst.setDate([d], true); 
+                fpInst.setDate([d], true);
             } else if (type === 'month') {
                 let d = new Date(inputElement.value + '-01');
                 if(isNaN(d.getTime())) d = new Date();
@@ -1985,13 +2011,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const selectedDates = document.getElementById('input-stats-day').value;
                 if (!selectedDates) return; container.remove(); executeStatsQuery('day', selectedDates);
             }, 'modal-stats-day', false);
-            
-            flatpickr("#input-stats-day", { 
-                defaultDate: document.getElementById('base-date-picker').value || new Date(), 
+
+            flatpickr("#input-stats-day", {
+                defaultDate: document.getElementById('base-date-picker').value || new Date(),
                 locale: "zh", mode: "multiple", altInput: true,
-                onReady: function(sel, dateStr, inst) { 
-                    inst.altInput.value = formatChineseDates(dateStr); 
-                    attachSmartScroll(inst.altInput, 'day', inst); 
+                onReady: function(sel, dateStr, inst) {
+                    inst.altInput.value = formatChineseDates(dateStr);
+                    attachSmartScroll(inst.altInput, 'day', inst);
                 },
                 onChange: function(sel, dateStr, inst) { inst.altInput.value = formatChineseDates(dateStr); },
                 onClose: function(sel, dateStr, inst) { inst.altInput.value = formatChineseDates(dateStr); }
@@ -2009,9 +2035,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                     const res = await fetch('/api/query_raw_data', {
                         method: 'POST', headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            stats_type: document.getElementById('stats-type-select').value, 
-                            person: document.getElementById('stats-person-select').value, 
-                            airport: document.getElementById('stats-airport-input').value.trim(), 
+                            stats_type: document.getElementById('stats-type-select').value,
+                            person: document.getElementById('stats-person-select').value,
+                            airport: document.getElementById('stats-airport-input').value.trim(),
                             base_date: rawDates, backup_path: getRealBackupPath()
                         })
                     });
@@ -2020,13 +2046,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                     else resultsContainer.innerHTML = `<div class="error-box">提取失败: ${data.error}</div>`;
                 } catch (e) { resultsContainer.innerHTML = `<div class="error-box">接口异常: ${e.message}</div>`; }
             }, 'modal-raw-day', true);
-            
-            flatpickr("#input-raw-day", { 
-                defaultDate: document.getElementById('base-date-picker').value || new Date(), 
+
+            flatpickr("#input-raw-day", {
+                defaultDate: document.getElementById('base-date-picker').value || new Date(),
                 locale: "zh", mode: "multiple", altInput: true,
-                onReady: function(sel, dateStr, inst) { 
-                    inst.altInput.value = formatChineseDates(dateStr); 
-                    attachSmartScroll(inst.altInput, 'day', inst); 
+                onReady: function(sel, dateStr, inst) {
+                    inst.altInput.value = formatChineseDates(dateStr);
+                    attachSmartScroll(inst.altInput, 'day', inst);
                 },
                 onChange: function(sel, dateStr, inst) { inst.altInput.value = formatChineseDates(dateStr); },
                 onClose: function(sel, dateStr, inst) { inst.altInput.value = formatChineseDates(dateStr); }
@@ -2042,8 +2068,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const val = document.getElementById('input-stats-month').value;
                 if (!val) return; container.remove(); executeStatsQuery('month', val + '-01');
             }, 'modal-stats-month', false);
-            
-            attachSmartScroll(document.getElementById('input-stats-month'), 'month'); 
+
+            attachSmartScroll(document.getElementById('input-stats-month'), 'month');
         });
     }
 
@@ -2054,8 +2080,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const val = document.getElementById('input-stats-year').value;
                 if (!val) return; container.remove(); executeStatsQuery('year', val + '-01-01');
             }, 'modal-stats-year', false);
-            
-            attachSmartScroll(document.getElementById('input-stats-year'), 'year'); 
+
+            attachSmartScroll(document.getElementById('input-stats-year'), 'year');
         });
     }
 
@@ -2068,18 +2094,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         let html = `<div class="result-card"><h3 style="color:#28a745;">📄 ${formattedDatesTitle} 明细查询</h3>`;
         html += '<div class="table-wrapper"><table class="result-table"><thead><tr>';
         if (showPerson) html += '<th rowspan="2" style="vertical-align:middle;">评定对象</th>';
-        
+
         html += '<th rowspan="2" style="vertical-align:middle;">机场</th><th rowspan="2" style="vertical-align:middle;">预报时效</th><th rowspan="2" style="vertical-align:middle;">时次(UTC)</th><th rowspan="2" style="vertical-align:middle;">预报全文</th>';
-        
+
         const cols = Object.keys(rawData[0]);
         const orderedItems = ['最大风速(MPS)', '最差能见度(m)', '最低云高(m)', '雷雨类', '强降水(无雷)类', '积冰类', '特殊类'];
         const itemNames = orderedItems.filter(item => cols.includes(item + '(实况)'));
-        
+
         itemNames.forEach(item => { html += `<th colspan="2" style="text-align:center;">${item}</th>`; });
         html += '</tr><tr>';
         itemNames.forEach(() => { html += '<th>实况</th><th>评价</th>'; });
         html += '</tr></thead><tbody>';
-        
+
         rawData.forEach(row => {
             html += '<tr>';
             if (showPerson) html += `<td style="font-weight:bold; color:#005A9C;">${row['评定对象']}</td>`;
@@ -2087,7 +2113,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             html += `<td>${row['预报时效'] || '-'}</td>`;
             html += `<td>${row['时次(UTC)']}</td>`;
             html += `<td class="forecast-content-cell" title="${row['预报全文'] || '-'}">${row['预报全文'] || '-'}</td>`;
-            
+
             itemNames.forEach(item => {
                 const valObs = row[item + '(实况)'] || '/';
                 const valEval = row[item + '(评价)'] || '/';
@@ -2102,7 +2128,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function renderStatsResults(statsData, timeType, statsType, formattedDate) {
         let firstColName = statsType === 'taf' ? '机场' : '评定对象';
-        
+
         let displayDate = formattedDate;
         if (formattedDate) {
             if (timeType === 'month') {
@@ -2113,9 +2139,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (parts.length >= 1) displayDate = `${parts[0]}`;
             }
         }
-        
+
         let title = `📊 ${displayDate || ''} ${timeType === 'day' ? '日度' : (timeType === 'month' ? '月度' : '年度')}汇总统计`;
-        
+
         let html = `<div class="result-card"><h3>${title}</h3><div class="table-wrapper"><table class="result-table" style="text-align:center;">
             <thead><tr><th style="vertical-align:middle;">${firstColName}</th><th></th><th>完美</th><th>优秀</th><th>空报</th><th>漏报</th><th>准确</th><th>参评</th><th>总评</th><th>总分</th></tr></thead><tbody>`;
         statsData.forEach(row => {
@@ -2128,27 +2154,27 @@ document.addEventListener('DOMContentLoaded', async () => {
             html += `<tr><td rowspan="2" style="font-weight:bold; color:#005A9C; vertical-align:middle; border-bottom:2px solid #ccc;">${row.统计对象}</td><td>次数</td><td>${row.完美项次}</td><td>${row.优秀项次}</td><td style="color:red;">${row.空报项次}</td><td style="color:orange;">${row.漏报项次}</td><td style="font-weight:bold;">${row.准确项次}</td><td>${row.参评项次}</td><td>${row.总评项次}</td><td rowspan="2" style="vertical-align:middle; font-weight:bold; font-size:14px; color:#DA251D; border-bottom:2px solid #ccc;">${score.toFixed(2)}</td></tr>`;
             html += `<tr><td style="border-bottom:2px solid #ccc;">概率</td><td style="border-bottom:2px solid #ccc;">${row.完美率}</td><td style="border-bottom:2px solid #ccc;">${row.优秀率}</td><td style="border-bottom:2px solid #ccc;">${row.空报率}</td><td style="border-bottom:2px solid #ccc;">${row.漏报率}</td><td style="color:green; font-weight:bold; border-bottom:2px solid #ccc;">${row.准确率}</td><td style="border-bottom:2px solid #ccc;"></td><td style="border-bottom:2px solid #ccc;"></td></tr>`;
         });
-        html += `<tr><td colspan="10" style="text-align:left; font-size:12px; color:#555; padding:8px; font-weight:bold; background-color:#f8f9fa;">评定逻辑：总分=(准确率*50% + 完美率*30% + 优秀率*20% - 空报率*10% - 漏报率*10%)</td></tr></tbody></table></div></div>`;
+        html += `<tr><td colspan="10" style="text-align:left; font-size:12px; color:#555; padding:8px; font-weight:bold; background-color:#f8f9fa;">评定逻辑:总分=(准确率*50% + 完美率*30% + 优秀率*20% - 空报率*10% - 漏报率*10%)</td></tr></tbody></table></div></div>`;
         document.getElementById('results-stats').innerHTML = html;
         if (document.getElementById('stats-save-container')) document.getElementById('stats-save-container').style.display = 'block';
     }
-    
+
     if (statsSaveBtn) {
         statsSaveBtn.addEventListener('click', async () => {
-            if (!window.lastStatsResults) return alert("请先执行查询！");
+            if (!window.lastStatsResults) return alert("请先执行查询!");
             const targetMode = document.getElementById('stats-type-select').value;
             const excelRoot = getFinalExcelRoot(targetMode);
-            if (!excelRoot) return alert("请先在左侧【⚙️设置】中配置对应类型的 Excel 导出目录！");
+            if (!excelRoot) return alert("请先在左侧【⚙️设置】中配置对应类型的 Excel 导出目录!");
 
             statsSaveBtn.disabled = true; statsSaveBtn.textContent = "⏳ 导出中...";
             try {
                 const res = await fetch('/api/export_stats', {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        excel_root: excelRoot, table_data: window.lastStatsResults, 
-                        title: window.lastStatsTitle, 
-                        time_type: window.lastStatsTimeType,   
-                        base_date: window.lastStatsBaseDate    
+                    body: JSON.stringify({
+                        excel_root: excelRoot, table_data: window.lastStatsResults,
+                        title: window.lastStatsTitle,
+                        time_type: window.lastStatsTimeType,
+                        base_date: window.lastStatsBaseDate
                     })
                 });
                 const data = await res.json();
@@ -2161,15 +2187,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     const manualSaveBtn = document.getElementById('manual-save-btn');
     if (manualSaveBtn) {
         manualSaveBtn.addEventListener('click', async () => {
-            if (!window.lastScoreResults) return alert("请先进行评定！");
+            if (!window.lastScoreResults) return alert("请先进行评定!");
             const exportConfig = {
-                backup_path: getRealBackupPath(), 
+                backup_path: getRealBackupPath(),
                 excel_root: getFinalExcelRoot(currentMode),
                 eval_person: document.getElementById('eval-person-select') ? document.getElementById('eval-person-select').value : '',
                 base_date_str: document.getElementById('base-date-picker') ? document.getElementById('base-date-picker').value : '',
                 rater: personnelDict[localStorage.getItem('sf_userId')] || localStorage.getItem('sf_userId') || '未知'
             };
-            if (!exportConfig.excel_root) return alert("⚠️ 请先在左侧【⚙️设置】中配置当前预报类型的「Excel导出目录」！");
+            if (!exportConfig.excel_root) return alert("⚠️ 请先在左侧【⚙️设置】中配置当前预报类型的「Excel导出目录」!");
 
             manualSaveBtn.disabled = true; manualSaveBtn.textContent = "⏳ 正在生成 Excel 及备份数据...";
             try {
@@ -2179,10 +2205,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 });
                 const data = await res.json();
                 if (data.success) {
-                    alert("✅ 保存成功！\n📊 Excel 表格已导出\n📦 数据已同步至底层数据库");
-                    manualSaveBtn.style.display = 'none'; 
+                    alert("✅ 保存成功!\n📊 Excel 表格已导出\n📦 数据已同步至底层数据库");
+                    manualSaveBtn.style.display = 'none';
                 }else throw new Error(data.error);
-            } catch (e) { alert("❌ 保存失败: " + e.message); } 
+            } catch (e) { alert("❌ 保存失败: " + e.message); }
             finally { manualSaveBtn.disabled = false; manualSaveBtn.textContent = "💾 保存评定结论到文件"; }
         });
     }
@@ -2195,30 +2221,30 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     document.getElementById('backup-save-path')?.addEventListener('change', (e) => {
         localStorage.setItem('backup_save_path', e.target.value.trim());
-        syncSettingsConfigToServer();
+        patchSettingsConfig({ paths: buildPathsBlock() });
     });
 
-    handleModeChange(); 
+    handleModeChange();
     renderEvalPersonSelect();
-    
+
     document.addEventListener('click', (e) => {
         if (e.target.classList.contains('copyable-header')) {
             const row = e.target.closest('tr');
             const table = row.closest('table');
             const rows = Array.from(table.querySelectorAll('tr'));
             const rowIndex = rows.indexOf(row);
-            
+
             let pairRows = [];
             if (e.target.textContent.includes('(实况)')) {
                 pairRows = [row, rows[rowIndex + 1]];
             } else {
                 pairRows = [rows[rowIndex - 1], row];
             }
-            
-            const textToCopy = pairRows.map(r => 
+
+            const textToCopy = pairRows.map(r =>
                 Array.from(r.cells).slice(1).map(c => c.textContent).join('\t')
             ).join('\n');
-            
+
             navigator.clipboard.writeText(textToCopy).then(() => {
                 const originalText = e.target.textContent;
                 e.target.textContent = "✅ 已复制 (无表头)";
