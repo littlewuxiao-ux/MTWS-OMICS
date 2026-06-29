@@ -335,6 +335,13 @@ function _createInstances() {
     if (mapEl && !_mapChart) {
         _mapChart = echarts.init(mapEl, null, { renderer: 'canvas' });
         _mapChart.setOption(_buildMapOption());
+
+        // 点击机场图标打开详情页（与列表模式点击四字代码功能一致）
+        _mapChart.on('click', params => {
+            if (params.name && typeof showAirportDetail === 'function') {
+                showAirportDetail(params.name);
+            }
+        });
     }
 
     setTimeout(() => { if (_mapChart) _mapChart.resize(); }, 200);
@@ -496,28 +503,35 @@ function _buildMarkers() {
             itemStyle: { color: _mapColor(tafLevel), opacity: 0.92 }
         });
 
-        // ── 外圈：METAR 告警色，有航班覆盖且 R/Y 时闪烁 ──
+        // ── 外圈：METAR 告警色，metar.popup ≠ N 时闪烁 ──
         const metar       = airport.metar_data && airport.metar_data[0];
         const metarLevel  = (metar && metar.metar_warning) || 'N';
         const ringColor   = _mapColor(metarLevel);
-        const hasFlight   = !!marginResults.metar_has_flight;
-        const shouldFlash = hasFlight && (metarLevel === 'R' || metarLevel === 'Y');
-
-        const outerItem = {
-            name: code,
-            value: pos,
-            itemStyle: {
-                color: 'transparent',
-                borderColor: ringColor,
-                borderWidth: 2,
-                opacity: metarLevel === 'N' ? 0.4 : 0.85
-            }
-        };
+        const shouldFlash = !!(metar && metar.popup && metar.popup !== 'N');
 
         if (shouldFlash) {
-            outerFlash.push(outerItem);
+            // 闪烁项：color 设为 ringColor 让涟漪波纹可见；内圆（z:10）会覆盖中心填充色
+            outerFlash.push({
+                name: code,
+                value: pos,
+                itemStyle: {
+                    color: ringColor,
+                    borderColor: ringColor,
+                    borderWidth: 2,
+                    opacity: 0.85
+                }
+            });
         } else {
-            outerStatic.push(outerItem);
+            outerStatic.push({
+                name: code,
+                value: pos,
+                itemStyle: {
+                    color: 'transparent',
+                    borderColor: ringColor,
+                    borderWidth: 2,
+                    opacity: metarLevel === 'N' ? 0.4 : 0.85
+                }
+            });
         }
     });
 

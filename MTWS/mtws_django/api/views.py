@@ -189,6 +189,7 @@ def airports_overview(request, time_mode='current'):
                         'data_status': metar.data_status,
                         'created_at': metar.created_at,
                         'sqc': metar.sqc,
+                        'popup': metar.popup,
                         'import_alert': metar.import_alert,
                         'import_alert_time': metar.import_alert_time,
                         'handle_status': metar.handle_status,
