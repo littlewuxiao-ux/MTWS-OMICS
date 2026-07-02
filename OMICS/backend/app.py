@@ -1810,12 +1810,23 @@ def query_raw_data_api():
         
         base_dates = [d.strip() for d in base_date.split(',')] if base_date else []
         if not base_dates: return jsonify({"success": False, "error": "请选择明细日期"})
+
+        # 机场预报日查询兼容：页面评分日 = 实际 TAF 归档日 +2。
+        # 因此选 7月2日时也要能查到实际归档到 6月30日的数据；
+        # 同时保留原日期，避免直接按归档日查询时查不到。
+        query_dates = set(base_dates)
+        if s_type == 'taf':
+            for d_str in base_dates:
+                try:
+                    query_dates.add((datetime.strptime(d_str, '%Y-%m-%d') - timedelta(days=2)).strftime('%Y-%m-%d'))
+                except Exception:
+                    pass
         
         backup_path = data.get('backup_path', 'backup')
         if not backup_path: backup_path = os.path.join(os.getcwd(), 'backup')
         
         files_to_read = set()
-        for d_str in base_dates:
+        for d_str in query_dates:
             try:
                 dt = datetime.strptime(d_str, '%Y-%m-%d')
                 files_to_read.add(f"backup_{dt.strftime('%Y%m')}.json")
@@ -1832,7 +1843,7 @@ def query_raw_data_api():
                 if rec['mode'] != s_type: continue
                 if s_type == 'manual' and person != 'ALL' and rec['person'] != person: continue
                 if airport and rec['airport'] != airport: continue
-                if rec['date'] not in base_dates: continue
+                if rec['date'] not in query_dates: continue
                 
                 ap_code = rec['airport']
                 scores = rec.get('scores', [])
@@ -1874,13 +1885,23 @@ def query_stats_api():
         # 接收逗号分隔的多日数据
         base_dates = [d.strip() for d in base_date.split(',')] if base_date else []
         if not base_dates: return jsonify({"success": False, "error": "请选择评定日期"})
+
+        # 机场预报日查询兼容：页面评分日 = 实际 TAF 归档日 +2。
+        # 只影响 day 查询；月/年统计仍按实际归档日归属，保证月末最后一天计入本月。
+        query_dates = set(base_dates)
+        if s_type == 'taf' and time_type == 'day':
+            for d_str in base_dates:
+                try:
+                    query_dates.add((datetime.strptime(d_str, '%Y-%m-%d') - timedelta(days=2)).strftime('%Y-%m-%d'))
+                except Exception:
+                    pass
         
         backup_path = data.get('backup_path', 'backup')
         if not backup_path: backup_path = os.path.join(os.getcwd(), 'backup')
 
         files_to_read = set()
         if time_type == 'day':
-            for d_str in base_dates:
+            for d_str in query_dates:
                 dt = datetime.strptime(d_str, '%Y-%m-%d')
                 files_to_read.add(f"backup_{dt.strftime('%Y%m')}.json")
         elif time_type in ['month', 'year']:
@@ -1907,7 +1928,7 @@ def query_stats_api():
                 except: continue
 
                 # 🌟 按不同时间颗粒度精确放行
-                if time_type == 'day' and rec['date'] not in base_dates: continue
+                if time_type == 'day' and rec['date'] not in query_dates: continue
                 if time_type == 'month' and (rec_dt.year != dt.year or rec_dt.month != dt.month): continue
                 if time_type == 'year' and rec_dt.year != dt.year: continue
                 
@@ -1966,22 +1987,33 @@ def sync_excel_api():
             
         os.makedirs(backup_path, exist_ok=True)
         db_cache = {}
+        scanned_files = 0
+        imported_records = 0
+        skipped_reasons = {}
+        
+        def mark_skip(reason):
+            skipped_reasons[reason] = skipped_reasons.get(reason, 0) + 1
         
         for root, dirs, files in os.walk(excel_root):
             for file in files:
                 if not file.endswith('.xlsx') or file.startswith('~'): continue
+                scanned_files += 1
                 filepath = os.path.join(root, file)
                 
                 # 🌟 修复核心 1：不依赖表格内部文字，直接从文件路径和名称中“侦探式”提取精准的年月日！
                 try:
                     # 1. 从路径提取年份 (例如 ".../2026年/...")
                     year_match = re.search(r'(\d{4})年', root)
-                    if not year_match: continue
+                    if not year_match:
+                        mark_skip('路径中没有“YYYY年”')
+                        continue
                     year = int(year_match.group(1))
                     
                     # 2. 从文件名提取月日 (例如 席位预报质量评价表-曹骏-0415.xlsx -> 0415)
                     md_match = re.search(r'-(\d{4})\.xlsx$', file)
-                    if not md_match: continue
+                    if not md_match:
+                        mark_skip('文件名末尾不是“-MMDD.xlsx”')
+                        continue
                     mmdd = md_match.group(1)
                     month = int(mmdd[:2])
                     day = int(mmdd[2:])
@@ -1990,15 +2022,20 @@ def sync_excel_api():
                     dt = datetime(year, month, day)
                     month_key = dt.strftime('%Y%m')
                 except Exception as e:
+                    mark_skip('文件日期解析失败')
                     continue # 命名不规范的废弃文件直接跳过
                     
                 try:
                     # 🌟 修复核心 2：用 header=None 读取，避免 Pandas 把带有“评分人”的合并单元格当成错误表头
                     df_s1_raw = pd.read_excel(filepath, sheet_name='日统计', header=None)
                     df_s2 = pd.read_excel(filepath, sheet_name='要素分解与汇总')
-                except: continue
+                except Exception:
+                    mark_skip('缺少“日统计/要素分解与汇总”工作表')
+                    continue
                 
-                if df_s2.empty or df_s1_raw.empty: continue
+                if df_s2.empty or df_s1_raw.empty:
+                    mark_skip('工作表为空')
+                    continue
                 
                 # 🌟 修复核心 3：智能往下寻找真实的表头行
                 header_idx = 0
@@ -2025,7 +2062,9 @@ def sync_excel_api():
                     if p_match: person = p_match.group(1).strip()
                 
                 # 🌟 修复核心2：按机场分组循环，完美保护每个机场的空报漏报不被后续机场覆盖！
-                if '机场' not in df_s1.columns: continue
+                if '机场' not in df_s1.columns:
+                    mark_skip('日统计表缺少“机场”列')
+                    continue
                 for ap_code, ap_df in df_s1.groupby('机场'):
                     if str(ap_code).startswith('评分人') or str(ap_code) == 'nan': continue
                     ap_code = str(ap_code).strip()
@@ -2073,6 +2112,7 @@ def sync_excel_api():
                         "airport": ap_code, "is_shihang": is_shihang,
                         "daily_stats": daily_stats, "scores": scores, "observations": observations
                     }
+                    imported_records += 1
                 
         # 批量写回底层 JSON 数据库
         for m_key, db_data in db_cache.items():
@@ -2087,7 +2127,10 @@ def sync_excel_api():
             with open(db_file, 'w', encoding='utf-8') as f:
                 json.dump(db_data, f, ensure_ascii=False, indent=2)
                 
-        return jsonify({"success": True, "message": f"✅ 同步成功！从 Excel 云端成功提取并更新了 {len(db_cache)} 个月份的本地 JSON 数据库。"})
+        detail = f"扫描 {scanned_files} 个 Excel，导入/更新 {imported_records} 条记录，覆盖 {len(db_cache)} 个月份。"
+        if skipped_reasons:
+            detail += " 跳过原因：" + "；".join([f"{k}{v}个" for k, v in skipped_reasons.items()])
+        return jsonify({"success": True, "message": f"✅ 同步完成！{detail}"})
     except Exception as e:
         import traceback
         traceback.print_exc()

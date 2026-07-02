@@ -1,7 +1,7 @@
 import os
 import json
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 import openpyxl
 from openpyxl.styles import Font, Alignment, Border, Side
 import re
@@ -18,35 +18,23 @@ def process_stats_and_save(results, currentMode, backup_path, excel_root, eval_p
     excel_root = os.path.normpath(str(excel_root).strip())
     
     # =========================================================
-    # 🌟 需求4：彻底以“预报日期”为准！从报文时次逆向推算真实日期
-    actual_date_str = base_date_str
+    # 归档日期规则：
+    # - 席位预报：按页面选择的评定日期保存。
+    # - 机场预报：页面评定日期对应 SF/TAF 报文检索日 +2；归档应回落到报文日，
+    #   即评定日期 -2 天。不能再从逐时明细第一条 DDHH 猜日期，否则月末跨月时
+    #   会把 0630/0100 等有效期内时次误归为 7 月 1 日，导致 6 月 30 日被跳过。
     try:
-        for k, d in results.items():
-            if d.get('scores'):
-                first_time = d['scores'][0].get('时次', '')
-                if len(first_time) >= 2:
-                    fcst_day = int(first_time[:2])
-                    base_dt = datetime.strptime(base_date_str, '%Y-%m-%d')
-                    fcst_m = base_dt.month
-                    fcst_y = base_dt.year
-                    
-                    # 跨月精准判断：如果报文日期跟UI日期def process_stats_and_save(results, curr差了15天以上，肯定是跨月了
-                    if fcst_day > base_dt.day + 15:
-                        fcst_m -= 1
-                        if fcst_m == 0: fcst_m = 12; fcst_y -= 1
-                    elif fcst_day < base_dt.day - 15:
-                        fcst_m += 1
-                        if fcst_m == 13: fcst_m = 1; fcst_y += 1
-                        
-                    actual_date_str = f"{fcst_y}-{fcst_m:02d}-{fcst_day:02d}"
-                break
-    except Exception: pass
-    
-    base_date_str = actual_date_str # 强行覆盖外部 UI 传入的日期！
-    # =========================================================
+        ui_dt = datetime.strptime(base_date_str, '%Y-%m-%d')
+    except Exception:
+        ui_dt = datetime.now()
 
-    try: dt = datetime.strptime(base_date_str, '%Y-%m-%d')
-    except: dt = datetime.now()
+    if currentMode == 'taf':
+        dt = ui_dt - timedelta(days=2)
+        base_date_str = dt.strftime('%Y-%m-%d')
+    else:
+        dt = ui_dt
+        base_date_str = dt.strftime('%Y-%m-%d')
+    # =========================================================
     mmdd = dt.strftime('%m%d')
 
     os.makedirs(backup_path, exist_ok=True)

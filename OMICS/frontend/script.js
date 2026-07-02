@@ -970,18 +970,31 @@ document.addEventListener('DOMContentLoaded', async () => {
     const syncExcelBtn = document.getElementById('sync-excel-btn');
     if (syncExcelBtn) {
         syncExcelBtn.addEventListener('click', async () => {
-            const excelRoot = getFinalExcelRoot(document.getElementById('stats-type-select')?.value || 'manual');
-            const backupPath = document.getElementById('backup-save-path').value.trim();
-            if (!excelRoot) return alert("⚠️ 同步前请必须配置好正确的【Excel导出根目录】(云盘同步盘路径)!");
+            const tafRoot = document.getElementById('taf-excel-path')?.value.trim() || '';
+            const manualRoot = document.getElementById('manual-excel-path')?.value.trim() || '';
+            const backupPath = document.getElementById('backup-save-path')?.value.trim() || '';
+            const roots = [
+                { label: '机场预报', path: tafRoot },
+                { label: '席位预报', path: manualRoot }
+            ].filter(item => item.path);
+
+            if (!roots.length) return alert("⚠️ 同步前请先配置【机场预报】或【席位预报】Excel 云盘路径!");
 
             syncExcelBtn.disabled = true; syncExcelBtn.textContent = "⏳ 正在逆向提取并同步数据,请耐心稍候...";
             try {
-                const res = await fetch('/api/sync_excel', {
-                    method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ excel_root: excelRoot, backup_path: backupPath })
-                });
-                const data = await res.json();
-                if (data.success) alert(data.message); else alert("同步失败: " + data.error);
+                const messages = [];
+                const errors = [];
+                for (const item of roots) {
+                    const res = await fetch('/api/sync_excel', {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ excel_root: item.path, backup_path: backupPath })
+                    });
+                    const data = await res.json();
+                    if (data.success) messages.push(`【${item.label}】${data.message}`);
+                    else errors.push(`【${item.label}】${data.error}`);
+                }
+                if (errors.length) alert(`部分同步失败:\n${errors.join('\n')}\n\n已完成:\n${messages.join('\n') || '无'}`);
+                else alert(messages.join('\n'));
             } catch (e) { alert("请求异常: " + e.message); }
             finally { syncExcelBtn.disabled = false; syncExcelBtn.textContent = "🔄 从 Excel 逆向同步数据到 JSON"; }
         });
@@ -1698,6 +1711,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             } else {
                 displayResults(result.data);
                 window.lastScoreResults = result.data;
+                window.lastScoreBaseDateStr = payload.export_config.base_date_str;
                 const saveBtn = document.getElementById('manual-save-btn');
                 if (saveBtn) saveBtn.style.display = 'block';
             }
@@ -2192,7 +2206,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 backup_path: getRealBackupPath(),
                 excel_root: getFinalExcelRoot(currentMode),
                 eval_person: document.getElementById('eval-person-select') ? document.getElementById('eval-person-select').value : '',
-                base_date_str: document.getElementById('base-date-picker') ? document.getElementById('base-date-picker').value : '',
+                base_date_str: window.lastScoreBaseDateStr || (document.getElementById('base-date-picker') ? document.getElementById('base-date-picker').value : ''),
                 rater: personnelDict[localStorage.getItem('sf_userId')] || localStorage.getItem('sf_userId') || '未知'
             };
             if (!exportConfig.excel_root) return alert("⚠️ 请先在左侧【⚙️设置】中配置当前预报类型的「Excel导出目录」!");
