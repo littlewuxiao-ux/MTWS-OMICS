@@ -103,6 +103,7 @@ const pbState = {
   airportGroups: [],
   expandedAirports: new Set(), 
   forceShowAirports: new Set(),
+  textImportAirports: new Set(),
   allowOtherCarriers: false,
   defaultShowTaf: true, defaultShowEc: false,
   confirmedData: {},
@@ -120,6 +121,22 @@ window.saveConfirmedDataToLocal = function() {
     const curUser = userEl ? userEl.textContent.trim() : 'UNKNOWN';
     const wrapper = { timestamp: Date.now(), user: curUser, data: pbState.confirmedData };
     localStorage.setItem('sf_confirmed_forecasts_v3', JSON.stringify(wrapper));
+};
+
+function getActiveTextImportAirports() {
+    return pbState.textImportAirports instanceof Set ? Array.from(pbState.textImportAirports).filter(Boolean) : [];
+}
+
+function isTextImportModeActive() {
+    return getActiveTextImportAirports().length > 0;
+}
+
+window.setTextImportAirports = function(icaos) {
+    pbState.textImportAirports = new Set((icaos || []).map(v => String(v || '').trim().toUpperCase()).filter(Boolean));
+};
+
+window.clearTextImportAirports = function() {
+    pbState.textImportAirports = new Set();
 };
 
 // ==========================================
@@ -1141,6 +1158,7 @@ async function loadForecastData(retainOrder = false) {
         flightAps.forEach(ap => { if(!seen.has(ap)) { seen.add(ap); combinedAps.push(ap); } });
         Object.keys(pbState.customCoords).forEach(ap => { if(!seen.has(ap)){ seen.add(ap); combinedAps.push(ap); } });
         pbState.forceShowAirports.forEach(ap => { if(!seen.has(ap)){ seen.add(ap); combinedAps.push(ap); } });
+        getActiveTextImportAirports().forEach(ap => { if(!seen.has(ap)){ seen.add(ap); combinedAps.push(ap); } });
 
         const validAps = combinedAps.filter(icao => window.AIRPORT_COORDS[icao] || pbState.customCoords[icao]);
 
@@ -1343,6 +1361,9 @@ function renderPublishTableTriRow(apAnalysis) {
     const tbody = document.createElement('tbody');
     const startMs = new Date(`${pbState.startDate}T${String(pbState.startHour).padStart(2, '0')}:00:00Z`).getTime();
     
+    const textImportMode = isTextImportModeActive();
+    const textImportSet = textImportMode ? new Set(getActiveTextImportAirports()) : null;
+
     const filteredAnalysis = apAnalysis.filter(apInfo => {
         let apType = '普通';
         let isAlwaysShow = false; // 🌟 新增：标记该机场是否具备常驻属性
@@ -1354,10 +1375,12 @@ function renderPublishTableTriRow(apAnalysis) {
                 break; 
             } 
         }
+        if (textImportMode && !textImportSet.has(apInfo.icao)) return false;
         if (pbState.confirmedData[apInfo.icao]) { apInfo._apType = apType; return true; }
         
         // 🌟 修复 Bug：即便开启了隐藏空机场，只要它是常驻机场(isAlwaysShow)或手动追加机场，都绝不隐藏！
-        if (pbState.filterHideEmptyAirports && !apInfo.hasAlert && !pbState.forceShowAirports.has(apInfo.icao) && !isAlwaysShow) {
+        // 文图互导模式下，机场列表由文本输入显式指定，因此不再受“空机场隐藏”影响。
+        if (!textImportMode && pbState.filterHideEmptyAirports && !apInfo.hasAlert && !pbState.forceShowAirports.has(apInfo.icao) && !isAlwaysShow) {
             return false;
         }
         

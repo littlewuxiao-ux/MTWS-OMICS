@@ -530,6 +530,9 @@
                 if (isIn) {
                     ta.value = '';
                     ta.placeholder = '例：\n深圳：5日08-11时有雷雨，12-15时有大风。\n杭州：5日06Z-09Z有小雨。（Z=世界时/UTC；无Z默认北京时）';
+                } else if (window.clearTextImportAirports) {
+                    window.clearTextImportAirports();
+                    if (window.renderPublishTable) window.renderPublishTable();
                 }
                 ta.dataset.mode = mode;
             }
@@ -557,6 +560,97 @@
         const src = window.GLOBAL_AIRPORT_NAME_MAP || {};
         Object.keys(src).forEach(icao => { map[src[icao]] = icao; });
         return map;
+    }
+
+    function normalizeText(s) {
+        return String(s || '')
+            .replace(/[（(].*?[)）]/g, '')
+            .replace(/[，,。；;：:\s]+/g, '')
+            .replace(/机场$/g, '')
+            .trim()
+            .toUpperCase();
+    }
+
+    function resolveAirportName(namePart, nameToIcao) {
+        const raw = String(namePart || '').trim();
+        if (!raw) return null;
+        const upper = raw.toUpperCase();
+        if (/^[A-Z]{4}$/.test(upper)) return upper;
+        if (nameToIcao[raw]) return nameToIcao[raw];
+
+        const norm = normalizeText(raw);
+        const exactNorm = Object.entries(nameToIcao).find(([name]) => normalizeText(name) === norm);
+        if (exactNorm) return exactNorm[1];
+
+        const fuzzy = Object.entries(nameToIcao).find(([name]) => {
+            const key = normalizeText(name);
+            return key.includes(norm) || norm.includes(key);
+        });
+        return fuzzy ? fuzzy[1] : null;
+    }
+
+    function splitAirportAndBody(line, nameToIcao) {
+        const raw = String(line || '').trim();
+        if (!raw) return { namePart: '', body: '' };
+        const colonMatch = raw.match(/^(.+?)[：:]\s*(.*)$/);
+        if (colonMatch) return { namePart: colonMatch[1].trim(), body: colonMatch[2].trim() };
+
+        const candidates = Object.entries(nameToIcao)
+            .map(([name, icao]) => ({ name, icao, n: normalizeText(name) }))
+            .sort((a, b) => b.n.length - a.n.length);
+        for (const cand of candidates) {
+            if (!cand.n) continue;
+            const rawNorm = normalizeText(raw);
+            if (rawNorm.startsWith(cand.n)) {
+                const idx = raw.indexOf(cand.name);
+                const rest = idx >= 0 ? raw.slice(idx + cand.name.length).trim() : raw.slice(cand.name.length).trim();
+                return { namePart: cand.name, body: rest };
+            }
+        }
+        return { namePart: raw, body: '' };
+    }
+
+    function splitImportLines(text) {
+        return String(text || '')
+            .replace(/\r\n/g, '\n')
+            .replace(/\r/g, '\n')
+            .split(/\n+/)
+            .map(s => s.trim())
+            .filter(Boolean);
+    }
+
+    function normalizePhenomenon(text) {
+        return String(text || '')
+            .replace(/[。．\.、,，;；]+$/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
+    function getDayShiftForText(dayStr) {
+        const startEpoch = startEpochUTC();
+        if (startEpoch === null) return 0;
+        if (!dayStr) return 0;
+        const day = parseInt(dayStr, 10);
+        if (isNaN(day)) return 0;
+        const startWall = new Date(startEpoch + 8 * 3600000);
+        const baseDay = startWall.getUTCDate();
+        return day - baseDay;
+    }
+
+    function resolveFlexibleOffset(dayStr, hourStr, isUTC = false) {
+        const startEpoch = startEpochUTC();
+        if (startEpoch === null) return -1;
+        const hour = parseInt(hourStr, 10);
+        if (isNaN(hour) || hour < 0 || hour > 23) return -1;
+
+        if (!dayStr) {
+            return resolveOffset(null, hourStr, isUTC);
+        }
+        const dayShift = getDayShiftForText(dayStr);
+        const base = new Date(startEpoch + (isUTC ? 0 : 8 * 3600000));
+        const target = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate() + dayShift, hour, 0, 0));
+        const targetEpoch = isUTC ? target.getTime() : target.getTime() - 8 * 3600000;
+        return Math.round((targetEpoch - startEpoch) / 3600000);
     }
 
     function startEpochUTC() {
@@ -603,35 +697,32 @@
 
     function parseForecastLine(line, lineNo, nameToIcao, numCells) {
         const errors = [];
-        const m = line.match(/^(.+?)[：:]\s*(.+?)[。.]?$/);
-        if (!m) {
-            errors.push({ lineNo, line, reason: '缺少“机场名：预报内容”结构。' });
-            return { errors };
-        }
-        const namePart = m[1].trim();
-        const body = m[2].trim();
-        const icao = nameToIcao[namePart] || (/^[A-Z]{4}$/.test(namePart.toUpperCase()) ? namePart.toUpperCase() : null);
+        const split = splitAirportAndBody(line, nameToIcao);
+        const namePart = split.namePart;
+        const body = normalizePhenomenon(split.body);
+        const icao = resolveAirportName(namePart, nameToIcao);
         if (!icao) {
-            errors.push({ lineNo, line, reason: `无法识别机场“${namePart}”。请使用机场中文名或四字码，如“深圳”或“ZGSZ”。` });
+            errors.push({ lineNo, line, reason: `无法识别机场“${namePart}”。可写中文名、简称或四字码，如“深圳 / 深圳机场 / ZGSZ”。` });
             return { errors };
         }
 
         const cells = [];
         for (let i = 0; i < numCells; i++) cells.push({ text: '', bg: 'transparent', fg: '#1e293b', ts: 'none' });
 
-        if (/适航|天气适航/.test(body)) return { icao, cells, note: '适航', errors: [] };
+        if (!body || /适航|天气适航|天气较好|无明显天气|无天气|晴好|稳定|正常/.test(body)) {
+            return { icao, cells, note: '适航', errors: [] };
+        }
 
-        const segs = body.split(/[，,；;]/).map(s => s.trim()).filter(Boolean);
+        const segs = body.split(/[，,；;]+/).map(s => s.trim()).filter(Boolean);
         if (!segs.length) {
-            errors.push({ lineNo, line, reason: '没有识别到时段描述。' });
-            return { errors };
+            return { icao, cells, note: '适航', errors: [] };
         }
 
         let lastDay = null;
         let applied = 0;
         segs.forEach(seg => {
-            // 例：5日08-11时有雷雨；5日00Z-03Z有雷雨；5日22时-6日02时有雷雨
-            const r = seg.match(/(?:(\d{1,2})日)?(\d{1,2})(?:时)?(Z)?\s*[-—~至]\s*(?:(\d{1,2})日)?(\d{1,2})(?:时)?(Z)?\s*有?\s*(.+)/i);
+            // 例：5日08-11时有雷雨；5日00Z-03Z有雷雨；5日22时-6日02时有雷雨；5日08时雷雨；08-11时小雨
+            const r = seg.match(/(?:(\d{1,2})日)?(\d{1,2})(?:时)?(?:\s*(Z))?\s*[-—~至到]\s*(?:(\d{1,2})日)?(\d{1,2})(?:时)?(?:\s*(Z))?\s*(.*)/i);
             let startOff = -1, endOff = -1, phenomenon = '';
             if (r) {
                 const d1 = r[1] || lastDay;
@@ -642,23 +733,46 @@
                 const z2 = !!r[6];
                 const isUTC = z1 || z2;
                 lastDay = r[4] || r[1] || lastDay;
-                startOff = resolveOffset(d1, h1, isUTC);
-                endOff = resolveOffset(d2, h2, isUTC);
-                phenomenon = (r[7] || '').trim();
+                startOff = resolveFlexibleOffset(d1, h1, isUTC);
+                endOff = resolveFlexibleOffset(d2, h2, isUTC);
+                phenomenon = normalizePhenomenon(r[7] || '');
             } else {
-                const r2 = seg.match(/(?:(\d{1,2})日)?(\d{1,2})(?:时)?(Z)?\s*有?\s*(.+)/i);
+                const r2 = seg.match(/(?:(\d{1,2})日)?(\d{1,2})(?:时)?(?:\s*(Z))?(?:\s*(?:有|为|见|出现|伴有|转))?\s*(.*)/i);
                 if (r2) {
                     const d1 = r2[1] || lastDay;
                     const h1 = r2[2];
                     const isUTC = !!r2[3];
                     lastDay = r2[1] || lastDay;
-                    startOff = endOff = resolveOffset(d1, h1, isUTC);
-                    phenomenon = (r2[4] || '').trim();
+                    startOff = endOff = resolveFlexibleOffset(d1, h1, isUTC);
+                    phenomenon = normalizePhenomenon(r2[4] || '');
                 }
             }
             phenomenon = phenomenon.replace(/[。.、]$/, '').trim();
-            if (startOff < 0 || endOff < 0 || !phenomenon) {
-                errors.push({ lineNo, line, segment: seg, reason: '无法识别时段或天气现象。请写成“5日08-11时有雷雨”或“5日00Z-03Z有雷雨”。' });
+            if (!phenomenon) {
+                const m2 = seg.match(/(?:(\d{1,2})日)?(\d{1,2})(?:时)?(?:\s*(Z))?\s*(.+)/i);
+                if (m2) {
+                    const d1 = m2[1] || lastDay;
+                    const h1 = m2[2];
+                    const isUTC = !!m2[3];
+                    lastDay = m2[1] || lastDay;
+                    startOff = endOff = resolveFlexibleOffset(d1, h1, isUTC);
+                    phenomenon = normalizePhenomenon(m2[4] || '');
+                }
+            }
+            if (startOff < 0 || endOff < 0) {
+                if (phenomenon && /^(适航|无明显天气|无天气|晴好|稳定|正常)$/i.test(phenomenon)) {
+                    return;
+                }
+                errors.push({ lineNo, line, segment: seg, reason: '无法识别时段。可写成“5日08-11时有雷雨”“08-11时小雨”或“5日00Z-03Z有雷雨”。' });
+                return;
+            }
+            if (!phenomenon) {
+                // 允许只写时间不写天气：按适航导入，方便先占位后评估。
+                if (startOff === endOff) {
+                    applied++;
+                    return;
+                }
+                errors.push({ lineNo, line, segment: seg, reason: '已识别到时段，但未识别到天气现象。可直接留空作为占位，或补充“有雷雨/有小雨”等描述。' });
                 return;
             }
             if (startOff >= numCells || endOff < 0) {
@@ -672,7 +786,7 @@
             applied++;
         });
 
-        if (!applied) errors.push({ lineNo, line, reason: '整行没有任何可导入的有效时段。' });
+        if (!applied) return { icao, cells, note: '适航', errors: [] };
         return { icao, cells, note: '/', errors };
     }
 
@@ -732,14 +846,17 @@
             renderValidationPanel(checked);
             return 0;
         }
+        const importedIcaos = [];
         let imported = 0;
         checked.parsed.forEach(item => {
             if (!item.icao) return;
             window.pbState.confirmedData[item.icao] = { rows: [item.cells], notes: [item.note || '/'] };
             window.pbState.forceShowAirports.add(item.icao);
+            importedIcaos.push(item.icao);
             imported++;
         });
         if (imported > 0) {
+            if (window.setTextImportAirports) window.setTextImportAirports(importedIcaos);
             if (window.saveConfirmedDataToLocal) window.saveConfirmedDataToLocal();
             if (Array.isArray(window.currentApAnalysis)) {
                 Object.keys(window.pbState.confirmedData).forEach(icao => {
