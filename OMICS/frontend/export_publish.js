@@ -504,7 +504,7 @@
         document.getElementById('export-perpage')?.addEventListener('change', () => { state.images = []; refreshPreview(); });
         document.getElementById('export-preview-confirm')?.addEventListener('click', doExport);
 
-        // ---- 文图互导：导出/导入 标签切换 + 纠错 ----
+        // ---- 文表互导：导出/导入 标签切换 + 纠错 ----
         const tabOut = document.getElementById('export-text-tab-out');
         const tabIn = document.getElementById('export-text-tab-in');
         const importBtn = document.getElementById('import-export-text-btn');
@@ -527,9 +527,9 @@
             if (panel) { panel.style.display = 'none'; panel.innerHTML = ''; }
             if (ta) {
                 ta.style.borderColor = '#ccc';
-                if (isIn) {
+                                if (isIn) {
                     ta.value = '';
-                    ta.placeholder = '例：\n深圳：5日08-11时有雷雨，12-15时有大风。\n杭州：5日06Z-09Z有小雨。（Z=世界时/UTC；无Z默认北京时）';
+                    ta.placeholder = '例：\n深圳：5日08-11时有雷雨，12-15时有大风。\n杭州：5日06Z-09Z有小雨。（Z=世界时/UTC；无Z默认北京时）\n\n只写机场名（不写天气）则仅加入表格、由系统拉取 TAF/EC 供编发：\n南昌\nZSCN';
                 } else if (window.clearTextImportAirports) {
                     window.clearTextImportAirports();
                     if (window.renderPublishTable) window.renderPublishTable();
@@ -540,13 +540,19 @@
         tabOut?.addEventListener('click', () => setTab('out'));
         tabIn?.addEventListener('click', () => setTab('in'));
         checkBtn?.addEventListener('click', () => validateImportText(ta.value, true));
-        importBtn?.addEventListener('click', () => {
+                importBtn?.addEventListener('click', () => {
             const checked = validateImportText(ta.value, true);
             if (!checked.ok) return;
-            const n = importTextToForecast(ta.value);
+            const res = importTextToForecast(ta.value);
+            const n = typeof res === 'number' ? res : res.count;
             if (n > 0) {
                 document.getElementById('export-text-modal').style.display = 'none';
-                alert(`✅ 已导入 ${n} 个机场的预报，已以编发状态显示。`);
+                const displayOnly = typeof res === 'object' ? res.displayOnly : 0;
+                const confirmed = n - displayOnly;
+                let msg = `✅ 已导入 ${n} 个机场。`;
+                if (confirmed > 0) msg += `\n其中 ${confirmed} 个以编发状态显示。`;
+                if (displayOnly > 0) msg += `\n其中 ${displayOnly} 个仅加入表格，正在拉取 TAF/EC 供你编发。`;
+                alert(msg);
             }
         });
     });
@@ -571,22 +577,44 @@
             .toUpperCase();
     }
 
-    function resolveAirportName(namePart, nameToIcao) {
+    // 🌟 返回 { icao } 命中唯一机场；{ candidates:[...] } 模糊多中；{} 无法识别。
+    // 支持四字码模糊（如 “ZG”/“ZGS” 前缀）与中文名模糊。
+    function resolveAirportResult(namePart, nameToIcao) {
         const raw = String(namePart || '').trim();
-        if (!raw) return null;
+        if (!raw) return {};
         const upper = raw.toUpperCase();
-        if (/^[A-Z]{4}$/.test(upper)) return upper;
-        if (nameToIcao[raw]) return nameToIcao[raw];
+        const coords = window.AIRPORT_COORDS || {};
 
+        // 1. 完整四字码：字典已收录则直接命中；未收录也当外部机场接受。
+        if (/^[A-Z]{4}$/.test(upper)) return { icao: upper };
+
+        // 2. 中文名完全匹配（原始 / 归一化）。
+        if (nameToIcao[raw]) return { icao: nameToIcao[raw] };
         const norm = normalizeText(raw);
         const exactNorm = Object.entries(nameToIcao).find(([name]) => normalizeText(name) === norm);
-        if (exactNorm) return exactNorm[1];
+        if (exactNorm) return { icao: exactNorm[1] };
 
-        const fuzzy = Object.entries(nameToIcao).find(([name]) => {
+        // 3. 不足 4 位的英文：当四字码前缀模糊匹配字典已收录机场。
+        if (/^[A-Z]{1,3}$/.test(upper)) {
+            const codeHits = Object.keys(coords).filter(ic => ic.startsWith(upper));
+            if (codeHits.length === 1) return { icao: codeHits[0] };
+            if (codeHits.length > 1) return { candidates: codeHits.slice(0, 12) };
+        }
+
+        // 4. 中文名模糊（包含）。
+        const nameHits = Object.entries(nameToIcao).filter(([name]) => {
             const key = normalizeText(name);
-            return key.includes(norm) || norm.includes(key);
+            return key && (key.includes(norm) || norm.includes(key));
         });
-        return fuzzy ? fuzzy[1] : null;
+        if (nameHits.length === 1) return { icao: nameHits[0][1] };
+        if (nameHits.length > 1) return { candidates: nameHits.slice(0, 12).map(x => x[1]) };
+
+        return {};
+    }
+
+    function resolveAirportName(namePart, nameToIcao) {
+        const r = resolveAirportResult(namePart, nameToIcao);
+        return r.icao || null;
     }
 
     function splitAirportAndBody(line, nameToIcao) {
@@ -700,22 +728,34 @@
         const split = splitAirportAndBody(line, nameToIcao);
         const namePart = split.namePart;
         const body = normalizePhenomenon(split.body);
-        const icao = resolveAirportName(namePart, nameToIcao);
+        const resolved = resolveAirportResult(namePart, nameToIcao);
+        if (resolved.candidates && resolved.candidates.length) {
+            const list = resolved.candidates.map(ic => `${ic}${window.GLOBAL_AIRPORT_NAME_MAP && window.GLOBAL_AIRPORT_NAME_MAP[ic] ? '(' + window.GLOBAL_AIRPORT_NAME_MAP[ic] + ')' : ''}`).join('、');
+            errors.push({ lineNo, line, reason: `机场“${namePart}”模糊匹配到多个，请写更完整的四字码或名称。候选：${list}` });
+            return { errors };
+        }
+        const icao = resolved.icao;
         if (!icao) {
-            errors.push({ lineNo, line, reason: `无法识别机场“${namePart}”。可写中文名、简称或四字码，如“深圳 / 深圳机场 / ZGSZ”。` });
+            errors.push({ lineNo, line, reason: `无法识别机场“${namePart}”。可写中文名、简称或四字码（支持模糊），如“深圳 / 深圳机场 / ZGSZ / ZGS”。` });
             return { errors };
         }
 
         const cells = [];
         for (let i = 0; i < numCells; i++) cells.push({ text: '', bg: 'transparent', fg: '#1e293b', ts: 'none' });
 
-        if (!body || /适航|天气适航|天气较好|无明显天气|无天气|晴好|稳定|正常/.test(body)) {
+        // 🌟 只写机场名、不写任何天气/时段：仅把该机场加入表格，由系统拉取 TAF/EC 供编发。
+        // （用于把外部机场输入软件，做出预报后再导出为文本）
+        if (!body) {
+            return { icao, cells, displayOnly: true, errors: [] };
+        }
+        // 显式写“适航”类关键词才按已编发适航处理。
+        if (/适航|天气适航|天气较好|无明显天气|无天气|晴好|稳定|正常/.test(body)) {
             return { icao, cells, note: '适航', errors: [] };
         }
 
         const segs = body.split(/[，,；;]+/).map(s => s.trim()).filter(Boolean);
         if (!segs.length) {
-            return { icao, cells, note: '适航', errors: [] };
+            return { icao, cells, displayOnly: true, errors: [] };
         }
 
         let lastDay = null;
@@ -840,34 +880,46 @@
         return result;
     }
 
-    function importTextToForecast(text) {
+        function importTextToForecast(text) {
         const checked = validateImportText(text, false);
         if (!checked.ok) {
             renderValidationPanel(checked);
-            return 0;
+            return { count: 0, displayOnly: 0 };
         }
         const importedIcaos = [];
         let imported = 0;
+        let displayOnlyCount = 0;
         checked.parsed.forEach(item => {
             if (!item.icao) return;
-            window.pbState.confirmedData[item.icao] = { rows: [item.cells], notes: [item.note || '/'] };
-            window.pbState.forceShowAirports.add(item.icao);
+            if (item.displayOnly) {
+                // 🌟 仅把该机场加入表格，由系统拉取 TAF/EC 供编发；不写入已确认数据。
+                window.pbState.forceShowAirports.add(item.icao);
+                displayOnlyCount++;
+            } else {
+                window.pbState.confirmedData[item.icao] = { rows: [item.cells], notes: [item.note || '/'] };
+                window.pbState.forceShowAirports.add(item.icao);
+            }
             importedIcaos.push(item.icao);
             imported++;
         });
         if (imported > 0) {
             if (window.setTextImportAirports) window.setTextImportAirports(importedIcaos);
             if (window.saveConfirmedDataToLocal) window.saveConfirmedDataToLocal();
-            if (Array.isArray(window.currentApAnalysis)) {
-                Object.keys(window.pbState.confirmedData).forEach(icao => {
-                    if (!window.currentApAnalysis.some(a => a.icao === icao)) {
-                        window.currentApAnalysis.push({ icao, hasAlert: true, nwp: null, tafRaw: '', tafHourly: null, autoAdoptEC: false, autoAdoptReason: '' });
-                    }
-                });
+            // 🌟 有“仅展示”机场时，必须实际拉取其 TAF/EC 数据（否则表里只有空行）。
+            if (displayOnlyCount > 0 && typeof window.loadForecastData === 'function') {
+                window.loadForecastData(true);
+            } else {
+                if (Array.isArray(window.currentApAnalysis)) {
+                    Object.keys(window.pbState.confirmedData).forEach(icao => {
+                        if (!window.currentApAnalysis.some(a => a.icao === icao)) {
+                            window.currentApAnalysis.push({ icao, hasAlert: true, nwp: null, tafRaw: '', tafHourly: null, autoAdoptEC: false, autoAdoptReason: '' });
+                        }
+                    });
+                }
+                if (window.renderPublishTable) window.renderPublishTable();
             }
-            if (window.renderPublishTable) window.renderPublishTable();
         }
-        return imported;
+        return { count: imported, displayOnly: displayOnlyCount };
     }
 
     window.OMICSExport = { openPreview, importTextToForecast };

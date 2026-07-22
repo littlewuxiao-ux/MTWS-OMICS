@@ -107,6 +107,8 @@ const pbState = {
   allowOtherCarriers: false,
   defaultShowTaf: true, defaultShowEc: false,
   confirmedData: {},
+  // 🌟 一键编发状态：记录本次批量采纳的机场，供撤回
+  bulkAdopted: { taf: [], ec: [] },
   // 🌟 需求C：新增极寒与积冰配置参数
   cfgIceTemp: 10, cfgIceDew: 1, cfgIceVis: 1500, cfgExtColdTemp: -30
 };
@@ -147,7 +149,7 @@ window.initPublishModule = async function() {
     window.publishInitialized = true;
     PBLOG('initPublishModule 开始初始化');
 
-    const settingsConfig = window.OMICS_SETTINGS_CONFIG || {};
+    const settingsConfig = window.OMICS_CONFIG || window.OMICS_SETTINGS_CONFIG || {};
     const publishConfig = settingsConfig.publish || {};
     let savedGroups = publishConfig.airport_groups && publishConfig.airport_groups.length ? JSON.stringify(publishConfig.airport_groups) : localStorage.getItem('pb_airport_groups');
     pbState.airportGroups = savedGroups ? JSON.parse(savedGroups) : DEFAULT_AIRPORT_GROUPS;
@@ -338,6 +340,68 @@ function recomputeAlertsAndRerender() {
 }
 window.recomputeAlertsAndRerender = recomputeAlertsAndRerender;
 
+// 🌟 从 DOM 采集指定机场的编辑行内容并写入 confirmedData（不触发重渲染）。
+// 抽自 btnConfirm 逻辑，供一键编发批量复用。返回是否采纳到实际数据。
+function gatherRowIntoConfirmed(icao) {
+    const allIcaoRows = Array.from(document.querySelectorAll(`tr[data-icao="${icao}"]`)).filter(r => r.classList.contains('tr-edit') || r.classList.contains('tr-edit-extra'));
+    if (!allIcaoRows.length) return false;
+    const cRows = []; const cNotes = []; let allClear = true;
+    allIcaoRows.forEach(row => {
+        const rowCells = [];
+        row.querySelectorAll('.edit-cell').forEach(td => {
+            const txt = td.textContent.trim();
+            if (txt !== '') allClear = false;
+            rowCells.push({ text: txt, bg: td.style.background, fg: td.style.color, ts: td.style.textShadow });
+        });
+        cRows.push(rowCells);
+        let note = '';
+        const noteDisplay = row.querySelector('.edit-note-display');
+        if (noteDisplay) note = noteDisplay.textContent.trim();
+        else { const ni = row.querySelector('.edit-note-input'); if (ni) note = ni.value.trim(); }
+        cNotes.push(note);
+    });
+    // 批量采纳时，若该机场在选定数据源下无任何要素，则不强制编发（避免把全部机场都标适航）。
+    if (allClear) return false;
+    cNotes.forEach((n, idx) => { if (!n) cNotes[idx] = "/"; });
+    pbState.confirmedData[icao] = { rows: cRows, notes: cNotes };
+    return true;
+}
+
+// 🌟 绑定一键编发按钮（可重入，setupGlobalToolbar 每次渲染都会调用）。
+function setupBulkAdoptButton(btnId, source) {
+    const btn = document.getElementById(btnId);
+    if (!btn) return;
+    pbState.bulkAdopted = pbState.bulkAdopted || { taf: [], ec: [] };
+    const isOn = (pbState.bulkAdopted[source] || []).length > 0;
+    btn.textContent = isOn ? '撤回编发' : '一键编发';
+    btn.style.background = isOn ? '#d97706' : '#16a34a';
+    btn.onclick = () => {
+        pbState.bulkAdopted = pbState.bulkAdopted || { taf: [], ec: [] };
+        const already = (pbState.bulkAdopted[source] || []).length > 0;
+        if (already) {
+            // 退回：仅删除本次批量采纳的机场确认数据。
+            (pbState.bulkAdopted[source] || []).forEach(icao => { delete pbState.confirmedData[icao]; });
+            pbState.bulkAdopted[source] = [];
+            if (window.saveConfirmedDataToLocal) window.saveConfirmedDataToLocal();
+            renderPublishTableTriRow(window.currentApAnalysis);
+            return;
+        }
+        // 采纳：先点击所有未确认行的对应采纳按钮填充编辑行，再统一写入 confirmedData。
+        const btnClass = source === 'taf' ? '.btn-adopt-taf' : '.btn-adopt-nwp';
+        const adoptBtns = Array.from(document.querySelectorAll(`#forecast-table ${btnClass}`));
+        adoptBtns.forEach(b => b.click());
+        // 采集当前所有未确认机场的 icao（此刻仍渲染为未确认状态）。
+        const unconfirmedIcaos = Array.from(document.querySelectorAll('#forecast-table tr.tr-edit'))
+            .filter(r => r.dataset.confirmed === 'false' && r.dataset.icao)
+            .map(r => r.dataset.icao);
+        const adopted = [];
+        unconfirmedIcaos.forEach(icao => { if (gatherRowIntoConfirmed(icao)) adopted.push(icao); });
+        pbState.bulkAdopted[source] = adopted;
+        if (window.saveConfirmedDataToLocal) window.saveConfirmedDataToLocal();
+        renderPublishTableTriRow(window.currentApAnalysis);
+    };
+}
+
 function setupGlobalToolbar() {
     const table = document.getElementById('forecast-table');
     if (!table) return;
@@ -392,6 +456,10 @@ function setupGlobalToolbar() {
         };
     }
     
+    // 🌟 一键编发：把当前表中所有未确认机场批量采纳指定数据源(TAF/EC)并确认编发；再次点击退回。
+    setupBulkAdoptButton('global-adopt-taf', 'taf');
+    setupBulkAdoptButton('global-adopt-ec', 'ec');
+
     const modeBtn = document.getElementById('global-toggle-mode');
     if (modeBtn) {
         let isMerged = true;
@@ -557,11 +625,17 @@ document.getElementById('add-pb-group-btn')?.addEventListener('click', () => {
     renderAirportGroupsConfig();
 });
 
-// 🌟 从 localStorage 构造 publish 配置块，供分块 PATCH 使用
+// 🌟 构造 publish 配置块，供分块 PATCH 使用。
+//   localStorage 缺失时回退到 window.OMICS_CONFIG(持久唯一源)，绝不提交空块覆盖磁盘。
 function buildPublishBlockFromLocal() {
+    const cfg = window.OMICS_CONFIG || window.OMICS_SETTINGS_CONFIG || {};
+    const s = (cfg && cfg.publish) ? cfg.publish : {};
+    let groups = null, ec = null;
+    try { groups = localStorage.getItem('pb_airport_groups') ? JSON.parse(localStorage.getItem('pb_airport_groups')) : null; } catch (e) {}
+    try { ec = localStorage.getItem('pb_auto_ec_cfg') ? JSON.parse(localStorage.getItem('pb_auto_ec_cfg')) : null; } catch (e) {}
     return {
-        airport_groups: localStorage.getItem('pb_airport_groups') ? JSON.parse(localStorage.getItem('pb_airport_groups')) : [],
-        auto_ec_cfg: localStorage.getItem('pb_auto_ec_cfg') ? JSON.parse(localStorage.getItem('pb_auto_ec_cfg')) : {}
+        airport_groups: (groups && groups.length) ? groups : (s.airport_groups || []),
+        auto_ec_cfg: (ec && Object.keys(ec).length) ? ec : (s.auto_ec_cfg || {})
     };
 }
 

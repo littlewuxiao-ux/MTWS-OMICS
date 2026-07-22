@@ -48,6 +48,14 @@ _SETTINGS_EXAMPLE_BUNDLE = os.path.join(_BUNDLE_DIR, 'runtime', 'settings_config
 SETTINGS_CONFIG_EXAMPLE_PATH = _SETTINGS_EXAMPLE_PERSIST if os.path.exists(_SETTINGS_EXAMPLE_PERSIST) else _SETTINGS_EXAMPLE_BUNDLE
 SETTINGS_CONFIG_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'runtime', 'settings_config.json'))
 SETTINGS_CONFIG_EXAMPLE_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'runtime', 'settings_config.example.json'))
+# 🌟 配置持久化根治（方案A）：统一配置源迁移到 omics_config.js。
+# 该文件同时被浏览器以 <script> 同步加载（window.OMICS_CONFIG）和后端读写，
+# 成为唯一数据源，彻底摆脱对浏览器 localStorage 的依赖。
+# 放在持久化 runtime 目录（frozen 后为 exe 同级），并通过显式路由 /omics_config.js 提供给前端，
+# 保证打包模式下前端拿到的也是持久副本。
+OMICS_CONFIG_JS_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'runtime', 'omics_config.js'))
+if getattr(sys, 'frozen', False):
+    OMICS_CONFIG_JS_PATH = os.path.join(_PERSIST_DIR, 'runtime', 'omics_config.js')
 DEFAULT_PERSONNEL_MAP = {"41060711": "吴霄"}
 
 DEFAULT_SETTINGS_CONFIG = {
@@ -99,24 +107,80 @@ def deep_merge_dict(base, extra):
     return merged
 
 
+def _serialize_config_js(config):
+    """把配置字典序列化成浏览器可同步加载的 JS 文件文本。"""
+    payload = json.dumps(config, ensure_ascii=False, indent=2)
+    return (
+        "// 🌟 OMICS 统一配置文件（唯一数据源）——由系统自动读写，请勿手工编辑格式。\n"
+        "// 浏览器以 <script> 同步加载 window.OMICS_CONFIG；后端 /api/settings_config 读写此文件。\n"
+        "window.OMICS_CONFIG = " + payload + ";\n"
+    )
+
+
+def _parse_config_js(text):
+    """从 omics_config.js 文本中提取 JSON 配置对象。"""
+    if not text:
+        return None
+    # 截取 window.OMICS_CONFIG = {...}; 中的 JSON 主体。
+    eq = text.find('=', text.find('OMICS_CONFIG'))
+    if eq == -1:
+        return None
+    start = text.find('{', eq)
+    end = text.rfind('}')
+    if start == -1 or end == -1 or end < start:
+        return None
+    try:
+        return json.loads(text[start:end + 1])
+    except Exception as exc:
+        LOG.warning("解析 omics_config.js 失败: %s", exc)
+        return None
+
+
+def _write_config_js(config):
+    os.makedirs(os.path.dirname(OMICS_CONFIG_JS_PATH), exist_ok=True)
+    with open(OMICS_CONFIG_JS_PATH, 'w', encoding='utf-8') as f:
+        f.write(_serialize_config_js(config))
+
+
+def _read_legacy_json_config():
+    """一次性迁移：读取旧的 settings_config.json / example 作为初始值。"""
+    for path in (SETTINGS_CONFIG_PATH, SETTINGS_CONFIG_EXAMPLE_PATH):
+        try:
+            if os.path.exists(path):
+                with open(path, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+        except Exception as exc:
+            LOG.warning("读取旧配置 %s 失败: %s", path, exc)
+    return None
+
+
+def _read_config_js_raw():
+    """读取 omics_config.js 中已存的配置字典（不叠加默认值）。"""
+    try:
+        if os.path.exists(OMICS_CONFIG_JS_PATH):
+            with open(OMICS_CONFIG_JS_PATH, 'r', encoding='utf-8') as f:
+                return _parse_config_js(f.read())
+    except Exception as exc:
+        LOG.warning("读取 omics_config.js 失败: %s", exc)
+    return None
+
+
 def load_settings_config():
     data = copy.deepcopy(DEFAULT_SETTINGS_CONFIG)
     # Keep backward compatibility with the older standalone personnel mapping file.
     data["personnel_dict"] = deep_merge_dict(data.get("personnel_dict", {}), load_personnel_mapping())
-    try:
-        if os.path.exists(SETTINGS_CONFIG_PATH):
-            with open(SETTINGS_CONFIG_PATH, 'r', encoding='utf-8') as f:
-                saved = json.load(f)
-            data = deep_merge_dict(data, saved)
-        elif os.path.exists(SETTINGS_CONFIG_EXAMPLE_PATH):
-            with open(SETTINGS_CONFIG_EXAMPLE_PATH, 'r', encoding='utf-8') as f:
-                saved = json.load(f)
-            data = deep_merge_dict(data, saved)
-            os.makedirs(os.path.dirname(SETTINGS_CONFIG_PATH), exist_ok=True)
-            with open(SETTINGS_CONFIG_PATH, 'w', encoding='utf-8') as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
-    except Exception as exc:
-        LOG.warning("读取系统设置配置失败: %s", exc)
+    saved = _read_config_js_raw()
+    if saved is None:
+        # 🌟 首次运行 / 旧版本升级：从旧 settings_config.json 迁移到 omics_config.js。
+        legacy = _read_legacy_json_config()
+        if legacy is not None:
+            data = deep_merge_dict(data, legacy)
+        try:
+            _write_config_js(data)
+        except Exception as exc:
+            LOG.warning("初始化 omics_config.js 失败: %s", exc)
+        return data
+    data = deep_merge_dict(data, saved)
     return data
 
 
@@ -124,19 +188,19 @@ def save_settings_config(settings):
     # 🌟 健壮性：以 默认 -> 磁盘已存 -> 本次传入 的顺序逐层叠加，
     # 避免某次只传部分字段的 sync 把磁盘上其他已保存配置抹掉。
     data = copy.deepcopy(DEFAULT_SETTINGS_CONFIG)
-    try:
-        if os.path.exists(SETTINGS_CONFIG_PATH):
-            with open(SETTINGS_CONFIG_PATH, 'r', encoding='utf-8') as f:
-                data = deep_merge_dict(data, json.load(f))
-    except Exception as exc:
-        LOG.warning("读取已存配置作为合并基底失败: %s", exc)
+    saved = _read_config_js_raw()
+    if saved is None:
+        # 尚未生成 JS 配置时，先把旧 JSON 迁移进来作为基底，避免覆盖历史配置。
+        legacy = _read_legacy_json_config()
+        if legacy is not None:
+            data = deep_merge_dict(data, legacy)
+    else:
+        data = deep_merge_dict(data, saved)
     data = deep_merge_dict(data, settings if isinstance(settings, dict) else {})
     # Also keep personnel_mapping.json in sync for launcher/legacy readers.
     if isinstance(data.get("personnel_dict"), dict):
         save_personnel_mapping(data["personnel_dict"])
-    os.makedirs(os.path.dirname(SETTINGS_CONFIG_PATH), exist_ok=True)
-    with open(SETTINGS_CONFIG_PATH, 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    _write_config_js(data)
     return data
 
 
@@ -272,6 +336,22 @@ CHINESE_WIND_DIR_MAP = {'N': '北风', 'NNE': '东北偏北风', 'NE': '东北�
 
 @app.route('/')
 def serve_index(): return send_from_directory(frontend_folder, 'index.html')
+
+# 🌟 统一配置文件：始终从持久化 runtime 目录提供（而非前端静态目录），
+# 保证打包模式下浏览器同步加载到的 window.OMICS_CONFIG 是持久副本。
+# 显式路由优先级高于下面的 /<path:path> 静态兜底。
+@app.route('/omics_config.js')
+def serve_omics_config_js():
+    # 确保文件存在（含首次迁移），再回读其原始文本返回。
+    load_settings_config()
+    try:
+        with open(OMICS_CONFIG_JS_PATH, 'r', encoding='utf-8') as f:
+            body = f.read()
+    except Exception as exc:
+        LOG.warning("读取 omics_config.js 供前端失败: %s", exc)
+        body = _serialize_config_js(load_settings_config())
+    return app.response_class(body, mimetype='application/javascript')
+
 @app.route('/<path:path>')
 def serve_static(path): return send_from_directory(frontend_folder, path)
 

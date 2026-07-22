@@ -283,19 +283,21 @@
                         <div class="publish-toolbar" style="display: flex; gap: 12px; align-items: center; margin-bottom: 12px; padding: 10px 15px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; flex-wrap: wrap; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
                             <div style="font-weight: bold; color: #1e40af; display: flex; align-items: center; gap: 8px;">
                                 📊 数据视图:
-                                <label style="cursor: pointer;"><input type="checkbox" id="global-toggle-taf" checked> TAF</label>
+                                                                <label style="cursor: pointer;"><input type="checkbox" id="global-toggle-taf" checked> TAF</label>
                                 <button id="global-expand-taf" class="mini-btn" style="background: #64748b; color: white; border: none; padding: 2px 8px; border-radius: 4px; font-size: 11px;">合并</button>
+                                <button id="global-adopt-taf" class="mini-btn" style="background: #16a34a; color: white; border: none; padding: 2px 8px; border-radius: 4px; font-size: 11px;">一键编发</button>
 
                                 <span style="border-left:1px solid #cbd5e1; height:16px; margin: 0 4px;"></span>
 
                                 <label style="cursor: pointer;"><input type="checkbox" id="global-toggle-ec" checked> EC</label>
                                 <button id="global-expand-ec" class="mini-btn" style="background: #64748b; color: white; border: none; padding: 2px 8px; border-radius: 4px; font-size: 11px;">合并</button>
+                                <button id="global-adopt-ec" class="mini-btn" style="background: #16a34a; color: white; border: none; padding: 2px 8px; border-radius: 4px; font-size: 11px;">一键编发</button>
                             </div>
 
                             <button id="global-toggle-mode" class="mini-btn" style="background: #0f766e; color: white; border: none; padding: 4px 10px; border-radius: 4px; font-weight: bold; font-size: 12px; margin-left: 5px;">一键全展开</button>
                             <button id="global-refresh-btn" class="mini-btn" style="background: #2563eb; color: white; border: none; padding: 4px 10px; border-radius: 4px; font-weight: bold; cursor: pointer;">🔄 刷新</button>
 
-                            <button id="global-export-text-btn" class="mini-btn" style="background: #d97706; color: white; border: none; padding: 4px 10px; border-radius: 4px; font-weight: bold; cursor: pointer;">📤 文图互导</button>
+                            <button id="global-export-text-btn" class="mini-btn" style="background: #d97706; color: white; border: none; padding: 4px 10px; border-radius: 4px; font-weight: bold; cursor: pointer;">📤 文表互导</button>
                             <button id="global-export-image-btn" class="mini-btn" style="background: #10b981; color: white; border: none; padding: 4px 10px; border-radius: 4px; font-weight: bold; cursor: pointer;">🖼️ 导出图片</button>
                             <button id="global-export-excel-btn" class="mini-btn" style="background: #059669; color: white; border: none; padding: 4px 10px; border-radius: 4px; font-weight: bold; cursor: pointer;">📊 导出 Excel</button>
 
@@ -542,13 +544,13 @@
         <div id="export-text-modal" class="modal" style="display:none; z-index:10000;">
             <div class="modal-content" style="width: 640px; padding: 25px;">
                 <span class="close-button" id="close-export-modal">&times;</span>
-                <h3 style="color:#1e40af; margin-top:0; border-bottom: 2px solid #c8d5e5; padding-bottom: 10px;">📝 预报文图互导</h3>
+                <h3 style="color:#1e40af; margin-top:0; border-bottom: 2px solid #c8d5e5; padding-bottom: 10px;">📝 预报文表互导</h3>
                 <div style="display:flex; gap:8px; margin-bottom:10px;">
                     <button id="export-text-tab-out" class="mini-btn" style="flex:1; background:#28a745; color:white; padding:8px 0;">⬇️ 导出文本</button>
                     <button id="export-text-tab-in" class="mini-btn" style="flex:1; background:#64748b; color:white; padding:8px 0;">⬆️ 文字导入预报</button>
                 </div>
                 <div id="export-text-out-hint" style="font-size: 12px; color: #666; margin-bottom: 10px;">已确认编发的机场会自动进行时段合并与文本提取。</div>
-                <div id="export-text-in-hint" style="display:none; font-size: 12px; color: #b45309; background:#fffbeb; border:1px solid #fde68a; border-radius:6px; padding:8px; margin-bottom: 10px;">每行一个机场，格式：<b>机场名：时段描述。</b> 例：深圳：5日08-11时有雷雨，12-15时有大风。世界时在时间后加 <b>Z</b>，例：深圳：5日00Z-03Z有雷雨；其余时间默认北京时。导入后机场直接以已编发状态显示。</div>
+                <div id="export-text-in-hint" style="display:none; font-size: 12px; color: #b45309; background:#fffbeb; border:1px solid #fde68a; border-radius:6px; padding:8px; margin-bottom: 10px;">每行一个机场，格式：<b>机场名：时段描述。</b> 例：深圳：5日08-11时有雷雨，12-15时有大风。世界时在时间后加 <b>Z</b>，例：深圳：5日00Z-03Z有雷雨；其余时间默认北京时。<br><b>只写机场名（不写天气）</b>则仅把该机场加入表格、由系统自动拉取 TAF/EC 供编发，例：<b>深圳</b> 或 <b>ZGSZ</b>。机场名可用中文名、简称或四字码（支持模糊匹配）。</div>
                 <textarea id="export-text-content" rows="15" style="width:100%; border:1px solid #ccc; border-radius:4px; padding:10px; font-family:monospace; font-size:14px; line-height:1.6; resize:vertical; background: #fdfdfd; outline:none;"></textarea>
                 <div id="export-text-error-panel" style="display:none; margin-top:8px; max-height:170px; overflow:auto; border:1px solid #fecaca; background:#fff7f7; border-radius:6px; padding:8px; font-size:12px; text-align:left;"></div>
                 <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:15px; border-top: 1px solid #eee; padding-top: 15px;">
@@ -602,6 +604,8 @@
         <div class="ctx-item" id="ctx-delete-row" style="cursor:pointer;padding:6px 14px;color:#333;display:none;border-top:1px solid #eee;">删除此空行</div>
     </div>
 
+        <!-- 🌟 统一配置（唯一数据源）：同步加载 window.OMICS_CONFIG，必须在其他脚本前。 -->
+    <script src="omics_config.js"></script>
     <script src="airports.js"></script>
     <script src="publish.js"></script>
     <script src="export_publish.js"></script>

@@ -52,7 +52,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     const UNIFIED_AUTH_CLEAR_URL = '/auth/clear';
     const SETTINGS_CONFIG_URL = '/api/settings_config';
 
+    // 🌟 配置持久化根治(方案A):优先用 <script> 同步加载的 window.OMICS_CONFIG 作为唯一数据源,
+    //   再用它回填 localStorage(仅作兼容缓存)。fetch 仅作极端兜底。
+    //   这样浏览器清了 localStorage 也不会把空值 PATCH 回去覆盖磁盘配置。
+    function cfgBlock(key) {
+        const c = window.OMICS_CONFIG || window.OMICS_SETTINGS_CONFIG || {};
+        return c && typeof c === 'object' ? c[key] : undefined;
+    }
     async function loadSettingsConfigFromServer() {
+        // 同步注入的唯一配置源优先。
+        if (window.OMICS_CONFIG && typeof window.OMICS_CONFIG === 'object') {
+            return window.OMICS_CONFIG;
+        }
         try {
             const res = await fetch(SETTINGS_CONFIG_URL, { cache: 'no-store' });
             const data = await res.json();
@@ -63,30 +74,38 @@ document.addEventListener('DOMContentLoaded', async () => {
         return null;
     }
 
-    // 🌟 各配置块的构造函数,供全量 snapshot 与分块 PATCH 共用
+    // 🌟 各配置块的构造函数,供全量 snapshot 与分块 PATCH 共用。
+    //   localStorage 缺失时回退到 window.OMICS_CONFIG(持久唯一源),绝不提交空块覆盖磁盘。
     function buildPathsBlock() {
+        const s = cfgBlock('paths') || {};
         return {
-            taf_excel_path: localStorage.getItem('taf_excel_path') || '',
-            manual_excel_path: localStorage.getItem('manual_excel_path') || '',
-            backup_save_path: localStorage.getItem('backup_save_path') || ''
+            taf_excel_path: localStorage.getItem('taf_excel_path') || s.taf_excel_path || '',
+            manual_excel_path: localStorage.getItem('manual_excel_path') || s.manual_excel_path || '',
+            backup_save_path: localStorage.getItem('backup_save_path') || s.backup_save_path || ''
         };
     }
     function buildDefaultAirportsBlock() {
+        const s = cfgBlock('default_airports') || {};
         return {
-            manual: localStorage.getItem('sf_def_manual_aps') || 'ZBAA ZGSZ ZHEC ZSHC',
-            taf: localStorage.getItem('sf_def_taf_aps') || 'ZHEC'
+            manual: localStorage.getItem('sf_def_manual_aps') || s.manual || 'ZBAA ZGSZ ZHEC ZSHC',
+            taf: localStorage.getItem('sf_def_taf_aps') || s.taf || 'ZHEC'
         };
     }
     function buildThresholdsBlock() {
+        const s = cfgBlock('thresholds') || {};
         return {
-            global: globalThresholds || {},
-            custom_airports: customAirportsThresholds || {}
+            global: (globalThresholds && Object.keys(globalThresholds).length) ? globalThresholds : (s.global || {}),
+            custom_airports: (customAirportsThresholds && Object.keys(customAirportsThresholds).length) ? customAirportsThresholds : (s.custom_airports || {})
         };
     }
     function buildPublishBlock() {
+        const s = cfgBlock('publish') || {};
+        let groups = null, ec = null;
+        try { groups = localStorage.getItem('pb_airport_groups') ? JSON.parse(localStorage.getItem('pb_airport_groups')) : null; } catch (e) {}
+        try { ec = localStorage.getItem('pb_auto_ec_cfg') ? JSON.parse(localStorage.getItem('pb_auto_ec_cfg')) : null; } catch (e) {}
         return {
-            airport_groups: localStorage.getItem('pb_airport_groups') ? JSON.parse(localStorage.getItem('pb_airport_groups')) : [],
-            auto_ec_cfg: localStorage.getItem('pb_auto_ec_cfg') ? JSON.parse(localStorage.getItem('pb_auto_ec_cfg')) : {}
+            airport_groups: (groups && groups.length) ? groups : (s.airport_groups || []),
+            auto_ec_cfg: (ec && Object.keys(ec).length) ? ec : (s.auto_ec_cfg || {})
         };
     }
 
