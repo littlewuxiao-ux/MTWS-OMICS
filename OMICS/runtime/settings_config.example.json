@@ -20,7 +20,7 @@
   "phenomena_config": {
     "雷雨类": ["TSRA"],
     "积冰类": ["FZDZ", "FZRA", "SN", "SG", "PL"],
-    "强降水(无雷)类": ["RA"],
+    "强降水(无雷)类": ["RA", "SHRA"],
     "特殊类": ["GR", "GS", "FC", "SQ"]
   },
   "thresholds": {
@@ -37,6 +37,13 @@
   },
   "publish": {
     "airport_groups": [],
-    "auto_ec_cfg": {}
+    "auto_ec_cfg": {},
+    "display_elements": {
+      "wind": true,
+      "visibility": true,
+      "weather": true,
+      "temperature": true,
+      "pressure": false
+    }
   }
 }

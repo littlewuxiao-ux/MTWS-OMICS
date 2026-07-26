@@ -29358,5 +29358,6 @@ window.GLOBAL_AIRPORT_NAME_MAP = {
     "ZGZJ": "湛江",
     "ZJHK": "海口",
     "VTCC": "清迈",
-    "VTCT": "清莱"
+    "VTCT": "清莱",
+    "WMKP": "槟城"
 };

@@ -280,10 +280,11 @@
 
                     <div id="publish-workspace">
 
-                        <div class="publish-toolbar" style="display: flex; gap: 12px; align-items: center; margin-bottom: 12px; padding: 10px 15px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; flex-wrap: wrap; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
-                            <div style="font-weight: bold; color: #1e40af; display: flex; align-items: center; gap: 8px;">
-                                📊 数据视图:
-                                                                <label style="cursor: pointer;"><input type="checkbox" id="global-toggle-taf" checked> TAF</label>
+                        <div class="publish-toolbar" style="display:flex; flex-direction:column; gap:8px; align-items:stretch; margin-bottom:12px; padding:10px 15px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+                            <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                                <div style="font-weight:bold; color:#1e40af; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                                数据视图:
+                                <label style="cursor: pointer;"><input type="checkbox" id="global-toggle-taf" checked> TAF</label>
                                 <button id="global-expand-taf" class="mini-btn" style="background: #64748b; color: white; border: none; padding: 2px 8px; border-radius: 4px; font-size: 11px;">合并</button>
                                 <button id="global-adopt-taf" class="mini-btn" style="background: #16a34a; color: white; border: none; padding: 2px 8px; border-radius: 4px; font-size: 11px;">一键编发</button>
 
@@ -292,16 +293,16 @@
                                 <label style="cursor: pointer;"><input type="checkbox" id="global-toggle-ec" checked> EC</label>
                                 <button id="global-expand-ec" class="mini-btn" style="background: #64748b; color: white; border: none; padding: 2px 8px; border-radius: 4px; font-size: 11px;">合并</button>
                                 <button id="global-adopt-ec" class="mini-btn" style="background: #16a34a; color: white; border: none; padding: 2px 8px; border-radius: 4px; font-size: 11px;">一键编发</button>
+                                </div>
+                                <button id="global-toggle-mode" class="mini-btn" style="background:#0f766e; color:white; border:none; padding:4px 10px; border-radius:4px; font-weight:bold; font-size:12px;">一键全展开</button>
+                                <button id="global-refresh-btn" class="mini-btn" style="background:#2563eb; color:white; border:none; padding:4px 10px; border-radius:4px; font-weight:bold; cursor:pointer;">刷新</button>
                             </div>
-
-                            <button id="global-toggle-mode" class="mini-btn" style="background: #0f766e; color: white; border: none; padding: 4px 10px; border-radius: 4px; font-weight: bold; font-size: 12px; margin-left: 5px;">一键全展开</button>
-                            <button id="global-refresh-btn" class="mini-btn" style="background: #2563eb; color: white; border: none; padding: 4px 10px; border-radius: 4px; font-weight: bold; cursor: pointer;">🔄 刷新</button>
-
-                            <button id="global-export-text-btn" class="mini-btn" style="background: #d97706; color: white; border: none; padding: 4px 10px; border-radius: 4px; font-weight: bold; cursor: pointer;">📤 文表互导</button>
-                            <button id="global-export-image-btn" class="mini-btn" style="background: #10b981; color: white; border: none; padding: 4px 10px; border-radius: 4px; font-weight: bold; cursor: pointer;">🖼️ 导出图片</button>
-                            <button id="global-export-excel-btn" class="mini-btn" style="background: #059669; color: white; border: none; padding: 4px 10px; border-radius: 4px; font-weight: bold; cursor: pointer;">📊 导出 Excel</button>
-
-                            <div style="flex-grow: 1;"></div>
+                            <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; border-top:1px solid #e2e8f0; padding-top:8px;">
+                                <button id="global-import-airports-btn" class="mini-btn" style="background:#1d4ed8; color:white; border:none; padding:5px 12px; border-radius:4px; font-weight:bold; cursor:pointer;">导入机场</button>
+                                <button id="global-export-text-btn" class="mini-btn" style="background:#d97706; color:white; border:none; padding:5px 12px; border-radius:4px; font-weight:bold; cursor:pointer;">导出文本</button>
+                                <button id="global-export-image-btn" class="mini-btn" style="background:#10b981; color:white; border:none; padding:5px 12px; border-radius:4px; font-weight:bold; cursor:pointer;">导出图片</button>
+                                <button id="global-export-excel-btn" class="mini-btn" style="background:#059669; color:white; border:none; padding:5px 12px; border-radius:4px; font-weight:bold; cursor:pointer;">导出 Excel</button>
+                            </div>
                         </div>
 
                         <div id="pb-export-header" style="background: #4b5563; color: white; padding: 20px; border-radius: 8px 8px 0 0;">
@@ -390,7 +391,7 @@
                                 <div style="flex: 1; padding: 10px; color: #555; line-height: 1.6; font-size: 12px;">
                                     1. 本表结论依据数值预报和运行机场TAF报文综合分析,如有疑问咨询AOC气象服务席。<br>
                                     2. 能见度和云高单位为"米"、风速单位为"米/秒"。<br>
-                                    3. 大风表示该时次预期最大阵风值,格式"dddf",举例: NNE18即东北偏北风18米/秒。
+                                    3. 大风表示该时次预期最大阵风值，例如：偏北风17米/秒、西北风20米/秒。
                                 </div>
                             </div>
                         </div>
@@ -544,19 +545,40 @@
         <div id="export-text-modal" class="modal" style="display:none; z-index:10000;">
             <div class="modal-content" style="width: 640px; padding: 25px;">
                 <span class="close-button" id="close-export-modal">&times;</span>
-                <h3 style="color:#1e40af; margin-top:0; border-bottom: 2px solid #c8d5e5; padding-bottom: 10px;">📝 预报文表互导</h3>
-                <div style="display:flex; gap:8px; margin-bottom:10px;">
-                    <button id="export-text-tab-out" class="mini-btn" style="flex:1; background:#28a745; color:white; padding:8px 0;">⬇️ 导出文本</button>
-                    <button id="export-text-tab-in" class="mini-btn" style="flex:1; background:#64748b; color:white; padding:8px 0;">⬆️ 文字导入预报</button>
-                </div>
-                <div id="export-text-out-hint" style="font-size: 12px; color: #666; margin-bottom: 10px;">已确认编发的机场会自动进行时段合并与文本提取。</div>
-                <div id="export-text-in-hint" style="display:none; font-size: 12px; color: #b45309; background:#fffbeb; border:1px solid #fde68a; border-radius:6px; padding:8px; margin-bottom: 10px;">每行一个机场，格式：<b>机场名：时段描述。</b> 例：深圳：5日08-11时有雷雨，12-15时有大风。世界时在时间后加 <b>Z</b>，例：深圳：5日00Z-03Z有雷雨；其余时间默认北京时。<br><b>只写机场名（不写天气）</b>则仅把该机场加入表格、由系统自动拉取 TAF/EC 供编发，例：<b>深圳</b> 或 <b>ZGSZ</b>。机场名可用中文名、简称或四字码（支持模糊匹配）。</div>
+                <h3 style="color:#1e40af; margin-top:0; border-bottom:2px solid #c8d5e5; padding-bottom:10px;">导出文本</h3>
                 <textarea id="export-text-content" rows="15" style="width:100%; border:1px solid #ccc; border-radius:4px; padding:10px; font-family:monospace; font-size:14px; line-height:1.6; resize:vertical; background: #fdfdfd; outline:none;"></textarea>
-                <div id="export-text-error-panel" style="display:none; margin-top:8px; max-height:170px; overflow:auto; border:1px solid #fecaca; background:#fff7f7; border-radius:6px; padding:8px; font-size:12px; text-align:left;"></div>
                 <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:15px; border-top: 1px solid #eee; padding-top: 15px;">
-                    <button id="check-export-text-btn" class="step-button" style="display:none; padding:10px 20px; margin:0; font-size: 14px; background: #f59e0b;">🩺 纠错检查</button>
-                    <button id="import-export-text-btn" class="step-button" style="display:none; padding:10px 25px; margin:0; font-size: 14px; background: #2563eb;">✅ 导入并生成预报</button>
-                    <button id="copy-export-text-btn" class="step-button" style="padding:10px 25px; margin:0; font-size: 14px; background: #28a745;">📋 一键复制到剪贴板</button>
+                    <button id="copy-export-text-btn" class="step-button" style="padding:10px 25px; margin:0; font-size:14px; background:#28a745;">复制到剪贴板</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="airport-import-modal" class="modal" style="display:none; z-index:10000;">
+            <div class="modal-content" style="width:720px; max-height:90vh; overflow:auto; padding:25px; text-align:left;">
+                <span class="close-button" id="close-airport-import-modal">&times;</span>
+                <h3 style="color:#1e40af; margin-top:0; border-bottom:2px solid #c8d5e5; padding-bottom:10px;">导入机场</h3>
+                <div style="display:grid; gap:10px; font-size:13px;">
+                    <label><input type="checkbox" id="import-source-running"> 导入运行机场</label>
+                    <div id="import-running-options" style="margin-left:24px; display:flex; gap:18px;">
+                        <label><input type="radio" name="import-running-mode" value="filtered" checked> 筛选</label>
+                        <label><input type="radio" name="import-running-mode" value="all"> 全部</label>
+                    </div>
+                    <div>
+                        <div style="font-weight:bold; margin-bottom:6px;">常驻机场</div>
+                        <div id="import-resident-groups" style="display:flex; flex-wrap:wrap; gap:12px; padding-left:24px;"></div>
+                    </div>
+                    <label><input type="checkbox" id="import-source-text"> 文字导入预报</label>
+                    <textarea id="import-forecast-text" rows="8" style="width:100%; box-sizing:border-box; border:1px solid #ccc; border-radius:4px; padding:10px; font-family:monospace; font-size:13px; line-height:1.5; resize:vertical;" placeholder="深圳：27日00-03时有中雷雨。&#10;杭州"></textarea>
+                    <div id="import-text-error-panel" style="display:none; max-height:170px; overflow:auto; border:1px solid #fecaca; background:#fff7f7; border-radius:6px; padding:8px; font-size:12px;"></div>
+                    <label><input type="checkbox" id="import-source-table"> 表格导入</label>
+                    <div style="display:flex; align-items:center; gap:10px; margin-left:24px; flex-wrap:wrap;">
+                        <input type="file" id="import-publish-excel-file" accept=".xlsx,.xlsm">
+                        <span style="color:#64748b; font-size:12px;">未选择文件时读取 OMICS 根目录的未来24小时天气预报20260725.xlsm</span>
+                    </div>
+                </div>
+                <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:16px; border-top:1px solid #eee; padding-top:15px;">
+                    <button id="check-import-text-btn" class="step-button" style="padding:9px 18px; margin:0; font-size:13px; background:#f59e0b;">检查文字</button>
+                    <button id="execute-airport-import-btn" class="step-button" style="padding:9px 24px; margin:0; font-size:13px; background:#2563eb;">导入所选内容</button>
                 </div>
             </div>
         </div>

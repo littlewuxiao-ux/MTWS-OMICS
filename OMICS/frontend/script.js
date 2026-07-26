@@ -1,3 +1,14 @@
+function mergeManualForecastCell(existingValue, nextValue) {
+    const existing = String(existingValue || '').trim();
+    const next = String(nextValue || '').trim();
+    if (!next || next.toUpperCase() === 'NSW') return existing;
+    if (!existing || existing.toUpperCase() === 'NSW') return next;
+    if (` ${existing} `.includes(` ${next} `)) return existing;
+    return `${existing} ${next}`;
+}
+
+window.OMICS_mergeManualForecastCell = mergeManualForecastCell;
+
 document.addEventListener('DOMContentLoaded', async () => {
     const loginBtn = document.getElementById('login-btn');
     const logoutBtn = document.getElementById('logout-btn');
@@ -129,6 +140,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             });
             const data = await res.json();
             if (data.success && data.data) {
+                window.OMICS_CONFIG = data.data;
                 window.OMICS_SETTINGS_CONFIG = data.data;
                 return data.data;
             }
@@ -268,7 +280,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const DEFAULT_PHEN_CATEGORIES = {
         '雷雨类': ['TSRA'],
         '积冰类': ['FZDZ', 'FZRA', 'SN', 'SG', 'PL'],
-        '强降水(无雷)类': ['RA'],
+        '强降水(无雷)类': ['RA', 'SHRA'],
         '特殊类': ['GR', 'GS', 'FC', 'SQ']
     };
     const serverSettingsConfig = await loadSettingsConfigFromServer();
@@ -284,6 +296,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (serverDefaultAirports.taf) localStorage.setItem('sf_def_taf_aps', serverDefaultAirports.taf);
     if (serverPublish.airport_groups && serverPublish.airport_groups.length) localStorage.setItem('pb_airport_groups', JSON.stringify(serverPublish.airport_groups));
     if (serverPublish.auto_ec_cfg && Object.keys(serverPublish.auto_ec_cfg).length) localStorage.setItem('pb_auto_ec_cfg', JSON.stringify(serverPublish.auto_ec_cfg));
+    if (serverSettingsConfig?.phenomena_config) localStorage.setItem('phenomena_config', JSON.stringify(serverSettingsConfig.phenomena_config));
 
     let phenomenaSettings = serverSettingsConfig?.phenomena_config || JSON.parse(localStorage.getItem('phenomena_config')) || JSON.parse(JSON.stringify(DEFAULT_PHEN_CATEGORIES));
 
@@ -638,8 +651,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             addBtn.onclick = () => {
                 const val = input.value.trim().toUpperCase();
-                if (val && !codes.includes(val)) {
-                    codes.push(val); localStorage.setItem('phenomena_config', JSON.stringify(phenomenaSettings)); patchSettingsConfig({ phenomena_config: phenomenaSettings }); renderPhenomenaSettings();
+                if (val) {
+                    // 同一天气代码只能属于一个量级；在新分类中添加即视为移动。
+                    Object.values(phenomenaSettings).forEach(items => {
+                        const pos = items.indexOf(val);
+                        if (pos >= 0) items.splice(pos, 1);
+                    });
+                    codes.push(val);
+                    localStorage.setItem('phenomena_config', JSON.stringify(phenomenaSettings));
+                    patchSettingsConfig({ phenomena_config: phenomenaSettings });
+                    renderPhenomenaSettings();
                 }
             };
             inputContainer.appendChild(input); inputContainer.appendChild(addBtn); div.appendChild(inputContainer); phenomenaContainer.appendChild(div);
@@ -1646,10 +1667,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                 if (gridRows.length > 0) {
                     gridRows.forEach(tr => {
-                        const ap = tr.dataset.airport; manualForecasts[ap] = {};
+                        const ap = tr.dataset.airport;
+                        if (!manualForecasts[ap]) manualForecasts[ap] = {};
                         tr.querySelectorAll('input').forEach(input => {
-                            let val = input.value.trim();
-                            if (!val) { val = 'NSW'; }
+                            const val = input.value.trim();
 
                             let bjtHour = input.dataset.hour;
                             let d = parseInt(bjtHour.slice(0, 2)), h = parseInt(bjtHour.slice(2, 4));
@@ -1660,7 +1681,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                             let utcDate = new Date(Date.UTC(baseDate.getFullYear(), mIndex, d, h - 8, 0));
                             let utcKey = `${String(utcDate.getUTCDate()).padStart(2, '0')}${String(utcDate.getUTCHours()).padStart(2, '0')}`;
 
-                            manualForecasts[ap][utcKey] = val;
+                            if (!(utcKey in manualForecasts[ap])) manualForecasts[ap][utcKey] = '';
+                            manualForecasts[ap][utcKey] = mergeManualForecastCell(manualForecasts[ap][utcKey], val);
+                        });
+                    });
+                    Object.values(manualForecasts).forEach(hourly => {
+                        Object.keys(hourly).forEach(hour => {
+                            if (!hourly[hour]) hourly[hour] = 'NSW';
                         });
                     });
                 }

@@ -47,6 +47,15 @@ def _get_lowest_cloud(clouds: List[Any]) -> Dict[str, Any]:
 
 def _convert_avwx_group_to_dict(group: Any, units: Any) -> Dict[str, Any]:
     data = {}
+    if group.wind_direction:
+        raw_direction = str(group.wind_direction.repr or '').upper()
+        if raw_direction:
+            data['wind_direction'] = raw_direction
+            if raw_direction == 'VRB':
+                data['wind_dir'] = 'VRB'
+            elif raw_direction.isdigit():
+                direction_codes = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW']
+                data['wind_dir'] = direction_codes[int((int(raw_direction) % 360 + 11.25) // 22.5) % 16]
     wind_speed = _convert_speed_to_mps(group.wind_speed.repr if group.wind_speed else None, units.wind_speed)
     gust_speed = _convert_speed_to_mps(group.wind_gust.repr if group.wind_gust else None, units.wind_speed)
     if wind_speed is not None or gust_speed is not None:

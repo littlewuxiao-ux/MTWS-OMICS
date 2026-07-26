@@ -46,8 +46,6 @@ SETTINGS_CONFIG_PATH = os.path.join(_PERSIST_DIR, 'runtime', 'settings_config.js
 _SETTINGS_EXAMPLE_PERSIST = os.path.join(_PERSIST_DIR, 'runtime', 'settings_config.example.json')
 _SETTINGS_EXAMPLE_BUNDLE = os.path.join(_BUNDLE_DIR, 'runtime', 'settings_config.example.json')
 SETTINGS_CONFIG_EXAMPLE_PATH = _SETTINGS_EXAMPLE_PERSIST if os.path.exists(_SETTINGS_EXAMPLE_PERSIST) else _SETTINGS_EXAMPLE_BUNDLE
-SETTINGS_CONFIG_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'runtime', 'settings_config.json'))
-SETTINGS_CONFIG_EXAMPLE_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'runtime', 'settings_config.example.json'))
 # 🌟 配置持久化根治（方案A）：统一配置源迁移到 omics_config.js。
 # 该文件同时被浏览器以 <script> 同步加载（window.OMICS_CONFIG）和后端读写，
 # 成为唯一数据源，彻底摆脱对浏览器 localStorage 的依赖。
@@ -56,6 +54,7 @@ SETTINGS_CONFIG_EXAMPLE_PATH = os.path.abspath(os.path.join(os.path.dirname(__fi
 OMICS_CONFIG_JS_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'runtime', 'omics_config.js'))
 if getattr(sys, 'frozen', False):
     OMICS_CONFIG_JS_PATH = os.path.join(_PERSIST_DIR, 'runtime', 'omics_config.js')
+_SETTINGS_WRITE_LOCK = threading.RLock()
 DEFAULT_PERSONNEL_MAP = {"41060711": "吴霄"}
 
 DEFAULT_SETTINGS_CONFIG = {
@@ -72,7 +71,7 @@ DEFAULT_SETTINGS_CONFIG = {
     "phenomena_config": {
         "雷雨类": ["TSRA"],
         "积冰类": ["FZDZ", "FZRA", "SN", "SG", "PL"],
-        "强降水(无雷)类": ["RA"],
+        "强降水(无雷)类": ["RA", "SHRA"],
         "特殊类": ["GR", "GS", "FC", "SQ"]
     },
     "thresholds": {
@@ -89,7 +88,14 @@ DEFAULT_SETTINGS_CONFIG = {
     },
     "publish": {
         "airport_groups": [],
-        "auto_ec_cfg": {}
+        "auto_ec_cfg": {},
+        "display_elements": {
+            "wind": True,
+            "visibility": True,
+            "weather": True,
+            "temperature": True,
+            "pressure": False
+        }
     }
 }
 
@@ -138,8 +144,12 @@ def _parse_config_js(text):
 
 def _write_config_js(config):
     os.makedirs(os.path.dirname(OMICS_CONFIG_JS_PATH), exist_ok=True)
-    with open(OMICS_CONFIG_JS_PATH, 'w', encoding='utf-8') as f:
+    temp_path = OMICS_CONFIG_JS_PATH + '.tmp'
+    with open(temp_path, 'w', encoding='utf-8') as f:
         f.write(_serialize_config_js(config))
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(temp_path, OMICS_CONFIG_JS_PATH)
 
 
 def _read_legacy_json_config():
@@ -187,21 +197,22 @@ def load_settings_config():
 def save_settings_config(settings):
     # 🌟 健壮性：以 默认 -> 磁盘已存 -> 本次传入 的顺序逐层叠加，
     # 避免某次只传部分字段的 sync 把磁盘上其他已保存配置抹掉。
-    data = copy.deepcopy(DEFAULT_SETTINGS_CONFIG)
-    saved = _read_config_js_raw()
-    if saved is None:
-        # 尚未生成 JS 配置时，先把旧 JSON 迁移进来作为基底，避免覆盖历史配置。
-        legacy = _read_legacy_json_config()
-        if legacy is not None:
-            data = deep_merge_dict(data, legacy)
-    else:
-        data = deep_merge_dict(data, saved)
-    data = deep_merge_dict(data, settings if isinstance(settings, dict) else {})
-    # Also keep personnel_mapping.json in sync for launcher/legacy readers.
-    if isinstance(data.get("personnel_dict"), dict):
-        save_personnel_mapping(data["personnel_dict"])
-    _write_config_js(data)
-    return data
+    with _SETTINGS_WRITE_LOCK:
+        data = copy.deepcopy(DEFAULT_SETTINGS_CONFIG)
+        saved = _read_config_js_raw()
+        if saved is None:
+            # 尚未生成 JS 配置时，先把旧 JSON 迁移进来作为基底，避免覆盖历史配置。
+            legacy = _read_legacy_json_config()
+            if legacy is not None:
+                data = deep_merge_dict(data, legacy)
+        else:
+            data = deep_merge_dict(data, saved)
+        data = deep_merge_dict(data, settings if isinstance(settings, dict) else {})
+        # Also keep personnel_mapping.json in sync for launcher/legacy readers.
+        if isinstance(data.get("personnel_dict"), dict):
+            save_personnel_mapping(data["personnel_dict"])
+        _write_config_js(data)
+        return data
 
 
 def load_personnel_mapping():
@@ -332,7 +343,7 @@ METAR_TO_CHINESE_MAP.update({
 })
 AIRPORT_NAME_MAP = {"ZBAA": "首都机场", "ZBAD": "大兴机场", "ZBTJ": "天津机场", "ZBSJ": "石家庄机场", "ZGSZ": "深圳机场", "ZSHC": "杭州机场", "ZHEC": "鄂州机场", "ZWWW": "乌鲁木齐"}
 WIND_DIRECTION_MAP = {'N': 0, 'NNE': 22.5, 'NE': 45, 'ENE': 67.5, 'E': 90, 'ESE': 112.5, 'SE': 135, 'SSE': 157.5, 'S': 180, 'SSW': 202.5, 'SW': 225, 'WSW': 247.5, 'W': 270, 'WNW': 292.5, 'NW': 315, 'NNW': 337.5, 'VRB': 'VRB'}
-CHINESE_WIND_DIR_MAP = {'N': '北风', 'NNE': '东北偏北风', 'NE': '东北风', 'ENE': '东北偏东风', 'E': '东风', 'ESE': '东南偏东风', 'SE': '东南风', 'SSE': '东南偏南风', 'S': '南风', 'SSW': '西南偏南风', 'SW': '西南风', 'WSW': '西南偏西风', 'W': '西风', 'WNW': '西北偏西风', 'NW': '西北风', 'NNW': '西北偏北风', 'VRB': '风向不定'}
+CHINESE_WIND_DIR_MAP = {'N': '偏北风', 'NNE': '东北偏北风', 'NE': '东北风', 'ENE': '东北偏东风', 'E': '偏东风', 'ESE': '东南偏东风', 'SE': '东南风', 'SSE': '东南偏南风', 'S': '偏南风', 'SSW': '西南偏南风', 'SW': '西南风', 'WSW': '西南偏西风', 'W': '偏西风', 'WNW': '西北偏西风', 'NW': '西北风', 'NNW': '西北偏北风', 'VRB': '风向不定'}
 
 @app.route('/')
 def serve_index(): return send_from_directory(frontend_folder, 'index.html')
@@ -444,10 +455,20 @@ def parse_manual_forecast_text(text):
     parsed = {'weather': 'NSW', 'visibility': 9999, 'wind_speed': 0, 'cloud': {}}
     text = text.upper(); temp = text
     
-    # 1. 提取风向风速 (如 N10)
-    w_match = re.search(r'([A-Z]{1,3})(\d+)', text)
-    if w_match and w_match.group(1) in WIND_DIRECTION_MAP:
-        parsed['wind_speed'] = int(w_match.group(2)); parsed['wind_dir'] = w_match.group(1); temp = temp.replace(w_match.group(0), '', 1)
+    # 1. 提取风向风速：兼容代码 N10 和中文“偏北风10米/秒”。
+    chinese_wind_match = None
+    for code, label in sorted(CHINESE_WIND_DIR_MAP.items(), key=lambda item: len(item[1]), reverse=True):
+        match = re.search(rf'{re.escape(label)}\s*(\d+)(?:\s*米/秒)?', temp)
+        if match:
+            parsed['wind_speed'] = int(match.group(1))
+            parsed['wind_dir'] = code
+            temp = temp.replace(match.group(0), '', 1)
+            chinese_wind_match = match
+            break
+    if chinese_wind_match is None:
+        w_match = re.search(r'([A-Z]{1,3})(\d+)', text)
+        if w_match and w_match.group(1) in WIND_DIRECTION_MAP:
+            parsed['wind_speed'] = int(w_match.group(2)); parsed['wind_dir'] = w_match.group(1); temp = temp.replace(w_match.group(0), '', 1)
     
     # 🌟 新增核心功能：识别纯数字的快捷云高 (0, 30, 60, 90, 120)
     # \b 表示单词边界，确保不会误抓到 1300(能见度) 里的 30
@@ -1490,6 +1511,115 @@ def _resolve_desktop_dir():
         return onedrive_desktop if os.path.exists(onedrive_desktop) else os.path.join(user_profile, 'Desktop')
 
 
+@app.route('/api/import_publish_excel', methods=['POST'])
+def import_publish_excel_api():
+    """Read the 24-hour publish worksheet without modifying the source workbook."""
+    try:
+        import openpyxl
+        from datetime import date as date_type, time as time_type
+
+        upload = request.files.get('file')
+        if upload and upload.filename:
+            workbook_source = upload.stream
+            source_name = os.path.basename(upload.filename)
+        else:
+            source_name = '未来24小时天气预报20260725.xlsm'
+            workbook_source = os.path.join(_PERSIST_DIR, source_name)
+            if not os.path.exists(workbook_source):
+                return jsonify({"success": False, "error": f"未找到根目录模板：{source_name}"}), 200
+
+        wb = openpyxl.load_workbook(workbook_source, data_only=True, read_only=False)
+        try:
+            ws = wb['24小时天气预报'] if '24小时天气预报' in wb.sheetnames else wb.active
+
+            header_row = None
+            for row_idx in range(1, min(ws.max_row, 80) + 1):
+                if str(ws.cell(row_idx, 1).value or '').strip() == '名称' and str(ws.cell(row_idx, 2).value or '').strip() == '性质':
+                    header_row = row_idx
+                    break
+            if header_row is None:
+                raise ValueError('未找到“名称/性质”表头，无法识别预报数据区')
+
+            data_start_col = 4
+            duration_row = max(1, header_row - 1)
+            hour_columns = []
+            for col_idx in range(data_start_col, ws.max_column + 1):
+                value = ws.cell(duration_row, col_idx).value
+                if value is None or str(value).strip() == '':
+                    if hour_columns:
+                        break
+                    continue
+                hour_columns.append(col_idx)
+            if not hour_columns:
+                raise ValueError('未找到逐小时预报列')
+
+            forecast_date = None
+            start_hour_bjt = None
+            for row_idx in range(1, header_row + 1):
+                label = str(ws.cell(row_idx, 1).value or '').strip()
+                if label.startswith('日期'):
+                    for col_idx in range(2, min(ws.max_column, 8) + 1):
+                        value = ws.cell(row_idx, col_idx).value
+                        if isinstance(value, (datetime, date_type)):
+                            forecast_date = value.strftime('%Y-%m-%d')
+                            break
+                elif label == '起报时间':
+                    for col_idx in range(2, min(ws.max_column, 8) + 1):
+                        value = ws.cell(row_idx, col_idx).value
+                        if isinstance(value, (datetime, time_type)):
+                            start_hour_bjt = value.hour
+                            break
+                        if isinstance(value, (int, float)):
+                            start_hour_bjt = int(round((float(value) % 1) * 24)) % 24
+                            break
+
+            def cell_text(value):
+                if value is None:
+                    return ''
+                if isinstance(value, float) and value.is_integer():
+                    return str(int(value))
+                return str(value).strip()
+
+            entries = []
+            current = None
+            stop_labels = ('地面结冰', '颜色说明', '发布说明')
+            for row_idx in range(header_row + 1, ws.max_row + 1):
+                airport_name = cell_text(ws.cell(row_idx, 1).value)
+                nature = cell_text(ws.cell(row_idx, 2).value)
+                note = cell_text(ws.cell(row_idx, 3).value)
+                if airport_name and airport_name.startswith(stop_labels):
+                    break
+                cells = [cell_text(ws.cell(row_idx, col_idx).value) for col_idx in hour_columns]
+                if not airport_name and not note and not any(cells):
+                    continue
+                if airport_name:
+                    current = {"airport_name": airport_name, "nature": nature, "rows": [], "notes": []}
+                    entries.append(current)
+                elif current is None:
+                    continue
+                current["rows"].append(cells)
+                current["notes"].append(note or '/')
+
+            if not entries:
+                raise ValueError('表格中没有可导入的机场预报')
+            return jsonify({
+                "success": True,
+                "data": {
+                    "source": source_name,
+                    "sheet": ws.title,
+                    "forecast_date": forecast_date,
+                    "start_hour_bjt": start_hour_bjt,
+                    "validity_hours": max(0, len(hour_columns) - 1),
+                    "airports": entries
+                }
+            })
+        finally:
+            wb.close()
+    except Exception as exc:
+        LOG.exception('导入发布表格失败: %s', exc)
+        return jsonify({"success": False, "error": str(exc)}), 200
+
+
 @app.route('/api/export_publish', methods=['POST'])
 def export_publish_api():
     """预报发布导出：图片/Excel 分离；Excel 不依赖外部模板，按模板观感直接生成。"""
@@ -1542,17 +1672,31 @@ def export_publish_api():
         def normalize_publish_rows():
             data_rows = []
             if publish_rows:
+                last_airport_key = ''
                 for item in publish_rows:
                     if not isinstance(item, dict):
                         continue
                     name = str(item.get('name') or '').strip()
-                    ap_type = str(item.get('type') or '普通').strip()
+                    is_continuation = bool(item.get('continuation'))
+                    airport_key = str(item.get('icao') or name or last_airport_key).strip()
+                    if name:
+                        last_airport_key = airport_key
+                    elif not is_continuation or not airport_key:
+                        continue
+                    ap_type = str(item.get('type') or ('' if is_continuation else '普通')).strip()
+                    note = str(item.get('note') or '').strip()
                     vals = [str(v or '').strip() for v in (item.get('values') or [])[:hour_count]]
                     if len(vals) < hour_count:
                         vals += [''] * (hour_count - len(vals))
-                    if name:
-                        data_rows.append((name, ap_type or '普通', vals))
+                    data_rows.append({
+                        'airport_key': airport_key,
+                        'name': name,
+                        'type': ap_type,
+                        'note': note,
+                        'values': vals,
+                    })
             else:
+                last_airport_key = ''
                 for row in rows:
                     if not row or len(row) < 4:
                         continue
@@ -1568,7 +1712,14 @@ def export_publish_api():
                         vals += [''] * (hour_count - len(vals))
                     if not any(vals) and marker not in ('适航', '/'):
                         continue
-                    data_rows.append((name, ap_type or '普通', vals))
+                    last_airport_key = name or last_airport_key
+                    data_rows.append({
+                        'airport_key': last_airport_key,
+                        'name': name,
+                        'type': ap_type or ('普通' if name else ''),
+                        'note': str(row[3] or '').strip(),
+                        'values': vals,
+                    })
             return data_rows
 
         # Excel 导出：按用户提供的 xlsm 模板观感复刻，不依赖模板文件。
@@ -1647,7 +1798,13 @@ def export_publish_api():
                     ('\u4f4e\u4e91', cloud_fill, white_font, lambda v: '\u4f4e\u4e91' in v),
                     ('\u5176\u4ed6', other_fill, black_font, lambda v: bool(v) and fill_for(v)[0] == other_fill),
                 ]
-                count_map = {label: sum(1 for _, _, vals in data_rows if any(pred(v or '') for v in vals[:max_hours])) for label, _, _, pred in legend_defs}
+                count_map = {
+                    label: len({
+                        row['airport_key'] for row in data_rows
+                        if row['airport_key'] and any(pred(v or '') for v in row['values'][:max_hours])
+                    })
+                    for label, _, _, pred in legend_defs
+                }
 
                 # 1-5????????/???????????????
                 ws.merge_cells(start_row=1, start_column=1, end_row=2, end_column=end_col)
@@ -1711,13 +1868,17 @@ def export_publish_api():
                         cell.border = border
 
                 # ???????????3?????????????????????????????
-                max_text_len = max([len(str(v or '')) for _, _, vals in data_rows for v in vals[:max_hours]] + [0])
+                max_text_len = max([len(str(v or '')) for row in data_rows for v in row['values'][:max_hours]] + [0])
                 data_font_size = 11 if max_text_len <= 3 else (10 if max_text_len <= 4 else (9 if max_text_len <= 6 else 8))
 
                 start_row = 9
-                for idx, (name, ap_type, vals) in enumerate(data_rows, start=start_row):
+                for idx, row in enumerate(data_rows, start=start_row):
+                    name = row['name']
+                    ap_type = row['type']
+                    vals = row['values']
                     ws.cell(idx, 1).value = name
                     ws.cell(idx, 2).value = ap_type
+                    ws.cell(idx, 3).value = row['note']
                     for c in (1, 2, 3):
                         ws.cell(idx, c).fill = white
                         ws.cell(idx, c).font = bold_font if c == 1 else black_font
@@ -1768,7 +1929,7 @@ def export_publish_api():
                 notes = [
                     '1. \u672c\u8868\u7ed3\u8bba\u4f9d\u636e\u6570\u503c\u9884\u62a5\u548c\u8fd0\u884c\u673a\u573aTAF\u62a5\u6587\u7efc\u5408\u5206\u6790\uff0c\u5982\u6709\u7591\u95ee\u54a8\u8be2AOC\u6c14\u8c61\u670d\u52a1\u5e2d\u3002',
                     '2. \u80fd\u89c1\u5ea6\u548c\u4e91\u9ad8\u5355\u4f4d\u4e3a\u201c\u7c73\u201d\u3001\u98ce\u901f\u5355\u4f4d\u4e3a\u201c\u7c73/\u79d2\u201d\u3002',
-                    '3. \u5927\u98ce\u8868\u793a\u8be5\u65f6\u6b21\u9884\u671f\u6700\u5927\u9635\u98ce\u503c\uff0c\u683c\u5f0f\u201cdddf\u201d\uff0c\u4e3e\u4f8b\uff1aNNE18\u5373\u4e1c\u5317\u504f\u5317\u98ce18\u7c73/\u79d2\u3002'
+                    '3. \u5927\u98ce\u8868\u793a\u8be5\u65f6\u6b21\u9884\u671f\u6700\u5927\u9635\u98ce\u503c\uff0c\u4f8b\u5982\u201c\u504f\u5317\u98ce17\u7c73/\u79d2\u201d\u6216\u201c\u897f\u5317\u98ce20\u7c73/\u79d2\u201d\u3002'
                 ]
                 note_start = color_row + 1
                 ws.merge_cells(start_row=note_start, start_column=1, end_row=note_start + len(notes) - 1, end_column=3)

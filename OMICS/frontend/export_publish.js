@@ -25,11 +25,49 @@
                 values.push(td ? td.textContent.trim() : '');
             }
             const noteInput = tr.querySelector('.edit-note-input');
-            const note = noteInput ? noteInput.value.trim() : '';
+            const noteDisplay = tr.querySelector('.edit-note-display');
+            const note = (noteInput?.value || noteDisplay?.textContent || '').trim();
             const confirmed = tr.dataset.confirmed === 'true';
             if (name && (values.some(Boolean) || confirmed)) {
                 rows.push({ icao: tr.dataset.icao || '', name, type, values, note, confirmed });
             }
+        });
+        return rows;
+    }
+
+    // Excel 使用逐行数据，保留同一机场的全部附加行和每行备注。
+    function collectPublishDataRows() {
+        const table = document.getElementById('forecast-table');
+        const rows = [];
+        if (!table) return rows;
+        table.querySelectorAll('tbody tr.tr-edit').forEach(mainTr => {
+            if (mainTr.style.display === 'none') return;
+            const icao = mainTr.dataset.icao || '';
+            const nameCell = mainTr.querySelector('.td-airport');
+            const name = nameCell?.childNodes?.[0]?.textContent?.trim() || '';
+            const type = nameCell?.nextElementSibling?.textContent?.trim() || '普通';
+            const airportRows = [mainTr];
+            let next = mainTr.nextElementSibling;
+            while (next && next.classList.contains('tr-edit-extra') && next.dataset.icao === icao) {
+                if (next.style.display !== 'none') airportRows.push(next);
+                next = next.nextElementSibling;
+            }
+            airportRows.forEach((tr, rowIndex) => {
+                const values = Array.from(tr.querySelectorAll('td.td-data')).map(td => td.textContent.trim());
+                const noteInput = tr.querySelector('.edit-note-input');
+                const noteDisplay = tr.querySelector('.edit-note-display');
+                const note = (noteInput?.value || noteDisplay?.textContent || '').trim();
+                if (!name || (!values.some(Boolean) && !note && tr.dataset.confirmed !== 'true')) return;
+                rows.push({
+                    icao,
+                    name: rowIndex === 0 ? name : '',
+                    type: rowIndex === 0 ? type : '',
+                    values,
+                    note,
+                    confirmed: tr.dataset.confirmed === 'true',
+                    continuation: rowIndex > 0
+                });
+            });
         });
         return rows;
     }
@@ -313,7 +351,7 @@
     }
 
     // ---- 预览弹窗状态 ----
-    const state = { mode: 'image', rows: [], rawRows: [], images: [], pageSizes: [], rendering: false };
+    const state = { mode: 'image', rows: [], publishRows: [], rawRows: [], images: [], pageSizes: [], rendering: false };
 
     function refreshPreview() {
         const body = document.getElementById('export-preview-body');
@@ -334,7 +372,7 @@
             // 🌟 隐藏图片分页专属的“单页机场数”控件（先点分割图片再切 Excel 时会残留）
             const sizeBox = document.getElementById('export-page-size-controls');
             if (sizeBox) { sizeBox.style.display = 'none'; sizeBox.innerHTML = ''; }
-            renderExcelPreview(body, info, state.rows);
+            renderExcelPreview(body, info, state.publishRows);
             return;
         }
 
@@ -385,6 +423,7 @@
         let html = '<table style="border-collapse:collapse; margin:0 auto; font-size:12px; background:#fff;">';
         html += '<tr><th style="border:1px solid #d1d5db; background:#5D6D7E; color:#fff; padding:4px 8px;">名称</th>';
         html += '<th style="border:1px solid #d1d5db; background:#5D6D7E; color:#fff; padding:4px 8px;">性质</th>';
+        html += '<th style="border:1px solid #d1d5db; background:#5D6D7E; color:#fff; padding:4px 8px;">备注</th>';
         for (let i = 0; i < numCells; i++) {
             const h = (sH + i + 8) % 24;
             html += `<th style="border:1px solid #d1d5db; background:#4A5867; color:#E2E8F0; padding:2px 4px;">${String(h).padStart(2, '0')}时</th>`;
@@ -393,6 +432,7 @@
         rows.forEach(r => {
             html += `<tr><td style="border:1px solid #d1d5db; padding:3px 8px; font-weight:bold;">${r.name}</td>`;
             html += `<td style="border:1px solid #d1d5db; padding:3px 8px;">${r.type}</td>`;
+            html += `<td style="border:1px solid #d1d5db; padding:3px 8px;">${r.note || ''}</td>`;
             for (let i = 0; i < numCells; i++) {
                 const v = (r.values[i] || '').replace(/[—/]/g, '');
                 html += `<td style="border:1px solid #d1d5db; padding:3px 4px;">${v}</td>`;
@@ -400,7 +440,7 @@
             html += '</tr>';
         });
         html += '</table>';
-        if (info) info.textContent = `共 ${rows.length} 个机场`;
+        if (info) info.textContent = `共 ${new Set(rows.map(r => r.icao).filter(Boolean)).size} 个机场，${rows.length} 行预报`;
         body.innerHTML = html;
     }
 
@@ -412,6 +452,7 @@
         }
         state.mode = mode;
         state.rows = collectPublishRows();
+        state.publishRows = collectPublishDataRows();
         state.rawRows = collectRawRows();
         state.images = [];
         state.pageSizes = [];
@@ -439,7 +480,7 @@
             const payload = {
                 mode: state.mode,
                 data: state.rawRows,
-                publish_rows: state.rows,
+                publish_rows: state.publishRows,
                 export_path: exportPath(),
                 start_date: window.pbState?.startDate,
                 start_hour: window.pbState?.startHour,
@@ -504,55 +545,71 @@
         document.getElementById('export-perpage')?.addEventListener('change', () => { state.images = []; refreshPreview(); });
         document.getElementById('export-preview-confirm')?.addEventListener('click', doExport);
 
-        // ---- 文表互导：导出/导入 标签切换 + 纠错 ----
-        const tabOut = document.getElementById('export-text-tab-out');
-        const tabIn = document.getElementById('export-text-tab-in');
-        const importBtn = document.getElementById('import-export-text-btn');
-        const checkBtn = document.getElementById('check-export-text-btn');
-        const copyBtn = document.getElementById('copy-export-text-btn');
-        const outHint = document.getElementById('export-text-out-hint');
-        const inHint = document.getElementById('export-text-in-hint');
-        const panel = document.getElementById('export-text-error-panel');
-        const ta = document.getElementById('export-text-content');
-
-        function setTab(mode) {
-            const isIn = mode === 'in';
-            if (tabIn) tabIn.style.background = isIn ? '#2563eb' : '#64748b';
-            if (tabOut) tabOut.style.background = isIn ? '#64748b' : '#28a745';
-            if (outHint) outHint.style.display = isIn ? 'none' : 'block';
-            if (inHint) inHint.style.display = isIn ? 'block' : 'none';
-            if (importBtn) importBtn.style.display = isIn ? 'inline-block' : 'none';
-            if (checkBtn) checkBtn.style.display = isIn ? 'inline-block' : 'none';
-            if (copyBtn) copyBtn.style.display = isIn ? 'none' : 'inline-block';
+        const importModal = document.getElementById('airport-import-modal');
+        const importText = document.getElementById('import-forecast-text');
+        const renderResidentOptions = () => {
+            const box = document.getElementById('import-resident-groups');
+            if (!box) return;
+            const groups = typeof window.getPublishAirportGroups === 'function' ? window.getPublishAirportGroups() : [];
+            box.innerHTML = groups.filter(group => group.alwaysShow).map(group =>
+                `<label><input type="checkbox" class="import-resident-group" value="${group.index}"> ${escapeHtml(group.name)} (${group.airports.length})</label>`
+            ).join('') || '<span style="color:#94a3b8;">暂无已启用常驻的机场组</span>';
+        };
+        document.getElementById('global-import-airports-btn')?.addEventListener('click', () => {
+            renderResidentOptions();
+            const panel = document.getElementById('import-text-error-panel');
             if (panel) { panel.style.display = 'none'; panel.innerHTML = ''; }
-            if (ta) {
-                ta.style.borderColor = '#ccc';
-                                if (isIn) {
-                    ta.value = '';
-                    ta.placeholder = '例：\n深圳：5日08-11时有雷雨，12-15时有大风。\n杭州：5日06Z-09Z有小雨。（Z=世界时/UTC；无Z默认北京时）\n\n只写机场名（不写天气）则仅加入表格、由系统拉取 TAF/EC 供编发：\n南昌\nZSCN';
-                } else if (window.clearTextImportAirports) {
-                    window.clearTextImportAirports();
-                    if (window.renderPublishTable) window.renderPublishTable();
-                }
-                ta.dataset.mode = mode;
+            importModal.style.display = 'flex';
+        });
+        document.getElementById('close-airport-import-modal')?.addEventListener('click', () => { importModal.style.display = 'none'; });
+        document.getElementById('check-import-text-btn')?.addEventListener('click', () => {
+            document.getElementById('import-source-text').checked = true;
+            validateImportText(importText.value, true);
+        });
+        document.getElementById('execute-airport-import-btn')?.addEventListener('click', async (event) => {
+            const button = event.currentTarget;
+            const useRunning = document.getElementById('import-source-running').checked;
+            const useText = document.getElementById('import-source-text').checked;
+            const useTable = document.getElementById('import-source-table').checked;
+            const residentGroups = Array.from(document.querySelectorAll('.import-resident-group:checked')).map(el => el.value);
+            if (!useRunning && !useText && !useTable && residentGroups.length === 0) {
+                alert('请至少选择一种机场来源。');
+                return;
             }
-        }
-        tabOut?.addEventListener('click', () => setTab('out'));
-        tabIn?.addEventListener('click', () => setTab('in'));
-        checkBtn?.addEventListener('click', () => validateImportText(ta.value, true));
-                importBtn?.addEventListener('click', () => {
-            const checked = validateImportText(ta.value, true);
-            if (!checked.ok) return;
-            const res = importTextToForecast(ta.value);
-            const n = typeof res === 'number' ? res : res.count;
-            if (n > 0) {
-                document.getElementById('export-text-modal').style.display = 'none';
-                const displayOnly = typeof res === 'object' ? res.displayOnly : 0;
-                const confirmed = n - displayOnly;
-                let msg = `✅ 已导入 ${n} 个机场。`;
-                if (confirmed > 0) msg += `\n其中 ${confirmed} 个以编发状态显示。`;
-                if (displayOnly > 0) msg += `\n其中 ${displayOnly} 个仅加入表格，正在拉取 TAF/EC 供你编发。`;
-                alert(msg);
+            if (useText) {
+                const checked = validateImportText(importText.value, true);
+                if (!checked.ok) return;
+            }
+            button.disabled = true;
+            const oldText = button.textContent;
+            button.textContent = '正在导入...';
+            try {
+                const runningMode = useRunning ? (document.querySelector('input[name="import-running-mode"]:checked')?.value || 'filtered') : null;
+                window.configurePublishAirportSources?.({ runningMode, residentGroups });
+                let imported = 0;
+                let needsNetwork = useRunning || residentGroups.length > 0;
+                if (useText) {
+                    const result = importTextToForecast(importText.value, true);
+                    imported += result.count;
+                    needsNetwork = needsNetwork || result.displayOnly > 0;
+                }
+                if (useTable) {
+                    const result = await importPublishWorkbook();
+                    imported += result.count;
+                }
+                if (needsNetwork) {
+                    await window.loadForecastData?.(true);
+                } else {
+                    window.renderPublishTable?.();
+                }
+                window.saveConfirmedDataToLocal?.();
+                importModal.style.display = 'none';
+                alert(`导入完成，共加入 ${imported} 个明确机场${useRunning ? '，运行机场已按所选模式加载' : ''}。`);
+            } catch (error) {
+                alert('导入失败：' + error.message);
+            } finally {
+                button.disabled = false;
+                button.textContent = oldText;
             }
         });
     });
@@ -788,6 +845,7 @@
                 }
             }
             phenomenon = phenomenon.replace(/[。.、]$/, '').trim();
+            if (window.formatPublishWindText) phenomenon = window.formatPublishWindText(phenomenon);
             if (!phenomenon) {
                 const m2 = seg.match(/(?:(\d{1,2})日)?(\d{1,2})(?:时)?(?:\s*(Z))?\s*(.+)/i);
                 if (m2) {
@@ -831,8 +889,8 @@
     }
 
     function renderValidationPanel(result) {
-        const panel = document.getElementById('export-text-error-panel');
-        const ta = document.getElementById('export-text-content');
+        const panel = document.getElementById('import-text-error-panel');
+        const ta = document.getElementById('import-forecast-text');
         if (!panel || !ta) return;
         if (result.ok) {
             ta.style.borderColor = '#22c55e';
@@ -880,7 +938,58 @@
         return result;
     }
 
-        function importTextToForecast(text) {
+    async function importPublishWorkbook() {
+        const formData = new FormData();
+        const file = document.getElementById('import-publish-excel-file')?.files?.[0];
+        if (file) formData.append('file', file);
+        const response = await fetch('/api/import_publish_excel', { method: 'POST', body: formData });
+        const result = await response.json();
+        if (!result.success) throw new Error(result.error || '无法读取预报表格');
+        const data = result.data || {};
+        const nameMap = buildNameToIcao();
+        const unresolved = [];
+        const importedIcaos = [];
+
+        if (data.forecast_date && Number.isInteger(data.start_hour_bjt)) {
+            const parts = data.forecast_date.split('-').map(Number);
+            const utc = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2], data.start_hour_bjt - 8));
+            window.pbState.startDate = utc.toISOString().slice(0, 10);
+            window.pbState.startHour = utc.getUTCHours();
+            window.pbState.validityHours = Number(data.validity_hours) || 24;
+            const dateInput = document.getElementById('pb-datetime');
+            if (dateInput) dateInput.value = `${data.forecast_date}T${String(data.start_hour_bjt).padStart(2, '0')}:00`;
+            const titleSelect = document.getElementById('pb-main-title-select');
+            if (titleSelect && titleSelect.querySelector(`option[value="${window.pbState.validityHours}"]`)) {
+                titleSelect.value = String(window.pbState.validityHours);
+            }
+        }
+
+        (data.airports || []).forEach(entry => {
+            const resolved = resolveAirportResult(entry.airport_name, nameMap);
+            if (!resolved.icao) {
+                unresolved.push(entry.airport_name);
+                return;
+            }
+            const icao = resolved.icao;
+            const rows = (entry.rows || []).map(row => row.map(value => {
+                const rawText = String(value ?? '').trim();
+                const text = window.formatPublishWindText ? window.formatPublishWindText(rawText) : rawText;
+                const style = window.getMultiCellStyle ? window.getMultiCellStyle(text) : { bg: 'transparent', fg: '#1e293b', ts: 'none' };
+                return { text, bg: style.bg, fg: style.fg, ts: style.ts || 'none' };
+            }));
+            window.pbState.confirmedData[icao] = { rows, notes: entry.notes || rows.map(() => '/') };
+            window.pbState.importedAirportTypes[icao] = entry.nature || '普通';
+            window.pbState.forceShowAirports.add(icao);
+            importedIcaos.push(icao);
+            if (!window.currentApAnalysis.some(item => item.icao === icao)) {
+                window.currentApAnalysis.push({ icao, hasAlert: true, hasAlertEC: false, hasAlertTAF: false, nwp: null, tafRaw: '', tafHourly: null, autoAdoptEC: false, autoAdoptReason: '' });
+            }
+        });
+        if (unresolved.length) alert('以下机场未能匹配机场字典，已跳过：\n' + unresolved.join('、'));
+        return { count: importedIcaos.length, icaos: importedIcaos };
+    }
+
+    function importTextToForecast(text, deferRefresh = false) {
         const checked = validateImportText(text, false);
         if (!checked.ok) {
             renderValidationPanel(checked);
@@ -900,9 +1009,12 @@
                 window.pbState.forceShowAirports.add(item.icao);
             }
             importedIcaos.push(item.icao);
+            if (!window.currentApAnalysis.some(ap => ap.icao === item.icao)) {
+                window.currentApAnalysis.push({ icao: item.icao, hasAlert: true, hasAlertEC: false, hasAlertTAF: false, nwp: null, tafRaw: '', tafHourly: null, autoAdoptEC: false, autoAdoptReason: '' });
+            }
             imported++;
         });
-        if (imported > 0) {
+        if (imported > 0 && !deferRefresh) {
             if (window.setTextImportAirports) window.setTextImportAirports(importedIcaos);
             if (window.saveConfirmedDataToLocal) window.saveConfirmedDataToLocal();
             // 🌟 有“仅展示”机场时，必须实际拉取其 TAF/EC 数据（否则表里只有空行）。
@@ -922,5 +1034,5 @@
         return { count: imported, displayOnly: displayOnlyCount };
     }
 
-    window.OMICSExport = { openPreview, importTextToForecast };
+    window.OMICSExport = { openPreview, importTextToForecast, importPublishWorkbook };
 })();
