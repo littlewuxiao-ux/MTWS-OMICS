@@ -115,7 +115,7 @@ const pbState = {
   startDate: '', startHour: 0, validityHours: 24,
   showWind: true, showVis: true, showWeatherCode: true, showTemp: true, showPressure: true,
   enabledRegions: {}, customCoords: {}, filterWx: {},
-  filterWindThreshold: 15, filterVisThreshold: 1600, filterTempHigh: 33, filterTempLow: -28,
+  filterWindThreshold: 15, filterVisThreshold: 1600, filterTempHigh: 33,
   filterHideEmptyAirports: true,
   airportGroups: [],
   selectedResidentGroups: new Set(),
@@ -135,9 +135,11 @@ const pbState = {
   confirmedData: {},
   // 🌟 一键编发状态：记录本次批量采纳的机场，供撤回
   bulkAdopted: { taf: null, ec: null, all: null },
+  bulkActionInProgress: false,
   sourceForecastCache: {},
-  // 🌟 需求C：新增极寒与积冰配置参数
-  cfgIceTemp: 10, cfgIceDew: 1, cfgIceVis: 1500, cfgExtColdTemp: -30
+  draftData: {},
+  cfgIceTemp: 10, cfgIceVis: 1500, cfgIcePrecipHours: 12, cfgExtColdTemp: -30,
+  specialConditionAirports: new Map()
 };
 
 let _nextRowIdx = 0, _cachedAirports = [];
@@ -227,6 +229,51 @@ function isAirportRegionEnabled(icao) {
     return !!region && pbState.enabledRegions[region] !== false;
 }
 
+function getSelectedAirportGroupInfo(icao) {
+    for (let groupIndex = 0; groupIndex < pbState.airportGroups.length; groupIndex++) {
+        if (!pbState.selectedResidentGroups.has(String(groupIndex))) continue;
+        const group = pbState.airportGroups[groupIndex];
+        const airportIndex = group.airports.indexOf(icao);
+        if (airportIndex !== -1) return { group, groupIndex, airportIndex, pinned: !!group.alwaysShow };
+    }
+    return null;
+}
+
+function sortPublishAirportAnalysis(items) {
+    const domesticRegions = Object.keys(AIRPORT_CFG.domestic);
+    const internationalRegions = Object.keys(AIRPORT_CFG.international);
+    const importOrder = new Map(pbState.importSequence.map((icao, index) => [icao, index]));
+    return [...items].map((item, index) => ({ item, index })).sort((left, right) => {
+        const a = left.item;
+        const b = right.item;
+        const groupA = getSelectedAirportGroupInfo(a.icao);
+        const groupB = getSelectedAirportGroupInfo(b.icao);
+        if (!!groupA?.pinned !== !!groupB?.pinned) return groupA?.pinned ? -1 : 1;
+        if (groupA?.pinned && groupB?.pinned) {
+            if (groupA.groupIndex !== groupB.groupIndex) return groupA.groupIndex - groupB.groupIndex;
+            if (groupA.airportIndex !== groupB.airportIndex) return groupA.airportIndex - groupB.airportIndex;
+        }
+        if (pbState.airportOrderMode === 'import') {
+            const orderA = importOrder.get(a.icao) ?? Number.MAX_SAFE_INTEGER;
+            const orderB = importOrder.get(b.icao) ?? Number.MAX_SAFE_INTEGER;
+            if (orderA !== orderB) return orderA - orderB;
+            return left.index - right.index;
+        }
+        const regionA = getAirportRegion(a.icao);
+        const regionB = getAirportRegion(b.icao);
+        const scopeA = domesticRegions.includes(regionA) || (!regionA && /^Z/.test(a.icao)) ? 0 : 1;
+        const scopeB = domesticRegions.includes(regionB) || (!regionB && /^Z/.test(b.icao)) ? 0 : 1;
+        if (scopeA !== scopeB) return scopeA - scopeB;
+        const regions = scopeA === 0 ? domesticRegions : internationalRegions;
+        const rankA = regions.indexOf(regionA);
+        const rankB = regions.indexOf(regionB);
+        const normalizedA = rankA === -1 ? Number.MAX_SAFE_INTEGER : rankA;
+        const normalizedB = rankB === -1 ? Number.MAX_SAFE_INTEGER : rankB;
+        if (normalizedA !== normalizedB) return normalizedA - normalizedB;
+        return left.index - right.index;
+    }).map(entry => entry.item);
+}
+
 window.configurePublishAirportSources = function({ runningMode = null, residentGroups = [], orderMode = 'default' } = {}) {
     pbState.runningAllAirports.forEach(icao => {
         if (!pbState.textImportAirports.has(icao) && !pbState.confirmedData[icao] && !pbState.customCoords[icao]) {
@@ -253,6 +300,7 @@ window.getPublishAirportGroups = function() {
 window.loadForecastData = loadForecastData;
 
 function clearAirportsBySources(sources) {
+    persistAllPublishDraftsFromDom();
     const selected = new Set(sources || []);
     const sourceNames = Object.keys(pbState.sourceAirports);
     const clearAll = sourceNames.every(source => selected.has(source));
@@ -283,6 +331,7 @@ function clearAirportsBySources(sources) {
 
     if (clearAll) {
         pbState.confirmedData = {};
+        pbState.draftData = {};
         pbState.customCoords = {};
         pbState.forceShowAirports.clear();
         pbState.importSequence = [];
@@ -291,10 +340,13 @@ function clearAirportsBySources(sources) {
     } else {
         pbState.importSequence = pbState.importSequence.filter(icao => remaining.has(icao));
         window.currentApAnalysis = (window.currentApAnalysis || []).filter(item => remaining.has(item.icao) || pbState.confirmedData[item.icao]);
+        affected.forEach(icao => {
+            if (!remaining.has(icao)) delete pbState.draftData[icao];
+        });
     }
     pbState.bulkAdopted = { taf: null, ec: null, all: null };
     window.saveConfirmedDataToLocal?.();
-    renderPublishTableTriRow(window.currentApAnalysis || []);
+    renderPublishTableTriRow(window.currentApAnalysis || [], false);
     refreshBulkButtons();
 }
 
@@ -341,11 +393,15 @@ window.initPublishModule = async function() {
     pbState.airportGroups = savedGroups ? JSON.parse(savedGroups) : DEFAULT_AIRPORT_GROUPS;
     if (publishConfig.airport_groups && publishConfig.airport_groups.length) localStorage.setItem('pb_airport_groups', JSON.stringify(publishConfig.airport_groups));
     
-    // 🌟 需求C：加载极寒积冰历史设置
-    const savedEcCfg = publishConfig.auto_ec_cfg && Object.keys(publishConfig.auto_ec_cfg).length ? publishConfig.auto_ec_cfg : JSON.parse(localStorage.getItem('pb_auto_ec_cfg'));
+    let localEcCfg = null;
+    try { localEcCfg = JSON.parse(localStorage.getItem('pb_auto_ec_cfg')); } catch (e) {}
+    const savedEcCfg = publishConfig.auto_ec_cfg && Object.keys(publishConfig.auto_ec_cfg).length ? publishConfig.auto_ec_cfg : localEcCfg;
     if (savedEcCfg) {
-        pbState.cfgIceTemp = savedEcCfg.iceTemp; pbState.cfgIceDew = savedEcCfg.iceDew;
-        pbState.cfgIceVis = savedEcCfg.iceVis; pbState.cfgExtColdTemp = savedEcCfg.extCold;
+        pbState.filterTempHigh = Number(savedEcCfg.highTemp ?? pbState.filterTempHigh);
+        pbState.cfgIceTemp = Number(savedEcCfg.groundIceTemp ?? savedEcCfg.iceTemp ?? pbState.cfgIceTemp);
+        pbState.cfgIceVis = Number(savedEcCfg.groundIceVisibility ?? savedEcCfg.iceVis ?? pbState.cfgIceVis);
+        pbState.cfgIcePrecipHours = Number(savedEcCfg.precipHours ?? pbState.cfgIcePrecipHours);
+        pbState.cfgExtColdTemp = Number(savedEcCfg.extremeColdTemp ?? savedEcCfg.extCold ?? pbState.cfgExtColdTemp);
     }
     const displayElements = publishConfig.display_elements || {};
     if (typeof displayElements.wind === 'boolean') pbState.showWind = displayElements.wind;
@@ -454,9 +510,12 @@ window.initPublishModule = async function() {
     document.getElementById('forecast-table')?.addEventListener('click', e => {
         if (e.target.classList.contains('btn-delete-extra')) {
             const tr = e.target.closest('tr');
+            const icao = tr?.dataset.icao;
             const hasContent = Array.from(tr.querySelectorAll('.edit-cell')).some(td => td.textContent.trim());
             if (hasContent && !confirm('这一行已有内容，确认删除此行吗？')) return;
             tr.remove();
+            if (icao && pbState.confirmedData[icao]) persistConfirmedAirportFromDom(icao);
+            else if (icao) persistDraftAirportFromDom(icao);
             if (window.updateAllRowspans) window.updateAllRowspans();
         }
     });
@@ -638,10 +697,9 @@ function rollbackBulkTag(rowTag) {
 }
 
 function getBulkTargetIcaos() {
-    return Object.keys(pbState.sourceForecastCache).filter(icao => {
-        const tr = document.querySelector(`#forecast-table tr.tr-edit[data-icao="${icao}"]`);
-        return !!tr;
-    });
+    return Array.from(new Set((window.currentApAnalysis || [])
+        .map(item => item.icao)
+        .filter(icao => icao && !pbState.confirmedData[icao])));
 }
 
 function setBulkButtonState(btn, active, label) {
@@ -661,14 +719,19 @@ function applyBulkAdoption(source) {
     if (active?.tags?.length) {
         active.tags.forEach(rollbackBulkTag);
         pbState.bulkAdopted[source] = null;
+        pbState.bulkActionInProgress = false;
+        renderPublishTableTriRow(window.currentApAnalysis);
     } else {
+        pbState.bulkActionInProgress = true;
+        renderPublishTableTriRow(window.currentApAnalysis);
         const tag = `bulk-${source}-${Date.now()}`;
         const targets = getBulkTargetIcaos();
         targets.forEach(icao => appendSourceRowsToConfirmed(icao, source, getSourceForecastData(icao, source), tag));
         pbState.bulkAdopted[source] = { tags: [tag], airports: targets };
+        pbState.bulkActionInProgress = false;
+        renderPublishTableTriRow(window.currentApAnalysis);
     }
     window.saveConfirmedDataToLocal?.();
-    renderPublishTableTriRow(window.currentApAnalysis);
     refreshBulkButtons();
 }
 
@@ -689,7 +752,11 @@ function setupBulkAllButton() {
         if (current?.tags?.length) {
             current.tags.forEach(rollbackBulkTag);
             pbState.bulkAdopted.all = null;
+            pbState.bulkActionInProgress = false;
+            renderPublishTableTriRow(window.currentApAnalysis);
         } else {
+            pbState.bulkActionInProgress = true;
+            renderPublishTableTriRow(window.currentApAnalysis);
             const tags = [`bulk-all-taf-${Date.now()}`, `bulk-all-ec-${Date.now()}`];
             const targets = getBulkTargetIcaos();
             targets.forEach(icao => {
@@ -699,9 +766,10 @@ function setupBulkAllButton() {
                 appendSourceRowsToConfirmed(icao, 'ec', ecData, tags[1]);
             });
             pbState.bulkAdopted.all = { tags, airports: targets };
+            pbState.bulkActionInProgress = false;
+            renderPublishTableTriRow(window.currentApAnalysis);
         }
         window.saveConfirmedDataToLocal?.();
-        renderPublishTableTriRow(window.currentApAnalysis);
         refreshBulkButtons();
     };
 }
@@ -1031,7 +1099,7 @@ function renderAirportGroupsConfig() {
             <div class="ap-group-item" style="border:1px solid #cce5ff; padding:10px; margin-bottom:10px; border-radius:4px; background:#f8fbff;">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
                     <div>组名: <input type="text" class="grp-name" value="${g.name}" style="width:80px; font-weight:bold; padding:2px;"></div>
-                    <label style="cursor:pointer; font-weight:bold; color:#d9534f;"><input type="checkbox" class="grp-show" ${g.alwaysShow?'checked':''}> 常驻显示</label>
+                    <label style="cursor:pointer; font-weight:bold; color:#d9534f;"><input type="checkbox" class="grp-show" ${g.alwaysShow?'checked':''}> 置顶</label>
                     <button class="mini-btn del-grp" data-idx="${idx}" style="background:#dc2626;color:white;border:none;">删 除</button>
                 </div>
                 <textarea class="grp-aps" placeholder="输入4字ICAO，用空格隔开" style="width:100%; height:45px; padding:5px; border-radius:4px; border:1px solid #b8daff; outline:none; box-sizing:border-box;">${g.airports.join(' ')}</textarea>
@@ -1040,6 +1108,7 @@ function renderAirportGroupsConfig() {
     });
     document.querySelectorAll('.del-grp').forEach(btn => {
         btn.addEventListener('click', (e) => {
+            syncAirportGroupsFromForm();
             pbState.airportGroups.splice(e.target.dataset.idx, 1);
             renderAirportGroupsConfig();
         });
@@ -1047,9 +1116,21 @@ function renderAirportGroupsConfig() {
 }
 
 document.getElementById('add-pb-group-btn')?.addEventListener('click', () => {
+    syncAirportGroupsFromForm();
     pbState.airportGroups.push({ name: "新性质", alwaysShow: false, airports: [] });
     renderAirportGroupsConfig();
 });
+
+function syncAirportGroupsFromForm() {
+    const items = document.querySelectorAll('.ap-group-item');
+    if (!items.length) return;
+    pbState.airportGroups = Array.from(items).map(item => {
+        const name = item.querySelector('.grp-name').value.trim() || '未命名';
+        const alwaysShow = item.querySelector('.grp-show').checked;
+        const airports = item.querySelector('.grp-aps').value.toUpperCase().split(/[\s,]+/).filter(code => code.length === 4);
+        return { name, alwaysShow, airports };
+    });
+}
 
 // 🌟 构造 publish 配置块，供分块 PATCH 使用。
 //   localStorage 缺失时回退到 window.OMICS_CONFIG(持久唯一源)，绝不提交空块覆盖磁盘。
@@ -1073,17 +1154,8 @@ function buildPublishBlockFromLocal() {
 }
 
 function saveAirportGroupsConfig() {
-    const items = document.querySelectorAll('.ap-group-item');
-    const newGroups = [];
-    items.forEach(item => {
-        const name = item.querySelector('.grp-name').value.trim() || '未命名';
-        const alwaysShow = item.querySelector('.grp-show').checked;
-        const apsStr = item.querySelector('.grp-aps').value.toUpperCase();
-        const airports = apsStr.split(/[\s,]+/).filter(x => x.length === 4);
-        newGroups.push({ name, alwaysShow, airports });
-    });
-    pbState.airportGroups = newGroups;
-    localStorage.setItem('pb_airport_groups', JSON.stringify(newGroups));
+    syncAirportGroupsFromForm();
+    localStorage.setItem('pb_airport_groups', JSON.stringify(pbState.airportGroups));
     // 🌟 只 PATCH publish 块，不全量覆盖（避免冲掉阈值/人员等）
     if (typeof window.OMICS_patchSettingsConfig === 'function') window.OMICS_patchSettingsConfig({ publish: buildPublishBlockFromLocal() });
     else if (typeof window.OMICS_syncSettingsConfig === 'function') window.OMICS_syncSettingsConfig();
@@ -1098,7 +1170,10 @@ function populateModalForm() {
   if(q('filter-wind-threshold')) q('filter-wind-threshold').value = pbState.filterWindThreshold;
   if(q('filter-vis-threshold')) q('filter-vis-threshold').value = pbState.filterVisThreshold;
   if(q('filter-temp-high')) q('filter-temp-high').value = pbState.filterTempHigh;
-  if(q('filter-temp-low')) q('filter-temp-low').value = pbState.filterTempLow;
+  if(q('cfg-ice-temp')) q('cfg-ice-temp').value = pbState.cfgIceTemp;
+  if(q('cfg-ice-vis')) q('cfg-ice-vis').value = pbState.cfgIceVis;
+  if(q('cfg-ice-precip-hours')) q('cfg-ice-precip-hours').value = pbState.cfgIcePrecipHours;
+  if(q('cfg-ext-cold-temp')) q('cfg-ext-cold-temp').value = pbState.cfgExtColdTemp;
   
   const c = (id, val) => { const el=q(id); if(el) el.checked = val; };
   c('cfg-wind', pbState.showWind); c('cfg-vis', pbState.showVis); c('cfg-wx', pbState.showWeatherCode); c('cfg-temp', pbState.showTemp); c('cfg-pressure', pbState.showPressure);
@@ -1109,14 +1184,17 @@ function populateModalForm() {
 
 function saveModalForm() {
   const q = id => document.getElementById(id);
+  const numberValue = (id, fallback) => {
+      const value = Number.parseFloat(q(id)?.value);
+      return Number.isFinite(value) ? value : fallback;
+  };
   if(q('cfg-allow-other-carriers')) pbState.allowOtherCarriers = q('cfg-allow-other-carriers').checked;
   if(q('cfg-default-taf')) pbState.defaultShowTaf = q('cfg-default-taf').checked;
   if(q('cfg-default-ec')) pbState.defaultShowEc = q('cfg-default-ec').checked;
 
-  if(q('filter-wind-threshold')) pbState.filterWindThreshold = parseFloat(q('filter-wind-threshold').value) || 15;
-  if(q('filter-vis-threshold')) pbState.filterVisThreshold = parseFloat(q('filter-vis-threshold').value) || 1600;
-  if(q('filter-temp-high')) pbState.filterTempHigh = parseFloat(q('filter-temp-high').value) || 33;
-  if(q('filter-temp-low')) pbState.filterTempLow = parseFloat(q('filter-temp-low').value) || -28;
+  pbState.filterWindThreshold = numberValue('filter-wind-threshold', 15);
+  pbState.filterVisThreshold = numberValue('filter-vis-threshold', 1600);
+  pbState.filterTempHigh = numberValue('filter-temp-high', 33);
   
   const c = id => q(id)?.checked;
   pbState.showWind = c('cfg-wind'); pbState.showVis = c('cfg-vis'); pbState.showWeatherCode = c('cfg-wx'); pbState.showTemp = c('cfg-temp'); pbState.showPressure = c('cfg-pressure');
@@ -1124,13 +1202,16 @@ function saveModalForm() {
   
   ALL_WX_PHENOMENA.forEach((wx, idx) => { const cb = q(`filter-wx-${idx}`); if (cb) pbState.filterWx[wx] = cb.checked; });
   
-  if(q('cfg-ice-temp')) pbState.cfgIceTemp = parseFloat(q('cfg-ice-temp').value) || 10;
-  if(q('cfg-ice-dew')) pbState.cfgIceDew = parseFloat(q('cfg-ice-dew').value) || 1;
-  if(q('cfg-ice-vis')) pbState.cfgIceVis = parseFloat(q('cfg-ice-vis').value) || 1500;
-  if(q('cfg-ext-cold-temp')) pbState.cfgExtColdTemp = parseFloat(q('cfg-ext-cold-temp').value) || -30;
+  pbState.cfgIceTemp = numberValue('cfg-ice-temp', 10);
+  pbState.cfgIceVis = numberValue('cfg-ice-vis', 1500);
+  pbState.cfgIcePrecipHours = Math.max(1, Math.round(numberValue('cfg-ice-precip-hours', 12)));
+  pbState.cfgExtColdTemp = numberValue('cfg-ext-cold-temp', -30);
   localStorage.setItem('pb_auto_ec_cfg', JSON.stringify({
-      iceTemp: pbState.cfgIceTemp, iceDew: pbState.cfgIceDew,
-      iceVis: pbState.cfgIceVis, extCold: pbState.cfgExtColdTemp
+      highTemp: pbState.filterTempHigh,
+      groundIceTemp: pbState.cfgIceTemp,
+      groundIceVisibility: pbState.cfgIceVis,
+      precipHours: pbState.cfgIcePrecipHours,
+      extremeColdTemp: pbState.cfgExtColdTemp
   }));
   if (typeof window.OMICS_patchSettingsConfig === 'function') window.OMICS_patchSettingsConfig({ publish: buildPublishBlockFromLocal() });
   else if (typeof window.OMICS_syncSettingsConfig === 'function') window.OMICS_syncSettingsConfig();
@@ -1550,6 +1631,8 @@ function getCellStyleByContent(v) {
     if (WX_SNOW_KEYWORDS.some(kw => v.includes(kw))) return { bg: '#64748b', fg: '#FFFFFF' }; 
     if (v === '低云') return { bg: '#f59e0b', fg: '#FFFFFF' }; 
     if (WX_OTHER_BLUE_KEYWORDS.some(kw => v.includes(kw))) return { bg: '#bae6fd', fg: '#000000' }; 
+    const temperature = parseForecastTemperature(v);
+    if (temperature !== null && temperature >= pbState.filterTempHigh) return { bg: '#bae6fd', fg: '#000000' };
     if (/风.*\d+(?:\.\d+)?(?:米\/秒)?$/.test(v) || /^(?:N|NNE|NE|ENE|E|ESE|SE|SSE|S|SSW|SW|WSW|W|WNW|NW|NNW|VRB)\d+$/.test(v)) return { bg: '#2563eb', fg: '#FFFFFF' };
     if (/^\d+$/.test(v)) return { bg: '#fde047', fg: '#000000' }; 
     return { bg: 'transparent', fg: '#1e293b' };
@@ -1590,7 +1673,9 @@ function processAirportData(apiData) {
     precipitation: sl(apiData.hourly.precipitation),
     wind_speed_10m: sl(apiData.hourly.wind_speed_10m), wind_direction_10m: sl(apiData.hourly.wind_direction_10m),
     wind_gusts_10m: sl(apiData.hourly.wind_gusts_10m), weather_code: sl(apiData.hourly.weather_code), pressure_msl: sl(apiData.hourly.pressure_msl),
-    raw_weather_code: apiData.hourly.weather_code, start_idx: idx // 🌟 保留原始完整数组和时间锚点，用于追溯过去12小时
+    raw_weather_code: apiData.hourly.weather_code,
+    raw_precipitation: apiData.hourly.precipitation,
+    start_idx: idx
   };
 }
 
@@ -1618,6 +1703,57 @@ function getWeatherPhenomenonResult(data, i) {
   return { text: getWeatherPhenomenon(wc, prec, vis, calcWindSpeed(spd, gst)) };
 }
 
+function parseForecastTemperature(value) {
+  const match = String(value || '').trim().match(/^(-?\d+(?:\.\d+)?)\s*(?:℃|°C|度)$/i);
+  return match ? Number(match[1]) : null;
+}
+
+function isHighTemperatureValue(value) {
+  const temperature = parseForecastTemperature(value);
+  return temperature !== null && temperature >= pbState.filterTempHigh;
+}
+
+function hasRecentPrecipitation(data, forecastIndex) {
+  const raw = data.raw_precipitation || [];
+  const globalIndex = data.start_idx + forecastIndex;
+  for (let offset = 0; offset < pbState.cfgIcePrecipHours; offset++) {
+      const value = raw[globalIndex - offset];
+      if (Number(value) > 0) return true;
+  }
+  return false;
+}
+
+function getAirportSpecialConditions(nwp) {
+  const reasons = new Set();
+  if (!nwp) return reasons;
+  for (let i = 0; i <= pbState.validityHours; i++) {
+      const temperature = Number(nwp.temperature_2m?.[i]);
+      const dewPoint = Number(nwp.dew_point_2m?.[i]);
+      const visibility = Number(nwp.visibility?.[i]);
+      if (!Number.isFinite(temperature)) continue;
+      if (temperature < pbState.cfgExtColdTemp) reasons.add('极寒');
+      if (temperature < pbState.cfgIceTemp) {
+          const dewPointEqualsTemperature = Number.isFinite(dewPoint) && Math.abs(temperature - dewPoint) < 0.05;
+          const lowVisibility = Number.isFinite(visibility) && visibility < pbState.cfgIceVis;
+          if (dewPointEqualsTemperature || lowVisibility || hasRecentPrecipitation(nwp, i)) reasons.add('地面结冰');
+      }
+  }
+  return reasons;
+}
+
+function updateSpecialConditionFooter() {
+  const input = document.getElementById('pb-special-airports');
+  if (!input) return;
+  const values = [];
+  sortPublishAirportAnalysis(window.currentApAnalysis || []).forEach(ap => {
+      const reasons = pbState.specialConditionAirports.get(ap.icao);
+      if (!reasons?.size) return;
+      const name = window.GLOBAL_AIRPORT_NAME_MAP[ap.icao] || ap.icao;
+      values.push(`${name}（${Array.from(reasons).join('/')}）`);
+  });
+  input.value = values.length ? values.join('、') : '无';
+}
+
 function analyzeCategory(val) {
     if (!val || val === '' || val === '—' || val === '适航') return [];
     let cats = new Set();
@@ -1627,6 +1763,7 @@ function analyzeCategory(val) {
         else if (v.includes('雨')) cats.add('rain');
         else if (WX_SNOW_KEYWORDS.some(kw => v.includes(kw))) cats.add('snow');
         else if (WX_OTHER_BLUE_KEYWORDS.some(kw => v.includes(kw))) cats.add('other');
+        else if (isHighTemperatureValue(v)) cats.add('other');
         else if (/风.*\d+(?:\.\d+)?(?:米\/秒)?$/.test(v) || /^(?:N|NNE|NE|ENE|E|ESE|SE|SSE|S|SSW|SW|WSW|W|WNW|NW|NNW|VRB)\d+$/.test(v)) {
             let spd = parseFloat(v.match(/\d+(?:\.\d+)?(?=(?:米\/秒)?$)/)?.[0] || '0');
             if (spd >= pbState.filterWindThreshold) cats.add('wind');
@@ -1659,6 +1796,43 @@ function updateTopCountersFromTable() {
     Object.keys(counts).forEach(k => { const el = document.getElementById(`count-${k}`); if(el) el.textContent = counts[k]; });
 }
 
+function serializePublishRows(rows) {
+    return {
+        rows: rows.map(row => Array.from(row.querySelectorAll('.edit-cell')).map(cell => ({
+            text: cell.textContent.trim(),
+            bg: cell.style.background,
+            fg: cell.style.color,
+            ts: cell.style.textShadow
+        }))),
+        notes: rows.map(row => {
+            const input = row.querySelector('.edit-note-input');
+            const display = row.querySelector('.edit-note-display');
+            return input ? input.value : (display?.textContent || '').trim();
+        })
+    };
+}
+
+function persistDraftAirportFromDom(icao) {
+    if (!icao || pbState.confirmedData[icao]) return;
+    const rows = getAirportEditableRows(icao).filter(row => row.dataset.confirmed === 'false');
+    if (!rows.length) return;
+    const serialized = serializePublishRows(rows);
+    const mainRow = rows.find(row => row.classList.contains('tr-edit')) || rows[0];
+    const adoptedSources = mainRow.dataset.adoptedSources || '';
+    const hasContent = serialized.rows.some(row => row.some(cell => cell.text)) || serialized.notes.some(Boolean);
+    if (!hasContent && !adoptedSources) {
+        delete pbState.draftData[icao];
+        return;
+    }
+    pbState.draftData[icao] = { ...serialized, adoptedSources };
+}
+
+function persistAllPublishDraftsFromDom() {
+    document.querySelectorAll('#forecast-table tr.tr-edit[data-confirmed="false"][data-icao]').forEach(row => {
+        if (row.dataset.icao !== 'TEMP_ADD') persistDraftAirportFromDom(row.dataset.icao);
+    });
+}
+
 // ==========================================
 // 🌟 核心引擎：数据加载与三行独立渲染
 // ==========================================
@@ -1674,6 +1848,9 @@ async function loadForecastData(retainOrder = false) {
     };
 
     if (!token) { PBLOG('loadForecastData 中止：无 token', 'WARN'); return; }
+
+    pbState.specialConditionAirports = new Map();
+    updateSpecialConditionFooter();
 
     try {
         setProgress('初始化: 正在计算航班有效时段...');
@@ -1729,13 +1906,14 @@ async function loadForecastData(retainOrder = false) {
         const D = Math.ceil((pbState.validityHours + 3) / 24) + 1; 
         const endDate = new Date(startMs + D * 86400000).toISOString().split('T')[0];
         // 🌟 修复 EC 请求 400：open-meteo 不允许 start_date/end_date 与 past_days 同时使用。
-        // 改为把查询起始日提前 1 天，同样拿到过去 24h 历史数据，供 processAirportData 用 start_idx 溯源。
-        const queryStartDate = new Date(startMs - 86400000).toISOString().split('T')[0];
+        // 查询起始日按结冰降水回看配置前移，确保跨日和最长回看窗口都有完整数据。
+        const historyDays = Math.max(1, Math.ceil(pbState.cfgIcePrecipHours / 24));
+        const queryStartDate = new Date(startMs - historyDays * 86400000).toISOString().split('T')[0];
 
         const chunkSize = 50; const nwpPromises = [];
         for (let i = 0; i < validAps.length; i += chunkSize) {
             const chunkLats = lats.slice(i, i + chunkSize); const chunkLons = lons.slice(i, i + chunkSize);
-            // 🌟 需求C：新增 dew_point_2m 获取温露差；query_start 提前1天以含过去24小时历史降水供溯源
+            // 获取温度、露点和历史降水，供地面结冰判定。
             const nwpUrl = `https://api.open-meteo.com/v1/forecast?latitude=${chunkLats.join(',')}&longitude=${chunkLons.join(',')}&hourly=temperature_2m,dew_point_2m,precipitation,weather_code,visibility,wind_speed_10m,wind_direction_10m,wind_gusts_10m,pressure_msl&models=ecmwf_ifs&timezone=GMT&wind_speed_unit=ms&start_date=${queryStartDate}&end_date=${endDate}`;
             const chunkIdx = Math.floor(i / chunkSize);
             // 🌟 不再静默吞错：记录数值预报抓取的 HTTP 状态与失败原因
@@ -1775,9 +1953,9 @@ async function loadForecastData(retainOrder = false) {
         let forecastMap = {};
         validAps.forEach((icao, idx) => { if (nwpArr[idx] && !nwpArr[idx].error) forecastMap[icao] = processAirportData(nwpArr[idx]); });
 
+        pbState.specialConditionAirports = new Map();
         const apAnalysis = validAps.map(icao => {
-            if (pbState.confirmedData[icao]) return { icao, hasAlert: true, nwp: null, tafRaw: '', tafHourly: null, autoAdoptEC: false, autoAdoptReason: "" };
-            
+            const isConfirmed = !!pbState.confirmedData[icao];
             const nwp = forecastMap[icao];
             const tafObj = tafDataMap && tafDataMap[icao] ? tafDataMap[icao] : { raw: [], hourly: null };
             const tafRaw = tafObj.raw.length > 0 ? tafObj.raw[0] : '';
@@ -1796,38 +1974,16 @@ async function loadForecastData(retainOrder = false) {
                     let ext = getAlertElements(wx, v, ws, nwp.wind_direction_10m?.[i]);
                     if (ext.w !== '') { hasAlertEC = true; } 
                     
-                    // 🌟 需求C：极寒与积冰自动采纳条件判定系统
-                    if (!autoAdoptEC && nwp.start_idx !== -1) {
-                        let T = nwp.temperature_2m[i];
-                        let Td = nwp.dew_point_2m[i];
-                        let globalIdx = nwp.start_idx + i;
-                        
-                        // 1. 极寒判定
-                        if (T < pbState.cfgExtColdTemp) {
-                            autoAdoptEC = true; autoAdoptReason = "极寒预警";
-                        }
-                        // 2. 积冰判定
-                        if (!autoAdoptEC && T < pbState.cfgIceTemp) {
-                            if (T - Td < pbState.cfgIceDew) {
-                                autoAdoptEC = true; autoAdoptReason = "积冰(温露差小)";
-                            } else if (v < pbState.cfgIceVis) {
-                                autoAdoptEC = true; autoAdoptReason = "积冰(能见度极低)";
-                            } else {
-                                let hasPrecipPast12h = false;
-                                for (let p = 1; p <= 12; p++) {
-                                    let pIdx = globalIdx - p;
-                                    if (pIdx >= 0 && nwp.raw_weather_code) {
-                                        let wc = nwp.raw_weather_code[pIdx];
-                                        // NWP 气象码提取：51-67(降水/冻雨), 71-77(降雪), 80-86(阵性降水), 95-99(雷暴降水)
-                                        if ((wc >= 51 && wc <= 67) || (wc >= 71 && wc <= 77) || (wc >= 80 && wc <= 86) || (wc >= 95 && wc <= 99)) {
-                                            hasPrecipPast12h = true; break;
-                                        }
-                                    }
-                                }
-                                if (hasPrecipPast12h) { autoAdoptEC = true; autoAdoptReason = "积冰(近12h有降水)"; }
-                            }
-                        }
+                    const temperature = Number(nwp.temperature_2m?.[i]);
+                    if (Number.isFinite(temperature) && temperature >= pbState.filterTempHigh) {
+                        hasAlertEC = true;
+                        autoAdoptEC = true;
+                        autoAdoptReason = '高温';
                     }
+                }
+                if (pbState.runningAllAirports.has(icao)) {
+                    const specialConditions = getAirportSpecialConditions(nwp);
+                    if (specialConditions.size) pbState.specialConditionAirports.set(icao, specialConditions);
                 }
             }
             if (tafHourly) {
@@ -1850,46 +2006,18 @@ async function loadForecastData(retainOrder = false) {
             }
             // 🌟 需求：EC/TAF 未勾选时不作为筛选依据。hasAlert 只由被勾选的数据源决定。
             // （常驻机场、手动追加、已确认机场不受此限制，在过滤/排序环节另行豁免）
-            const hasAlert = (pbState.defaultShowEc && hasAlertEC) || (pbState.defaultShowTaf && hasAlertTAF);
+            const hasAlert = isConfirmed || (pbState.defaultShowEc && hasAlertEC) || (pbState.defaultShowTaf && hasAlertTAF);
             return { icao, hasAlert, hasAlertEC, hasAlertTAF, nwp, tafRaw, tafHourly, autoAdoptEC, autoAdoptReason };
         });
 
         setProgress('6/6 正在排版...');
         apAnalysis.forEach((ap, idx) => ap.originalIdx = idx);
-        const importOrder = new Map(pbState.importSequence.map((icao, index) => [icao, index]));
-        // 🌟 问题2：判断国内(中国大陆 Z 开头，不含港澳台 VH/RC/VM)。国内排前，国际排后。
-        const isDomestic = (icao) => /^Z[BGHSYLUPW]/.test(icao || '');
-        apAnalysis.sort((a, b) => {
-            if (pbState.airportOrderMode === 'import') {
-                const aOrder = importOrder.has(a.icao) ? importOrder.get(a.icao) : Number.MAX_SAFE_INTEGER;
-                const bOrder = importOrder.has(b.icao) ? importOrder.get(b.icao) : Number.MAX_SAFE_INTEGER;
-                if (aOrder !== bOrder) return aOrder - bOrder;
-                return a.originalIdx - b.originalIdx;
-            }
-            const getPriority = (icao, hasAlert) => {
-                if (pbState.confirmedData[icao]) return 5; 
-                if (pbState.forceShowAirports.has(icao)) return 4;
-                let isAlwaysShow = false;
-                for (let g of pbState.airportGroups) {
-                    if (g.alwaysShow && g.airports.includes(icao)) { isAlwaysShow = true; break; }
-                }
-                if (isAlwaysShow) return 3;
-                if (hasAlert) return 2;
-                return 1;
-            };
-            const pA = getPriority(a.icao, a.hasAlert);
-            const pB = getPriority(b.icao, b.hasAlert);
-            if (pA !== pB) return pB - pA;
-            // 🌟 问题2：同优先级内，国内优先于国际
-            const dA = isDomestic(a.icao) ? 0 : 1;
-            const dB = isDomestic(b.icao) ? 0 : 1;
-            if (dA !== dB) return dA - dB;
-            return a.originalIdx - b.originalIdx; 
-        });
+        const sortedAnalysis = sortPublishAirportAnalysis(apAnalysis);
 
-        _cachedAirports = apAnalysis.map(a => a.icao);
-        window.currentApAnalysis = apAnalysis; 
+        _cachedAirports = sortedAnalysis.map(a => a.icao);
+        window.currentApAnalysis = sortedAnalysis;
         renderPublishTableTriRow(window.currentApAnalysis);
+        updateSpecialConditionFooter();
         PBLOG(`数据加载完成，共渲染 ${apAnalysis.length} 个机场`);
 
         if (loader) loader.style.display = 'none';
@@ -1904,9 +2032,10 @@ async function loadForecastData(retainOrder = false) {
 }
 
 // 🌟 终极 DOM 渲染引擎 (多行完美合并版)
-function renderPublishTableTriRow(apAnalysis) {
+function renderPublishTableTriRow(apAnalysis, preserveDrafts = true) {
     const table = document.getElementById('forecast-table');
     if(!table) return;
+    if (preserveDrafts) persistAllPublishDraftsFromDom();
     table.innerHTML = '';
     
     const numCells = pbState.validityHours + 1;                      
@@ -1923,15 +2052,7 @@ function renderPublishTableTriRow(apAnalysis) {
     const tbody = document.createElement('tbody');
     const startMs = new Date(`${pbState.startDate}T${String(pbState.startHour).padStart(2, '0')}:00:00Z`).getTime();
     
-    const analysisForDisplay = pbState.airportOrderMode === 'import'
-        ? [...apAnalysis].sort((a, b) => {
-            const aOrder = pbState.importSequence.indexOf(a.icao);
-            const bOrder = pbState.importSequence.indexOf(b.icao);
-            const normalizedA = aOrder === -1 ? Number.MAX_SAFE_INTEGER : aOrder;
-            const normalizedB = bOrder === -1 ? Number.MAX_SAFE_INTEGER : bOrder;
-            return normalizedA - normalizedB;
-        })
-        : apAnalysis;
+    const analysisForDisplay = sortPublishAirportAnalysis(apAnalysis);
     const filteredAnalysis = analysisForDisplay.filter(apInfo => {
         let apType = pbState.importedAirportTypes[apInfo.icao] || '普通';
         let isAlwaysShow = false; // 🌟 新增：标记该机场是否具备常驻属性
@@ -1940,7 +2061,7 @@ function renderPublishTableTriRow(apAnalysis) {
             const g = pbState.airportGroups[groupIndex];
             if (pbState.selectedResidentGroups.has(String(groupIndex)) && g.airports.includes(apInfo.icao)) {
                 if (!pbState.importedAirportTypes[apInfo.icao]) apType = g.name;
-                if (g.alwaysShow) isAlwaysShow = true; // 如果组配置了常驻显示，打上豁免标记
+                if (g.alwaysShow) isAlwaysShow = true; // 置顶组机场不受空机场隐藏影响
                 break; 
             } 
         }
@@ -1948,7 +2069,7 @@ function renderPublishTableTriRow(apAnalysis) {
         
         // 🌟 修复 Bug：即便开启了隐藏空机场，只要它是常驻机场(isAlwaysShow)或手动追加机场，都绝不隐藏！
         // 文图互导模式下，机场列表由文本输入显式指定，因此不再受“空机场隐藏”影响。
-        if (pbState.filterHideEmptyAirports && !apInfo.hasAlert && !pbState.forceShowAirports.has(apInfo.icao) && !isAlwaysShow) {
+        if (pbState.filterHideEmptyAirports && !pbState.bulkActionInProgress && !apInfo.hasAlert && !pbState.forceShowAirports.has(apInfo.icao) && !isAlwaysShow) {
             return false;
         }
         
@@ -1965,28 +2086,30 @@ function renderPublishTableTriRow(apAnalysis) {
         
         const cData = pbState.confirmedData[icao];
         const isConfirmed = !!cData;
+        const draftData = isConfirmed ? null : pbState.draftData[icao];
+        const rowData = cData || draftData || {};
         const isGray = !isConfirmed && !hasAlert && !pbState.forceShowAirports.has(icao);
         const rowStyle = isGray ? 'background-color: #f3f4f6; color: #94a3b8;' : '';
 
         // 🌟 修复崩溃：安全提取已确认数据
-        const rowsToRender = isConfirmed ? (cData.rows || [cData.cells]) : [null];
-        const notesToRender = isConfirmed ? (cData.notes || [cData.note || '']) : [''];
+        const rowsToRender = isConfirmed ? (cData.rows || [cData.cells]) : (draftData?.rows || [null]);
+        const notesToRender = isConfirmed ? (cData.notes || [cData.note || '']) : (draftData?.notes || ['']);
 
         const trEdit = document.createElement('tr');
         trEdit.className = `${gClass} tr-edit`;
         trEdit.style.cssText = rowStyle;
         trEdit.dataset.confirmed = isConfirmed ? "true" : "false";
         trEdit.dataset.icao = icao;
+        if (draftData?.adoptedSources) trEdit.dataset.adoptedSources = draftData.adoptedSources;
         
         let srcOpHTML = '';
         if (isConfirmed) {
             srcOpHTML = `<td colspan="2" class="col-desc" style="padding:4px;" title="右键唤出撤销菜单"><input type="text" class="edit-note-input" value="${notesToRender[0] || ''}" style="width:100%; height:100%; min-height:26px; border:1px solid #ccc; border-radius:4px; text-align:center; font-size:11px; font-weight:bold; color:#1e40af; background:transparent;"></td>`;
         } else {
             srcOpHTML = `
-                <td class="col-source" style="font-weight:bold; color:#1e40af; vertical-align:middle; font-size:11px; border-right:none; cursor:pointer; user-select:none;" title="双击展开/折叠下方行">编辑</td>
-                <td class="col-op" style="padding:4px; position:relative; vertical-align:middle; border-left:none;">
-                    <div class="edit-note-display" style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:11px; color:#1e40af; font-weight:bold; z-index:1;"></div>
-                    <button class="hover-btn btn-confirm-edit" style="position:relative; z-index:2; background:#dc2626; color:white; width:100%; border:none; padding:6px 0; border-radius:4px; font-weight:bold; font-size:11px;">确认编发</button>
+                <td colspan="2" class="col-desc draft-note-cell">
+                    <input type="text" class="edit-note-input" value="">
+                    <button class="btn-confirm-edit">确认编发</button>
                 </td>
             `;
         }
@@ -1996,40 +2119,45 @@ function renderPublishTableTriRow(apAnalysis) {
             <td rowspan="1" class="col-airport-type" style="vertical-align:middle; border-right:2px solid #cbd5e1;">${apType}</td>
             ${srcOpHTML}
         `;
-        
         for (let i = 0; i < numCells; i++) {
             let val = '', bg = 'transparent', fg = isGray ? '#94a3b8' : '#1e293b', ts = 'none';
             if (rowsToRender[0] && rowsToRender[0][i]) {
                 const c = rowsToRender[0][i];
                 val = c.text || '';
-                if (cData.origin !== 'text') val = formatPublishWindTableText(val);
+                if (rowData.origin !== 'text') val = formatPublishWindTableText(val);
                 const normalizedStyle = getMultiCellStyle(val);
                 bg = normalizedStyle.bg; fg = normalizedStyle.fg; ts = normalizedStyle.ts || 'none';
             }
             const cls = isConfirmed ? 'data-cell-editable' : '';
             trEdit.innerHTML += `<td class="col-time td-data edit-cell ${cls}" data-c="${i}" style="${cellStyle} font-weight:bold; background:${bg}; color:${fg}; text-shadow:${ts};">${val}</td>`;
         }
+        const mainNoteInput = trEdit.querySelector('.edit-note-input');
+        if (mainNoteInput) mainNoteInput.value = notesToRender[0] || '';
         tbody.appendChild(trEdit);
 
-        if (isConfirmed && rowsToRender.length > 1) {
+        if (rowsToRender.length > 1) {
             for (let r = 1; r < rowsToRender.length; r++) {
                 const subTr = document.createElement('tr');
                 subTr.className = `${gClass} tr-edit-extra`;
-                subTr.dataset.confirmed = "true";
+                subTr.dataset.confirmed = isConfirmed ? "true" : "false";
                 subTr.dataset.icao = icao;
                 
-                let subHtml = `<td colspan="2" class="col-desc" style="padding:4px;" title="右键唤出撤销菜单"><input type="text" class="edit-note-input" value="${notesToRender[r] || ''}" style="width:100%; height:100%; min-height:26px; border:1px solid #ccc; border-radius:4px; text-align:center; font-size:11px; font-weight:bold; color:#1e40af; background:transparent;"></td>`;
+                let subHtml = isConfirmed
+                    ? `<td colspan="2" class="col-desc" style="padding:4px;" title="右键唤出撤销菜单"><input type="text" class="edit-note-input" value="" style="width:100%; height:100%; min-height:26px; border:1px solid #ccc; border-radius:4px; text-align:center; font-size:11px; font-weight:bold; color:#1e40af; background:transparent;"></td>`
+                    : `<td colspan="2" class="col-desc draft-note-cell"><input type="text" class="edit-note-input" value=""><button class="btn-delete-extra">删除</button></td>`;
                 for (let i = 0; i < numCells; i++) {
                     // 🌟 防崩溃：已确认数据按旧的时长(cell 数)保存，切到更长时段(如 24h→48h)时尾部 cell 不存在，需兜底
                     const c = (rowsToRender[r] && rowsToRender[r][i]) ? rowsToRender[r][i] : { text: '', bg: 'transparent', fg: '#1e293b', ts: 'none' };
-                    const normalizedText = cData.origin === 'text' ? String(c.text || '') : formatPublishWindTableText(c.text);
+                    const normalizedText = rowData.origin === 'text' ? String(c.text || '') : formatPublishWindTableText(c.text);
                     const normalizedStyle = getMultiCellStyle(normalizedText);
                     subHtml += `<td class="col-time td-data edit-cell data-cell-editable" data-c="${i}" style="${cellStyle} font-weight:bold; background:${normalizedStyle.bg}; color:${normalizedStyle.fg}; text-shadow:${normalizedStyle.ts};">${normalizedText}</td>`;
                 }
                 subTr.innerHTML = subHtml;
+                const subNoteInput = subTr.querySelector('.edit-note-input');
+                if (subNoteInput) subNoteInput.value = notesToRender[r] || '';
                 tbody.appendChild(subTr);
             }
-            return; 
+            if (isConfirmed) return;
         } else if (isConfirmed) {
             return;
         }
@@ -2079,6 +2207,11 @@ function renderPublishTableTriRow(apAnalysis) {
                 let ext = getAlertElements(wx, v, ws, nwp.wind_direction_10m[i]);
                 eW = ext.w; if(ext.noteStr) ext.noteStr.split(' ').forEach(n => allEcNotes.add(n));
                 if (eW.includes('雷雨')) allEcNotes.add('终端区/本场');
+                if (Number(nwp.temperature_2m?.[i]) >= pbState.filterTempHigh) {
+                    const temperatureText = `${Math.round(Number(nwp.temperature_2m[i]))}℃`;
+                    eW = [eW, temperatureText].filter(Boolean).join(' ');
+                    allEcNotes.add('高温');
+                }
             }
             let eStyle = getMultiCellStyle(eW);
             ecCellsHtml += `<td class="col-time td-data nwp-cell" data-c="${i}" style="${cellStyle} background:${eStyle.bg}; color:${eStyle.fg}; text-shadow:${eStyle.ts}; font-size:11px; font-weight:bold;">${eW}</td>`;
@@ -2139,18 +2272,11 @@ function renderPublishTableTriRow(apAnalysis) {
         if (pbState.showVis) appendDetail('tr-nwp-detail', '↳ 能见度', ecVisHtml);
         if (pbState.showTemp) appendDetail('tr-nwp-detail', '↳ 气温', ecTempHtml);
         if (pbState.showPressure) appendDetail('tr-nwp-detail', '↳ 气压', ecPressHtml);
-        // 🌟 需求C：若命中积冰或极寒条件，等待 DOM 就绪后直接虚拟点击采纳！
+        // 高温命中后自动把 EC 高温要素带入编辑行；结冰和极寒只写底部汇总。
         if (!isConfirmed && apInfo.autoAdoptEC) {
             setTimeout(() => {
                 const nwpBtn = trNwp.querySelector('.btn-adopt-nwp');
-                if (nwpBtn) {
-                    nwpBtn.click(); // 程序代点“采纳数值”
-                    // 在右上角角标追加触发原因提示
-                    const noteDisplay = trEdit.querySelector('.edit-note-display');
-                    if (noteDisplay) {
-                        noteDisplay.innerHTML = `<span style="color:#d97706; background:#fff3cd; padding:0 2px; border-radius:2px;">[自动EC: ${apInfo.autoAdoptReason}]</span> ` + noteDisplay.innerHTML;
-                    }
-                }
+                if (nwpBtn) nwpBtn.click();
             }, 50); 
         }
         const toggleExpand = (mainTr, detailClass) => {
@@ -2164,14 +2290,15 @@ function renderPublishTableTriRow(apAnalysis) {
             if (window.updateAllRowspans) window.updateAllRowspans();
         };
 
-        trEdit.querySelector('.col-source').ondblclick = () => { toggleExpand(trTaf, 'tr-taf-detail'); toggleExpand(trNwp, 'tr-nwp-detail'); };
+        const editSourceCell = trEdit.querySelector('.col-source');
+        if (editSourceCell) editSourceCell.ondblclick = () => { toggleExpand(trTaf, 'tr-taf-detail'); toggleExpand(trNwp, 'tr-nwp-detail'); };
         trTaf.querySelector('.col-source').ondblclick = () => toggleExpand(trTaf, 'tr-taf-detail');
         trNwp.querySelector('.col-source').ondblclick = () => toggleExpand(trNwp, 'tr-nwp-detail');
 
         const btnConfirm = trEdit.querySelector('.btn-confirm-edit');
         const btnTaf = trTaf.querySelector('.btn-adopt-taf');
         const btnNwp = trNwp.querySelector('.btn-adopt-nwp');
-        const editNoteDisplay = trEdit.querySelector('.edit-note-display');
+        const editNoteInput = trEdit.querySelector('.edit-note-input');
 
         const executeAdoptSplit = (sourceTr, sourceKey) => {
             const adoptedSources = new Set((trEdit.dataset.adoptedSources || '').split(',').filter(Boolean));
@@ -2198,15 +2325,15 @@ function renderPublishTableTriRow(apAnalysis) {
                 extra.dataset.confirmed = 'false';
                 extra.dataset.icao = icao;
                 let html = `
-                    <td class="col-source">附加</td>
-                    <td class="col-op">
-                        <div class="edit-note-display">${note || ''}</div>
-                        <button class="hover-btn btn-delete-extra">删除</button>
+                    <td colspan="2" class="col-desc draft-note-cell">
+                        <input type="text" class="edit-note-input" value="">
+                        <button class="btn-delete-extra">删除</button>
                     </td>`;
                 cells.forEach((cell, index) => {
                     html += `<td class="col-time td-data edit-cell data-cell-editable" data-c="${index}" style="${cellStyle} font-weight:bold; background:${cell.bg}; color:${cell.fg}; text-shadow:${cell.ts || 'none'};">${cell.text}</td>`;
                 });
                 extra.innerHTML = html;
+                extra.querySelector('.edit-note-input').value = note || '';
                 return extra;
             };
 
@@ -2214,7 +2341,7 @@ function renderPublishTableTriRow(apAnalysis) {
             let insertAfter = existingRows[existingRows.length - 1] || trEdit;
             if (!hasExistingWeather) {
                 fillCells(trEdit, sourceData.rows[0]);
-                editNoteDisplay.textContent = sourceData.note || '适航';
+                editNoteInput.value = sourceData.note || '适航';
                 firstIncomingIndex = 1;
                 insertAfter = trEdit;
             }
@@ -2226,6 +2353,7 @@ function renderPublishTableTriRow(apAnalysis) {
             }
             adoptedSources.add(sourceKey);
             trEdit.dataset.adoptedSources = Array.from(adoptedSources).join(',');
+            persistDraftAirportFromDom(icao);
             updateRowActiveStyle(trEdit);
             updateTopCountersFromTable();
             if(window.updateAllRowspans) window.updateAllRowspans();
@@ -2249,24 +2377,14 @@ function renderPublishTableTriRow(apAnalysis) {
                 });
                 cRows.push(rowCells);
                 
-                let note = '';
+                const noteInput = row.querySelector('.edit-note-input');
                 const noteDisplay = row.querySelector('.edit-note-display');
-                if (noteDisplay) note = noteDisplay.textContent.trim();
-                else {
-                    const noteInput = row.querySelector('.edit-note-input');
-                    if (noteInput) note = noteInput.value.trim();
-                }
+                const note = noteInput ? noteInput.value.trim() : (noteDisplay?.textContent || '').trim();
                 cNotes.push(note);
             });
 
             
             if (allClear) {
-                let isAlwaysShow = false;
-                pbState.airportGroups.forEach(g => { if(g.alwaysShow && g.airports.includes(icao)) isAlwaysShow = true; });
-                if (!isAlwaysShow) {
-                    removeAirportFromPublish(icao);
-                    return;
-                }
                 cNotes[0] = "适航"; 
                 for(let i=1; i<cNotes.length; i++) cNotes[i] = "";
                 cRows.forEach(r => r.forEach(c => { c.text=""; c.bg="transparent"; c.fg="#1e293b"; c.ts="none"; }));
@@ -2281,6 +2399,7 @@ function renderPublishTableTriRow(apAnalysis) {
                 notes: cNotes,
                 rowSources: existingConfirmed.rowSources || cRows.map(() => null)
             };
+            delete pbState.draftData[icao];
             window.saveConfirmedDataToLocal();
             
             renderPublishTableTriRow(window.currentApAnalysis);
@@ -2290,6 +2409,7 @@ function renderPublishTableTriRow(apAnalysis) {
     table.appendChild(tbody);
     if(window.updateAllRowspans) window.updateAllRowspans();
     updateTopCountersFromTable(); 
+    updateSpecialConditionFooter();
     // 🌟 表体渲染完成后，同步时间轴表头的总宽与横向滚动位置
     syncTimelineHeader();
 }
@@ -2425,17 +2545,55 @@ document.addEventListener('mousemove', (e) => {
 
 function removeAirportFromPublish(icao) {
     if (!icao) return;
+    persistAllPublishDraftsFromDom();
     _cachedAirports = _cachedAirports.filter(a => a !== icao);
     if (Array.isArray(window.currentApAnalysis)) {
         window.currentApAnalysis = window.currentApAnalysis.filter(a => a.icao !== icao);
     }
     pbState.forceShowAirports.delete(icao);
+    delete pbState.draftData[icao];
     delete pbState.customCoords[icao];
     if (pbState.confirmedData[icao]) {
         delete pbState.confirmedData[icao];
         window.saveConfirmedDataToLocal();
     }
-    renderPublishTableTriRow(window.currentApAnalysis || []);
+    renderPublishTableTriRow(window.currentApAnalysis || [], false);
+}
+
+function getAirportEditableRows(icao) {
+    return Array.from(document.querySelectorAll(`#forecast-table tr[data-icao="${icao}"]`))
+        .filter(row => row.classList.contains('tr-edit') || row.classList.contains('tr-edit-extra'));
+}
+
+function persistConfirmedAirportFromDom(icao) {
+    const data = pbState.confirmedData[icao];
+    if (!data) return;
+    const rows = getAirportEditableRows(icao).filter(row => row.dataset.confirmed === 'true');
+    if (!rows.length) return;
+    const serialized = serializePublishRows(rows);
+    data.rows = serialized.rows;
+    data.notes = serialized.notes;
+    if (data.rowSources) data.rowSources = data.rows.map((_, index) => data.rowSources[index] || null);
+    window.saveConfirmedDataToLocal?.();
+}
+
+function syncHighTemperatureNoteForRow(row) {
+    if (!row) return;
+    const hasHighTemperature = Array.from(row.querySelectorAll('.edit-cell')).some(cell =>
+        cell.textContent.split(/\s+/).some(isHighTemperatureValue)
+    );
+    const noteControl = row.querySelector('.edit-note-input, .edit-note-display');
+    if (!noteControl) return;
+    const current = noteControl.matches('input') ? noteControl.value : noteControl.textContent;
+    let tokens = String(current || '').trim().split(/\s+/).filter(token => token && token !== '高温');
+    if (hasHighTemperature) {
+        tokens = tokens.filter(token => token !== '/' && token !== '适航');
+        tokens.push('高温');
+    }
+    const next = tokens.join(' ');
+    if (noteControl.matches('input')) noteControl.value = next;
+    else noteControl.textContent = next;
+    if (row.dataset.confirmed === 'true') persistConfirmedAirportFromDom(row.dataset.icao);
 }
 
 function updateRowActiveStyle(tr) {
@@ -2564,22 +2722,22 @@ function setupTableInteraction() {
   document.addEventListener('mouseup', () => { sel.active = false; });
 
   const saveConfirmedRowIfApplicable = (tr) => {
-      if (tr.dataset.confirmed !== "true") return;
-      const icao = tr.dataset.icao;
-      if (pbState.confirmedData[icao]) {
-          const allIcaoRows = Array.from(document.querySelectorAll(`tr[data-icao="${icao}"]`)).filter(r => r.classList.contains('tr-edit') || r.classList.contains('tr-edit-extra'));
-          const cRows = [];
-          allIcaoRows.forEach(row => {
-              const rowCells = [];
-              row.querySelectorAll('.edit-cell').forEach(ctd => rowCells.push({ text: ctd.textContent, bg: ctd.style.background, fg: ctd.style.color, ts: ctd.style.textShadow }));
-              cRows.push(rowCells);
-          });
-          pbState.confirmedData[icao].rows = cRows;
-          window.saveConfirmedDataToLocal();
-      }
+      if (!tr?.dataset?.icao) return;
+      if (tr.dataset.confirmed === "true") persistConfirmedAirportFromDom(tr.dataset.icao);
+      else persistDraftAirportFromDom(tr.dataset.icao);
   };
 
+  table.addEventListener('input', e => {
+      const noteInput = e.target.closest('.edit-note-input');
+      if (noteInput) {
+          const icao = noteInput.closest('tr')?.dataset.icao;
+          if (noteInput.closest('tr')?.dataset.confirmed === 'true') persistConfirmedAirportFromDom(icao);
+          else persistDraftAirportFromDom(icao);
+      }
+  });
+
   document.addEventListener('keydown', e => {
+      if (e.target.closest('input, textarea, select, [contenteditable="true"]')) return;
       const selected = table.querySelectorAll('td.td-data.edit-cell.selected');
       if (selected.length > 0 && !document.querySelector('.cell-editor')) {
           if (e.ctrlKey || e.metaKey || e.altKey) return; 
@@ -2604,6 +2762,7 @@ function setupTableInteraction() {
                       targetTd.style.color = style.fg;
                       targetTd.style.textShadow = style.ts;
                   });
+                  new Set(Array.from(selected).map(cell => cell.closest('tr'))).forEach(syncHighTemperatureNoteForRow);
                   updateRowActiveStyle(firstTd.closest('tr'));
                   saveConfirmedRowIfApplicable(firstTd.closest('tr'));
                   updateTopCountersFromTable();
@@ -2631,7 +2790,7 @@ function setupTableInteraction() {
           td.style.background = style.bg;
           td.style.color = style.fg;
           td.style.textShadow = style.ts;
-          
+          syncHighTemperatureNoteForRow(tr);
           updateRowActiveStyle(tr);
           saveConfirmedRowIfApplicable(tr);
           updateTopCountersFromTable(); 
@@ -2642,7 +2801,7 @@ function setupTableInteraction() {
   document.addEventListener('keydown', e => {
     // 🌟 修复复制粘贴 Bug 1：强制降级全平台支持的 execCommand 保证内网环境也能复制！
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c' && sel.r1 >= 0) {
-      if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.isContentEditable)) return;
+      if (document.activeElement && (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName) || document.activeElement.isContentEditable)) return;
       e.preventDefault();
       const rMin = Math.min(sel.r1, sel.r2), rMax = Math.max(sel.r1, sel.r2);
       const cMin = Math.min(sel.c1, sel.c2), cMax = Math.max(sel.c1, sel.c2);
@@ -2688,7 +2847,7 @@ function setupTableInteraction() {
 
   document.addEventListener('paste', e => {
     if (sel.r1 < 0) return; 
-    if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.isContentEditable)) return;
+      if (document.activeElement && (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName) || document.activeElement.isContentEditable)) return;
     e.preventDefault();
     const text = e.clipboardData.getData('text/plain'); if (!text) return;
     const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
@@ -2718,6 +2877,7 @@ function setupTableInteraction() {
     });
     
     affectedTrs.forEach(tr => {
+        syncHighTemperatureNoteForRow(tr);
         updateRowActiveStyle(tr);
         saveConfirmedRowIfApplicable(tr);
     });
@@ -2811,6 +2971,8 @@ function setupAirportInteraction() {
               const hasContent = Array.from(tr.querySelectorAll('.edit-cell')).some(td => td.textContent.trim());
               if (hasContent && !confirm('这一行已有内容，确认删除此行吗？')) return;
               tr.remove();
+              if (selectedIcao && pbState.confirmedData[selectedIcao]) persistConfirmedAirportFromDom(selectedIcao);
+              else if (selectedIcao) persistDraftAirportFromDom(selectedIcao);
               if(window.updateAllRowspans) window.updateAllRowspans();
           };
       }
@@ -2897,10 +3059,9 @@ function setupAirportInteraction() {
       let opCell = '';
       if (mainTr.dataset.confirmed !== "true") {
           opCell = `
-              <td class="col-source" style="font-weight:bold; color:#1e40af; vertical-align:middle; font-size:11px; border-right:none; cursor:pointer; user-select:none;">附加</td>
-              <td class="col-op" style="padding:4px; position:relative; vertical-align:middle; border-left:none;">
-                  <div class="edit-note-display" style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:11px; color:#1e40af; font-weight:bold; z-index:1;"></div>
-                  <button class="hover-btn btn-delete-extra" style="background:#d97706; color:white; width:100%; border:none; padding:6px 0; border-radius:4px; font-weight:bold; font-size:11px;">删除</button>
+              <td colspan="2" class="col-desc draft-note-cell">
+                  <input type="text" class="edit-note-input" value="">
+                  <button class="btn-delete-extra">删除</button>
               </td>
           `;
       } else {

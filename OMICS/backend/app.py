@@ -56,7 +56,7 @@ if getattr(sys, 'frozen', False):
     OMICS_CONFIG_JS_PATH = os.path.join(_PERSIST_DIR, 'runtime', 'omics_config.js')
 _SETTINGS_WRITE_LOCK = threading.RLock()
 DEFAULT_PERSONNEL_MAP = {"41060711": "吴霄"}
-CURRENT_SETTINGS_SCHEMA_VERSION = 2
+CURRENT_SETTINGS_SCHEMA_VERSION = 3
 
 DEFAULT_SETTINGS_CONFIG = {
     "schema_version": CURRENT_SETTINGS_SCHEMA_VERSION,
@@ -90,7 +90,13 @@ DEFAULT_SETTINGS_CONFIG = {
     },
     "publish": {
         "airport_groups": [],
-        "auto_ec_cfg": {},
+        "auto_ec_cfg": {
+            "highTemp": 33,
+            "groundIceTemp": 10,
+            "groundIceVisibility": 1500,
+            "precipHours": 12,
+            "extremeColdTemp": -30
+        },
         "display_elements": {
             "wind": True,
             "visibility": True,
@@ -122,11 +128,23 @@ def upgrade_settings_config(config):
         saved_version = int(upgraded.get("schema_version", 0) or 0)
     except (TypeError, ValueError):
         saved_version = 0
-    if saved_version < CURRENT_SETTINGS_SCHEMA_VERSION:
+    if saved_version < 2:
         upgraded = deep_merge_dict(upgraded, {
-            "schema_version": CURRENT_SETTINGS_SCHEMA_VERSION,
             "publish": {"display_elements": {"pressure": True}}
         })
+    if saved_version < 3:
+        old_ec = upgraded.get("publish", {}).get("auto_ec_cfg", {})
+        ec_defaults = copy.deepcopy(DEFAULT_SETTINGS_CONFIG["publish"]["auto_ec_cfg"])
+        if isinstance(old_ec, dict):
+            if "iceTemp" in old_ec:
+                ec_defaults["groundIceTemp"] = old_ec["iceTemp"]
+            if "iceVis" in old_ec:
+                ec_defaults["groundIceVisibility"] = old_ec["iceVis"]
+            if "extCold" in old_ec:
+                ec_defaults["extremeColdTemp"] = old_ec["extCold"]
+            ec_defaults = deep_merge_dict(ec_defaults, old_ec)
+        upgraded = deep_merge_dict(upgraded, {"publish": {"auto_ec_cfg": ec_defaults}})
+    upgraded["schema_version"] = CURRENT_SETTINGS_SCHEMA_VERSION
     return upgraded
 
 

@@ -87,9 +87,7 @@
     }
 
     function getIcingText() {
-        const footer = document.getElementById('pb-export-footer');
-        if (!footer) return '无';
-        const inp = footer.querySelector('input[type="text"]');
+        const inp = document.getElementById('pb-special-airports');
         return inp ? (inp.value.trim() || '无') : '无';
     }
 
@@ -551,9 +549,9 @@
             const box = document.getElementById('import-resident-groups');
             if (!box) return;
             const groups = typeof window.getPublishAirportGroups === 'function' ? window.getPublishAirportGroups() : [];
-            box.innerHTML = groups.filter(group => group.alwaysShow).map(group =>
-                `<label><input type="checkbox" class="import-resident-group" value="${group.index}"> ${escapeHtml(group.name)} (${group.airports.length})</label>`
-            ).join('') || '<span style="color:#94a3b8;">暂无已启用常驻的机场组</span>';
+            box.innerHTML = groups.map(group =>
+                `<label><input type="checkbox" class="import-resident-group" value="${group.index}"> ${escapeHtml(group.name)}${group.alwaysShow ? ' [置顶]' : ''} (${group.airports.length})</label>`
+            ).join('') || '<span style="color:#94a3b8;">暂无机场组</span>';
         };
         document.getElementById('global-import-airports-btn')?.addEventListener('click', () => {
             renderResidentOptions();

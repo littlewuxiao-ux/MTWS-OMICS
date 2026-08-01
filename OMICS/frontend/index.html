@@ -49,15 +49,16 @@
                                         <span class="publish-settings-group-title">基础过滤</span>
                                         <label class="publish-setting-row"><span>风速低于（隐藏）</span><span><input type="number" id="filter-wind-threshold"> m/s</span></label>
                                         <label class="publish-setting-row"><span>能见度高于（隐藏）</span><span><input type="number" id="filter-vis-threshold"> m</span></label>
-                                        <label class="publish-setting-row"><span>气温展示区间</span><span><input type="number" id="filter-temp-low" class="short-number-input"> 至 <input type="number" id="filter-temp-high" class="short-number-input"> °C</span></label>
                                         <label class="publish-hide-empty-option"><input type="checkbox" id="filter-hide-empty-airports"> 无要素时自动隐藏该机场</label>
                                     </div>
                                     <div class="publish-filter-settings-group">
-                                        <span class="publish-settings-group-title">EC 自动采纳</span>
-                                        <label class="publish-setting-row"><span>积冰温度低于</span><span><input type="number" id="cfg-ice-temp" value="10"> °C</span></label>
-                                        <label class="publish-setting-row"><span>积冰温露差低于</span><span><input type="number" id="cfg-ice-dew" value="1"> °C</span></label>
-                                        <label class="publish-setting-row"><span>积冰能见度低于</span><span><input type="number" id="cfg-ice-vis" value="1500"> m</span></label>
+                                        <span class="publish-settings-group-title">高温与地面状态</span>
+                                        <label class="publish-setting-row"><span>高温达到</span><span><input type="number" id="filter-temp-high" value="33"> °C</span></label>
+                                        <label class="publish-setting-row"><span>结冰判定温度低于</span><span><input type="number" id="cfg-ice-temp" value="10"> °C</span></label>
+                                        <label class="publish-setting-row"><span>降水回看时长</span><span><input type="number" id="cfg-ice-precip-hours" value="12" min="1" max="48"> 小时</span></label>
+                                        <label class="publish-setting-row"><span>结冰能见度低于</span><span><input type="number" id="cfg-ice-vis" value="1500"> m</span></label>
                                         <label class="publish-setting-row"><span>极寒温度低于</span><span><input type="number" id="cfg-ext-cold-temp" value="-30"> °C</span></label>
+                                        <span class="publish-setting-hint">温度低于结冰阈值，且温露点相等、回看时段内有降水或能见度低于阈值时，列入底部地面结冰机场。</span>
                                     </div>
                                 </div>
                             </div>
@@ -74,8 +75,8 @@
 
                             </div>
 
-                            <h3 style="color:#1e40af; border-bottom: 2px solid #c8d5e5; padding-bottom: 10px; margin-top:25px;">✈️ 机场性质组与常驻管理</h3>
-                            <div style="font-size: 12px; color: #666; margin-bottom: 15px;">提示:自定义任意机场组,若勾选【常驻显示】,则无论是否有恶劣天气都会强制固定在表格最上方。(用空格分隔四字码)</div>
+                            <h3 style="color:#1e40af; border-bottom: 2px solid #c8d5e5; padding-bottom: 10px; margin-top:25px;">✈️ 机场性质组与置顶管理</h3>
+                            <div style="font-size: 12px; color: #666; margin-bottom: 15px;">机场组用于导入和标注性质；勾选【置顶】后，按分组及组内机场顺序固定在表格顶部。未置顶机场参与普通区域排序。</div>
                             <div id="pb-airport-groups-container"></div>
                             <button id="add-pb-group-btn" class="mini-btn" style="background:#16a34a; color:white; margin-top:10px;">+ 新增分组</button>
 
@@ -410,7 +411,7 @@
                         <div id="pb-export-footer" style="background: white; border: 1px solid #c8d5e5; border-top: none; font-size: 13px;">
                             <div style="display: flex; align-items: stretch; border-bottom: 1px solid #e9ecef;">
                                 <div style="font-weight: bold; width: 150px; padding: 10px; background: #f8f9fa; border-right: 1px solid #e9ecef; display:flex; align-items:center;">地面结冰/极寒机场</div>
-                                <div style="flex: 1; padding: 10px;"><input type="text" value="无" style="width: 100%; padding: 4px; border: 1px dashed #ccc; outline:none; font-weight:bold; color:#005A9C;"></div>
+                                <div style="flex: 1; padding: 10px;"><input type="text" id="pb-special-airports" value="无" readonly style="width: 100%; padding: 4px; border: 1px dashed #ccc; outline:none; font-weight:bold; color:#005A9C; background:#f8fafc;"></div>
                             </div>
                             <div style="display: flex; align-items: stretch; border-bottom: 1px solid #e9ecef;">
                                 <div style="font-weight: bold; width: 150px; padding: 10px; background: #f8f9fa; border-right: 1px solid #e9ecef; display:flex; align-items:center;">颜色说明</div>
@@ -611,7 +612,7 @@
                         <label><input type="radio" name="import-running-mode" value="all"> 全部</label>
                     </div>
                     <div>
-                        <div style="font-weight:bold; margin-bottom:6px;">常驻机场</div>
+                        <div style="font-weight:bold; margin-bottom:6px;">机场分组</div>
                         <div id="import-resident-groups" style="display:flex; flex-wrap:wrap; gap:12px; padding-left:24px;"></div>
                     </div>
                     <label><input type="checkbox" id="import-source-text"> 文字导入预报</label>
@@ -637,7 +638,7 @@
                 <div class="clear-airports-options">
                     <label class="clear-airports-all"><input type="checkbox" id="clear-source-all"> 全部来源</label>
                     <label><input type="checkbox" class="clear-source-option" value="running"> 运行机场 <span id="clear-count-running">0</span></label>
-                    <label><input type="checkbox" class="clear-source-option" value="resident"> 常驻机场 <span id="clear-count-resident">0</span></label>
+                    <label><input type="checkbox" class="clear-source-option" value="resident"> 机场分组 <span id="clear-count-resident">0</span></label>
                     <label><input type="checkbox" class="clear-source-option" value="text"> 文字导入 <span id="clear-count-text">0</span></label>
                     <label><input type="checkbox" class="clear-source-option" value="table"> 表格导入 <span id="clear-count-table">0</span></label>
                     <label><input type="checkbox" class="clear-source-option" value="custom"> 手动添加 <span id="clear-count-custom">0</span></label>

@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "personnel_dict": {
     "41060711": "吴霄",
     "347657": "崔云云",
@@ -38,7 +38,13 @@
   },
   "publish": {
     "airport_groups": [],
-    "auto_ec_cfg": {},
+    "auto_ec_cfg": {
+      "highTemp": 33,
+      "groundIceTemp": 10,
+      "groundIceVisibility": 1500,
+      "precipHours": 12,
+      "extremeColdTemp": -30
+    },
     "display_elements": {
       "wind": true,
       "visibility": true,

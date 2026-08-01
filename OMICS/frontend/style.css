@@ -299,6 +299,7 @@ textarea:focus { border-color: var(--sf-red); outline: none; background: white; 
 .publish-filter-settings-group:first-child { padding-left: 0; border-right: 1px solid #E2E8F0; }
 .publish-filter-settings-group:last-child { padding-right: 0; }
 .publish-settings-group-title { color: #475569; font-size: 12px; font-weight: bold; }
+.publish-setting-hint { color: #64748B; font-size: 11px; line-height: 1.5; }
 .publish-setting-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .publish-setting-row > span:last-child { white-space: nowrap; }
 .publish-setting-row input[type="number"] {
@@ -420,6 +421,10 @@ textarea:focus { border-color: var(--sf-red); outline: none; background: white; 
 .tr-edit-extra .col-source { border-right: 0; color: #1E40AF; font-size: 11px; font-weight: bold; vertical-align: middle; }
 .tr-edit-extra .col-op { position: relative; padding: 4px; border-left: 0; vertical-align: middle; }
 .tr-edit-extra .edit-note-display { position: absolute; z-index: 1; inset: 0; display: flex; align-items: center; justify-content: center; color: #1E40AF; font-size: 11px; font-weight: bold; }
+.draft-note-cell { position: relative; padding: 4px; }
+.draft-note-cell .edit-note-input { width: 100%; min-height: 26px; box-sizing: border-box; padding: 4px 70px 4px 6px; border: 1px solid #cbd5e1; border-radius: 4px; text-align: center; font-size: 11px; font-weight: bold; color: #1e40af; background: #fff; }
+.draft-note-cell .btn-confirm-edit, .draft-note-cell .btn-delete-extra { position: absolute; z-index: 2; right: 4px; top: 4px; bottom: 4px; border: 0; border-radius: 4px; padding: 0 8px; color: #fff; background: #dc2626; font-size: 11px; font-weight: bold; cursor: pointer; }
+.draft-note-cell .btn-delete-extra { background: #d97706; }
 .tr-edit-extra .btn-delete-extra { width: 100%; padding: 6px 0; border: 0; border-radius: 4px; background: #D97706; color: #fff; font-size: 11px; font-weight: bold; }
 
 .data-cell-editable { cursor: text; }
