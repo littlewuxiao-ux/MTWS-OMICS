@@ -104,7 +104,7 @@ const WX_DEFAULT_HIDDEN = new Set(['小雨', '小阵雨']);
 
 const WX_SNOW_KEYWORDS = ['雪', '冰粒', '冰晶', '霰'];  
 const WX_RAIN_KEYWORDS = ['雨', '阵雨', '毛毛雨'];
-const WX_HVY_RAIN_KEYWORDS = ['大雨', '暴雨', '强阵雨', '大阵雨'];
+const WX_HVY_RAIN_KEYWORDS = ['中雨', '大雨', '暴雨', '中阵雨', '强阵雨', '大阵雨'];
 const WX_OTHER_BLUE_KEYWORDS = ['霾', '雾', '沙', '尘', '霜', '烟'];
 
 const DEFAULT_AIRPORT_GROUPS = [
@@ -224,7 +224,7 @@ function getAirportRegion(icao) {
 
 function isAirportRegionEnabled(icao) {
     const region = getAirportRegion(icao);
-    return !!region && pbState.enabledRegions[region] !== false;
+    return !region || pbState.enabledRegions[region] !== false;
 }
 
 function getSelectedAirportGroupInfo(icao) {
@@ -504,20 +504,27 @@ window.initPublishModule = async function() {
             if(propTd) propTd.setAttribute('rowspan', count);
         });
     };
-    
-    // 🌟 修复 Bug 4：全局事件委托监听所有删除按钮，永不失效
-    document.getElementById('forecast-table')?.addEventListener('click', e => {
-        if (e.target.classList.contains('btn-delete-extra')) {
-            const tr = e.target.closest('tr');
-            const icao = tr?.dataset.icao;
-            const hasContent = Array.from(tr.querySelectorAll('.edit-cell')).some(td => td.textContent.trim());
-            if (hasContent && !confirm('这一行已有内容，确认删除此行吗？')) return;
-            tr.remove();
-            if (icao && pbState.confirmedData[icao]) persistConfirmedAirportFromDom(icao);
-            else if (icao) persistDraftAirportFromDom(icao);
-            if (window.updateAllRowspans) window.updateAllRowspans();
+
+    window.updateAirportRowspan = function(icao) {
+        const table = document.getElementById('forecast-table');
+        const trEdit = table?.querySelector(`.tr-edit[data-icao="${icao}"]`);
+        if (!trEdit) return;
+        const isTafHidden = document.getElementById('global-toggle-taf')?.checked === false;
+        const isEcHidden = document.getElementById('global-toggle-ec')?.checked === false;
+        let count = 1;
+        let next = trEdit.nextElementSibling;
+        while (next && !next.classList.contains('tr-edit')) {
+            let isHidden = next.style.display === 'none';
+            if ((next.classList.contains('tr-taf') || next.classList.contains('tr-taf-detail')) && isTafHidden) isHidden = true;
+            if ((next.classList.contains('tr-nwp') || next.classList.contains('tr-nwp-detail')) && isEcHidden) isHidden = true;
+            if (next.classList.contains('tr-edit-extra')) isHidden = false;
+            if (!isHidden) count++;
+            next = next.nextElementSibling;
         }
-    });
+        trEdit.querySelector('.col-airport')?.setAttribute('rowspan', count);
+        trEdit.querySelector('td:nth-child(2)')?.setAttribute('rowspan', count);
+    };
+
 };
 
 function initTopBarData() {
@@ -674,13 +681,14 @@ function clonePublishState(value) {
 function getBulkTargetIcaos() {
     return Array.from(new Set((window.currentApAnalysis || [])
         .map(item => item.icao)
-        .filter(icao => icao && !pbState.confirmedData[icao])));
+        .filter(icao => icao && isAirportRegionEnabled(icao) && !pbState.confirmedData[icao])));
 }
 
 function setBulkButtonState(btn, active, label, rollbackLabel) {
     if (!btn) return;
     btn.textContent = active ? rollbackLabel : label;
-    btn.style.background = active ? '#d97706' : '';
+    btn.style.background = active ? '#d97706' : (btn.id === 'global-adopt-all' ? '#7c3aed' : '#16a34a');
+    btn.style.color = '#ffffff';
 }
 
 function refreshBulkButtons() {
@@ -951,7 +959,7 @@ function setupGlobalToolbar() {
     const refreshRegions = () => {
         regionOptions.forEach(option => { pbState.enabledRegions[option.value] = option.checked; });
         syncScopeControls();
-        if (pbState.runningImportMode) loadForecastData(true);
+        renderPublishTableTriRow(window.currentApAnalysis || []);
     };
     Object.entries(scopeControls).forEach(([scope, control]) => {
         if (!control) return;
@@ -960,7 +968,7 @@ function setupGlobalToolbar() {
                 option.checked = control.checked;
                 pbState.enabledRegions[option.value] = control.checked;
             });
-            if (pbState.runningImportMode) loadForecastData(true);
+            renderPublishTableTriRow(window.currentApAnalysis || []);
         };
     });
     regionOptions.forEach(option => {
@@ -1813,6 +1821,7 @@ function updateSpecialConditionFooter() {
   if (!input) return;
   const values = [];
   sortPublishAirportAnalysis(window.currentApAnalysis || []).forEach(ap => {
+      if (!isAirportRegionEnabled(ap.icao)) return;
       const reasons = pbState.specialConditionAirports.get(ap.icao);
       if (!reasons?.size) return;
       const name = window.GLOBAL_AIRPORT_NAME_MAP[ap.icao] || ap.icao;
@@ -1959,7 +1968,6 @@ async function loadForecastData(retainOrder = false) {
         if (pbState.runningImportMode) {
             setProgress('查询: 正在获取当前运行航班机场列表...');
             flightAps = await fetchActiveFlightAirports(startMs, flightEndMs, setProgress);
-            flightAps = flightAps.filter(isAirportRegionEnabled);
             registerSourceAirports('running', flightAps, { replace: true });
             pbState.runningAllAirports = new Set(flightAps);
         } else {
@@ -2147,6 +2155,9 @@ function renderPublishTableTriRow(apAnalysis, preserveDrafts = true) {
     
     const analysisForDisplay = sortPublishAirportAnalysis(apAnalysis);
     const filteredAnalysis = analysisForDisplay.filter(apInfo => {
+        // Region controls are presentation-only. They may hide pinned,
+        // confirmed, or draft airports without deleting or refetching data.
+        if (!isAirportRegionEnabled(apInfo.icao)) return false;
         let apType = pbState.importedAirportTypes[apInfo.icao] || '普通';
         let isAlwaysShow = false; // 🌟 新增：标记该机场是否具备常驻属性
         
@@ -2199,7 +2210,7 @@ function renderPublishTableTriRow(apAnalysis, preserveDrafts = true) {
         
         let srcOpHTML = '';
         if (isConfirmed) {
-            srcOpHTML = `<td colspan="2" class="col-desc confirmed-note-cell" title="右键可撤销编发"><input type="text" class="edit-note-input" value=""><button type="button" class="btn-add-extra" data-icao="${icao}" title="增加一行空白要素">+</button></td>`;
+            srcOpHTML = `<td colspan="2" class="col-desc confirmed-note-cell" title="右键管理天气行或撤销编发"><input type="text" class="edit-note-input" value=""></td>`;
         } else {
             srcOpHTML = `
                 <td colspan="2" class="col-desc draft-note-cell">
@@ -2239,8 +2250,8 @@ function renderPublishTableTriRow(apAnalysis, preserveDrafts = true) {
                 if (draftData?.rowSources?.[r]) subTr.dataset.rowSource = draftData.rowSources[r];
                 
                 let subHtml = isConfirmed
-                    ? `<td colspan="2" class="col-desc draft-note-cell"><input type="text" class="edit-note-input" value=""><button type="button" class="btn-delete-extra" title="删除此行">删除</button></td>`
-                    : `<td colspan="2" class="col-desc draft-note-cell"><input type="text" class="edit-note-input" value=""><button class="btn-delete-extra">删除</button></td>`;
+                    ? `<td colspan="2" class="col-desc draft-note-cell"><input type="text" class="edit-note-input" value=""></td>`
+                    : `<td colspan="2" class="col-desc draft-note-cell"><input type="text" class="edit-note-input" value=""></td>`;
                 for (let i = 0; i < numCells; i++) {
                     // 🌟 防崩溃：已确认数据按旧的时长(cell 数)保存，切到更长时段(如 24h→48h)时尾部 cell 不存在，需兜底
                     const c = (rowsToRender[r] && rowsToRender[r][i]) ? rowsToRender[r][i] : { text: '', bg: 'transparent', fg: '#1e293b', ts: 'none' };
@@ -2376,7 +2387,7 @@ function renderPublishTableTriRow(apAnalysis, preserveDrafts = true) {
                 next.style.display = isExp ? 'table-row' : 'none';
                 next = next.nextElementSibling;
             }
-            if (window.updateAllRowspans) window.updateAllRowspans();
+            if (window.updateAirportRowspan) window.updateAirportRowspan(icao);
         };
 
         const editSourceCell = trEdit.querySelector('.col-source');
@@ -2418,7 +2429,6 @@ function renderPublishTableTriRow(apAnalysis, preserveDrafts = true) {
                 let html = `
                     <td colspan="2" class="col-desc draft-note-cell">
                         <input type="text" class="edit-note-input" value="">
-                        <button class="btn-delete-extra">删除</button>
                     </td>`;
                 cells.forEach((cell, index) => {
                     html += `<td class="col-time td-data edit-cell data-cell-editable" data-c="${index}" style="${cellStyle} font-weight:bold; background:${cell.bg}; color:${cell.fg}; text-shadow:${cell.ts || 'none'};">${cell.text}</td>`;
@@ -2559,45 +2569,6 @@ function syncTimelineHeader() {
     if (header && tw) header.scrollLeft = tw.scrollLeft;
 }
 
-document.getElementById('forecast-table')?.addEventListener('contextmenu', (e) => {
-    const noteCell = e.target.closest('td.col-desc');
-    if (!noteCell) return;
-    let tr = noteCell.closest('tr');
-    if (!tr) return;
-    
-    let icao = tr.dataset.icao;
-    if (!icao) {
-        let tempTr = tr;
-        while (tempTr && !tempTr.dataset.icao) tempTr = tempTr.previousElementSibling;
-        if (tempTr) icao = tempTr.dataset.icao;
-    }
-    
-    if (icao && pbState.confirmedData[icao]) {
-        e.preventDefault();
-        let unconfirmMenu = document.getElementById('unconfirm-menu');
-        unconfirmMenu.style.left = e.clientX + 'px';
-        unconfirmMenu.style.top = e.clientY + 'px';
-        unconfirmMenu.style.display = 'block';
-        unconfirmMenu.onmouseleave = () => { unconfirmMenu.style.display = 'none'; };
-        
-        unconfirmMenu.onclick = () => {
-            delete pbState.confirmedData[icao];
-            window.saveConfirmedDataToLocal();
-            const tw = document.getElementById('table-wrapper');
-            const sx = tw ? tw.scrollLeft : 0, sy = tw ? tw.scrollTop : 0;
-            renderPublishTableTriRow(window.currentApAnalysis); 
-            if (tw) { tw.scrollLeft = sx; tw.scrollTop = sy; }
-            unconfirmMenu.style.display = 'none';
-        };
-    }
-});
-
-document.addEventListener('mousemove', (e) => {
-    const menu = document.getElementById('unconfirm-menu');
-    if (!menu || menu.style.display !== 'block') return;
-    if (!e.target.closest('#unconfirm-menu') && !e.target.closest('td.col-desc')) menu.style.display = 'none';
-});
-
 function removeAirportFromPublish(icao) {
     if (!icao) return;
     persistAllPublishDraftsFromDom();
@@ -2628,7 +2599,7 @@ function persistConfirmedAirportFromDom(icao) {
     const serialized = serializePublishRows(rows);
     data.rows = serialized.rows;
     data.notes = serialized.notes;
-    if (data.rowSources) data.rowSources = data.rows.map((_, index) => data.rowSources[index] || null);
+    data.rowSources = serialized.rowSources;
     window.saveConfirmedDataToLocal?.();
 }
 
@@ -2950,7 +2921,7 @@ function setupSearch() {
       addBtn.onclick = async () => {
           const icao = input.value.trim().toUpperCase();
           if(icao.length !== 4) return alert("请输入4位ICAO");
-          if(_cachedAirports.includes(icao)) return alert("该机场已在当前列表中");
+          if((window.currentApAnalysis || []).some(item => item.icao === icao)) return alert("该机场已经存在表格中");
           if (!window.AIRPORT_COORDS[icao]) return alert("坐标库中未收录此机场");
           
           _cachedAirports.unshift(icao);
@@ -2995,56 +2966,35 @@ function setupAirportInteraction() {
   const table = document.getElementById('forecast-table');
   const ctxMenu = document.getElementById('airport-ctx-menu');
   let selectedIcao = null;
+  let selectedWeatherRow = null;
 
   if(!table || !ctxMenu) return;
   document.addEventListener('click', () => ctxMenu.style.display = 'none');
   
   table.addEventListener('contextmenu', e => {
-      if (e.target.tagName === 'INPUT') return; 
       let tr = e.target.closest('tr');
       if (!tr) return;
-
-      // 备注列保留撤销编发菜单；天气单元格可继续增加或删除附加行。
-      if (e.target.closest('td.col-desc')) return;
 
       let tempTr = tr;
       while (tempTr && !tempTr.dataset.icao) tempTr = tempTr.previousElementSibling;
       if (tempTr) selectedIcao = tempTr.dataset.icao;
       if (!selectedIcao) return;
+      selectedWeatherRow = tr.matches('.tr-edit, .tr-edit-extra') ? tr : null;
       e.preventDefault();
       
       document.querySelectorAll('.td-airport').forEach(el => el.classList.remove('airport-selected'));
       const activeApCell = table.querySelector(`.td-airport[data-icao="${selectedIcao}"]`);
       if(activeApCell) activeApCell.classList.add('airport-selected');
 
-      const delRowBtn = document.getElementById('ctx-delete-row');
-      if (delRowBtn) {
-          const isExtraRow = tr.classList.contains('tr-edit-extra');
-          delRowBtn.style.display = isExtraRow ? 'block' : 'none';
-          delRowBtn.onclick = () => {
-              if (!isExtraRow) return;
-              const hasContent = Array.from(tr.querySelectorAll('.edit-cell')).some(td => td.textContent.trim());
-              if (hasContent && !confirm('这一行已有内容，确认删除此行吗？')) return;
-              tr.remove();
-              if (selectedIcao && pbState.confirmedData[selectedIcao]) persistConfirmedAirportFromDom(selectedIcao);
-              else if (selectedIcao) persistDraftAirportFromDom(selectedIcao);
-              if(window.updateAllRowspans) window.updateAllRowspans();
-          };
-      }
-      ctxMenu.style.left = e.clientX + 'px';
-      ctxMenu.style.top = e.clientY + 'px';
+      const editableRows = getAirportEditableRows(selectedIcao);
+      document.getElementById('ctx-delete-weather-row').hidden = !selectedWeatherRow || editableRows.length <= 1;
+      document.getElementById('ctx-unconfirm-airport').hidden = !pbState.confirmedData[selectedIcao];
+      ctxMenu.style.left = `${Math.min(e.clientX, window.innerWidth - 190)}px`;
+      ctxMenu.style.top = `${Math.min(e.clientY, window.innerHeight - 150)}px`;
       ctxMenu.style.display = 'block';
   });
 
   table.addEventListener('click', e => {
-      const addExtraBtn = e.target.closest('.btn-add-extra');
-      if (addExtraBtn) {
-          e.preventDefault();
-          e.stopPropagation();
-          selectedIcao = addExtraBtn.dataset.icao;
-          document.getElementById('ctx-copy-airport')?.click();
-          return;
-      }
       const btn = e.target.closest('.airport-delete-x');
       if (!btn) return;
       e.preventDefault();
@@ -3054,7 +3004,7 @@ function setupAirportInteraction() {
   });
 
 
-  document.getElementById('ctx-add-blank')?.addEventListener('click', () => {
+  document.getElementById('ctx-add-airport')?.addEventListener('click', () => {
       if(!selectedIcao) return;
       const srcTd = document.querySelector(`.td-airport[data-icao="${selectedIcao}"]`);
       if(!srcTd) return;
@@ -3097,7 +3047,14 @@ function setupAirportInteraction() {
       inp.addEventListener('keydown', async (ev) => {
           if (ev.key === 'Enter') {
               const icao = inp.value.trim().toUpperCase();
-              if(icao.length !== 4 || !window.AIRPORT_COORDS[icao]) return alert("无效的四字码或系统未收录！");
+              if(icao.length !== 4 || !window.AIRPORT_COORDS[icao]) return alert("无效的四字码或系统未收录");
+              const alreadyLoaded = (window.currentApAnalysis || []).some(item => item.icao === icao)
+                  || Object.values(pbState.sourceAirports).some(source => source.has(icao));
+              if (alreadyLoaded) {
+                  eTr.remove();
+                  alert('该机场已经存在表格中');
+                  return;
+              }
               
               pbState.customCoords[icao] = window.AIRPORT_COORDS[icao]; 
               pbState.forceShowAirports.add(icao); 
@@ -3107,7 +3064,7 @@ function setupAirportInteraction() {
       });
   });
   
-  document.getElementById('ctx-copy-airport')?.addEventListener('click', () => {
+  document.getElementById('ctx-add-weather-row')?.addEventListener('click', () => {
       if(!selectedIcao) return;
       const mainTr = document.querySelector(`.tr-edit[data-icao="${selectedIcao}"]`);
       if(!mainTr) return;
@@ -3119,17 +3076,7 @@ function setupAirportInteraction() {
       eTr.dataset.confirmed = mainTr.dataset.confirmed;
       eTr.dataset.icao = selectedIcao;
       
-      let opCell = '';
-      if (mainTr.dataset.confirmed !== "true") {
-          opCell = `
-              <td colspan="2" class="col-desc draft-note-cell">
-                  <input type="text" class="edit-note-input" value="">
-                  <button class="btn-delete-extra">删除</button>
-              </td>
-          `;
-      } else {
-           opCell = `<td colspan="2" class="col-desc draft-note-cell"><input type="text" class="edit-note-input" value=""><button type="button" class="btn-delete-extra" title="删除此行">删除</button></td>`;
-      }
+      const opCell = `<td colspan="2" class="col-desc draft-note-cell"><input type="text" class="edit-note-input" value="" placeholder="输入本行备注"></td>`;
 
       let eHtml = opCell;
       for(let i=0; i<numCells; i++) {
@@ -3146,6 +3093,34 @@ function setupAirportInteraction() {
       else persistDraftAirportFromDom(selectedIcao);
       
       if(window.updateAllRowspans) window.updateAllRowspans();
+  });
+
+  document.getElementById('ctx-delete-weather-row')?.addEventListener('click', () => {
+      if (!selectedIcao || !selectedWeatherRow) return;
+      const editableRows = getAirportEditableRows(selectedIcao);
+      if (editableRows.length <= 1 || !editableRows.includes(selectedWeatherRow)) return;
+      const hasContent = Array.from(selectedWeatherRow.querySelectorAll('.edit-cell')).some(cell => cell.textContent.trim())
+          || !!selectedWeatherRow.querySelector('.edit-note-input')?.value.trim();
+      if (hasContent && !confirm('当前天气行已有内容，确认删除吗？')) return;
+      selectedWeatherRow.remove();
+      if (pbState.confirmedData[selectedIcao]) persistConfirmedAirportFromDom(selectedIcao);
+      else persistDraftAirportFromDom(selectedIcao);
+      renderPublishTableTriRow(window.currentApAnalysis || [], false);
+  });
+
+  document.getElementById('ctx-unconfirm-airport')?.addEventListener('click', () => {
+      if (!selectedIcao || !pbState.confirmedData[selectedIcao]) return;
+      persistConfirmedAirportFromDom(selectedIcao);
+      const confirmed = pbState.confirmedData[selectedIcao];
+      pbState.draftData[selectedIcao] = {
+          rows: clonePublishState(confirmed.rows || [confirmed.cells || []]),
+          notes: clonePublishState(confirmed.notes || [confirmed.note || '']),
+          rowSources: clonePublishState(confirmed.rowSources || []),
+          adoptedSources: ''
+      };
+      delete pbState.confirmedData[selectedIcao];
+      window.saveConfirmedDataToLocal?.();
+      renderPublishTableTriRow(window.currentApAnalysis || [], false);
   });
 
 }

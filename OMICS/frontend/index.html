@@ -12,10 +12,6 @@
     <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 </head>
 <body>
-    <div id="unconfirm-menu" style="padding:8px 15px; cursor:pointer; color:#dc2626; background:#fff; font-weight:bold; font-size:13px; position:fixed; border:1px solid #ccc; box-shadow:2px 2px 8px rgba(0,0,0,0.2); display:none; z-index:9999;">
-        <span style="margin-right:5px;">⚠️</span>撤销确认编发
-    </div>
-
     <div class="container">
         <style>
             #admin-only-section { background: white; border: 1px solid #ccc; border-radius: 6px; padding: 10px; margin-bottom: 10px; transition: all 0.3s; }
@@ -326,9 +322,9 @@
                                 </div>
                             </div>
                             <div class="publish-command-toolbar">
-                                <div class="publish-command-with-help"><button id="global-import-airports-btn" class="mini-btn" style="background:#1d4ed8; color:white; border:none; padding:5px 12px; border-radius:4px; font-weight:bold; cursor:pointer;">导入机场</button><small>选择机场来源、分组与显示顺序</small></div>
+                                <button id="global-import-airports-btn" class="mini-btn" style="background:#1d4ed8; color:white; border:none; padding:5px 12px; border-radius:4px; font-weight:bold; cursor:pointer;">导入机场</button>
                                 <button id="global-clear-airports-btn" class="mini-btn publish-clear-btn">清空机场</button>
-                                <div class="publish-command-with-help"><button id="global-export-text-btn" class="mini-btn" style="background:#d97706; color:white; border:none; padding:5px 12px; border-radius:4px; font-weight:bold; cursor:pointer;">导出文本</button><small>将已编发内容转换为中文预报</small></div>
+                                <button id="global-export-text-btn" class="mini-btn" style="background:#d97706; color:white; border:none; padding:5px 12px; border-radius:4px; font-weight:bold; cursor:pointer;">导出文本</button>
                                 <button id="global-export-image-btn" class="mini-btn" style="background:#10b981; color:white; border:none; padding:5px 12px; border-radius:4px; font-weight:bold; cursor:pointer;">导出图片</button>
                                 <button id="global-export-excel-btn" class="mini-btn" style="background:#059669; color:white; border:none; padding:5px 12px; border-radius:4px; font-weight:bold; cursor:pointer;">导出 Excel</button>
                             </div>
@@ -613,24 +609,31 @@
                 <span class="close-button" id="close-airport-import-modal">&times;</span>
                 <h3 style="color:#1e40af; margin-top:0; border-bottom:2px solid #c8d5e5; padding-bottom:10px;">导入机场</h3>
                 <div style="display:grid; gap:10px; font-size:13px;">
-                    <div class="airport-import-order-control">
-                        <span>显示顺序</span>
-                        <label><input type="radio" name="import-order-mode" value="default" checked> 默认顺序</label>
-                        <label><input type="radio" name="import-order-mode" value="import"> 导入顺序</label>
+                    <div class="airport-import-order-block">
+                        <div class="airport-import-order-control">
+                            <span>显示顺序</span>
+                            <label><input type="radio" name="import-order-mode" value="default" checked> 默认顺序</label>
+                            <label><input type="radio" name="import-order-mode" value="import"> 导入顺序</label>
+                        </div>
+                        <div class="import-option-help">默认顺序：置顶分组优先，其余机场按国内、国际及区域排列。导入顺序：按机场在导入内容中的先后排列。</div>
                     </div>
                     <label><input type="checkbox" id="import-source-running"> 导入运行机场</label>
                     <div id="import-running-options" style="margin-left:24px; display:flex; gap:18px;">
                         <label><input type="radio" name="import-running-mode" value="filtered" checked> 筛选</label>
                         <label><input type="radio" name="import-running-mode" value="all"> 全部</label>
                     </div>
+                    <div class="import-option-help">筛选：只显示符合要素过滤条件的运行机场。全部：没有天气的运行机场也显示并按适航处理。</div>
                     <div>
                         <div style="font-weight:bold; margin-bottom:6px;">机场分组</div>
                         <div id="import-resident-groups" style="display:flex; flex-wrap:wrap; gap:12px; padding-left:24px;"></div>
+                        <div class="import-option-help">导入所选常驻分组；标记为置顶的分组保持分组及机场顺序，但仍受区域显示开关控制。</div>
                     </div>
                     <label><input type="checkbox" id="import-source-text"> 文字导入预报</label>
+                    <div class="import-option-help">识别机场名称或四字码及中文预报；选择导入顺序时按文字中的机场先后显示。</div>
                     <textarea id="import-forecast-text" rows="8" style="width:100%; box-sizing:border-box; border:1px solid #ccc; border-radius:4px; padding:10px; font-family:monospace; font-size:13px; line-height:1.5; resize:vertical;" placeholder="深圳：27日00-03时有中雷雨。&#10;杭州"></textarea>
                     <div id="import-text-error-panel" style="display:none; max-height:170px; overflow:auto; border:1px solid #fecaca; background:#fff7f7; border-radius:6px; padding:8px; font-size:12px;"></div>
                     <label><input type="checkbox" id="import-source-table"> 表格导入</label>
+                    <div class="import-option-help">导入表格中的机场、天气行、机场性质和备注。</div>
                     <div style="display:flex; align-items:center; gap:10px; margin-left:24px; flex-wrap:wrap;">
                         <input type="file" id="import-publish-excel-file" accept=".xlsx,.xlsm">
                         <span style="color:#64748b; font-size:12px;">未选择文件时读取 OMICS 根目录的未来24小时天气预报20260725.xlsm</span>
@@ -700,9 +703,10 @@
     <div id="drag-indicator" style="position:fixed;left:0;right:0;height:3px;background:#dc2626;display:none;z-index:500;"></div>
 
     <div id="airport-ctx-menu" style="position:fixed;background:#fff;border:1px solid #ccc;display:none;z-index:2000;padding:5px; box-shadow: 2px 2px 8px rgba(0,0,0,0.2);">
-        <div class="ctx-item" id="ctx-copy-airport" style="cursor:pointer;padding:6px 14px; color:#333;">增加一行空白要素</div>
-        <div class="ctx-item" id="ctx-add-blank" style="cursor:pointer;padding:6px 14px; color:#333;">插入新机场</div>
-        <div class="ctx-item" id="ctx-delete-row" style="cursor:pointer;padding:6px 14px;color:#333;display:none;border-top:1px solid #eee;">删除此行</div>
+        <div class="ctx-item" id="ctx-add-weather-row">增加天气行</div>
+        <div class="ctx-item" id="ctx-delete-weather-row">删除当前天气行</div>
+        <div class="ctx-item" id="ctx-add-airport">新增机场</div>
+        <div class="ctx-item" id="ctx-unconfirm-airport">撤销编发</div>
     </div>
 
         <!-- 🌟 统一配置（唯一数据源）：同步加载 window.OMICS_CONFIG，必须在其他脚本前。 -->

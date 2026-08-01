@@ -240,14 +240,13 @@ textarea:focus { border-color: var(--sf-red); outline: none; background: white; 
     color: #475569;
     font-size: 12px;
 }
-.publish-region-row { display: grid; grid-template-columns: 42px 54px repeat(10, minmax(56px, auto)); align-items: center; gap: 6px; }
+.publish-region-row { display: flex; align-items: center; justify-content: flex-start; flex-wrap: wrap; gap: 6px 14px; }
 .publish-region-toolbar label { display: inline-flex; align-items: center; gap: 3px; cursor: pointer; white-space: nowrap; }
-.publish-region-title, .publish-region-group-title { color: #1E40AF; font-weight: bold; }
-.publish-region-all { color: #0F766E; font-weight: bold; }
+.publish-region-title, .publish-region-group-title { flex: 0 0 42px; color: #1E40AF; font-weight: bold; }
+.publish-region-all { flex: 0 0 54px; color: #0F766E; font-weight: bold; }
 .publish-region-divider { width: 1px; height: 16px; background: #CBD5E1; }
 .publish-command-toolbar { display: flex; gap: 10px; align-items: flex-start; flex-wrap: wrap; border-top: 1px solid #E2E8F0; padding-top: 8px; }
-.publish-command-with-help { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
-.publish-command-with-help small { color: #64748B; font-size: 10px; line-height: 1.2; white-space: nowrap; }
+.publish-command-toolbar > button { flex: 0 0 auto; }
 
 .export-timezone-control, .airport-import-order-control {
     display: flex;
@@ -268,6 +267,8 @@ textarea:focus { border-color: var(--sf-red); outline: none; background: white; 
     cursor: pointer;
 }
 .airport-import-order-control > span { color: #1E40AF; font-weight: bold; }
+.airport-import-order-block { padding-bottom: 4px; border-bottom: 1px solid #E2E8F0; }
+.import-option-help { margin: -4px 0 2px 24px; color: #64748B; font-size: 12px; line-height: 1.5; }
 
 .clear-airports-content { width: 420px; padding: 24px; text-align: left; }
 .clear-airports-content h3 { margin: 0 0 16px; padding-bottom: 10px; border-bottom: 2px solid #C8D5E5; color: #1E40AF; }
@@ -422,14 +423,12 @@ textarea:focus { border-color: var(--sf-red); outline: none; background: white; 
 .tr-edit-extra .edit-note-display { position: absolute; z-index: 1; inset: 0; display: flex; align-items: center; justify-content: center; color: #1E40AF; font-size: 11px; font-weight: bold; }
 .draft-note-cell { position: relative; padding: 4px; }
 .draft-note-cell .edit-note-input { width: 100%; min-height: 26px; box-sizing: border-box; padding: 4px 70px 4px 6px; border: 1px solid #cbd5e1; border-radius: 4px; text-align: center; font-size: 11px; font-weight: bold; color: #1e40af; background: #fff; }
-.draft-note-cell .btn-confirm-edit, .draft-note-cell .btn-delete-extra, .confirmed-note-cell .btn-add-extra { position: absolute; z-index: 2; right: 4px; top: 4px; bottom: 4px; border: 0; border-radius: 4px; padding: 0 8px; color: #fff; background: #dc2626; font-size: 11px; font-weight: bold; cursor: pointer; }
+.draft-note-cell .btn-confirm-edit { position: absolute; z-index: 2; right: 4px; top: 4px; bottom: 4px; border: 0; border-radius: 4px; padding: 0 8px; color: #fff; background: #dc2626; font-size: 11px; font-weight: bold; cursor: pointer; }
 .draft-note-cell .btn-confirm-edit { opacity: 0; pointer-events: none; transition: opacity 0.15s ease; }
 .draft-note-cell:hover .btn-confirm-edit, .draft-note-cell .btn-confirm-edit:focus { opacity: 1; pointer-events: auto; }
-.draft-note-cell .btn-delete-extra { background: #d97706; }
 .confirmed-note-cell { position: relative; padding: 4px; }
-.confirmed-note-cell .edit-note-input { width: 100%; min-height: 26px; box-sizing: border-box; padding-right: 34px; }
-.confirmed-note-cell .btn-add-extra { width: 28px; padding: 0; background: #0f766e; }
-.tr-edit-extra .btn-delete-extra { width: 100%; padding: 6px 0; border: 0; border-radius: 4px; background: #D97706; color: #fff; font-size: 11px; font-weight: bold; }
+.confirmed-note-cell .edit-note-input { width: 100%; min-height: 26px; box-sizing: border-box; padding: 4px 6px; }
+.tr-edit-extra .edit-note-input { padding: 4px 6px; }
 
 .data-cell-editable { cursor: text; }
 .edit-note-input:focus { outline: 2px solid #2563eb; background: white !important; }
@@ -462,8 +461,12 @@ textarea:focus { border-color: var(--sf-red); outline: none; background: white; 
 .airport-delete-x:hover { background: #b91c1c; }
 
 /* 右键菜单统一为普通文字，不再使用颜色/图标强调 */
-#airport-ctx-menu .ctx-item { color: #333 !important; min-width: 120px; }
+#airport-ctx-menu .ctx-item { min-width: 150px; padding: 7px 14px; color: #333 !important; cursor: pointer; border-radius: 3px; }
 #airport-ctx-menu .ctx-item:hover { background: #f1f5f9; }
+#airport-ctx-menu .ctx-item[hidden] { display: none; }
+
+#global-adopt-taf, #global-adopt-ec { background: #16A34A; color: #FFFFFF; }
+#global-adopt-all { background: #7C3AED; color: #FFFFFF; }
 
 /* 🌟 彻底清除悬停导致单元格变白/变灰的问题 */
 #forecast-table tbody tr:hover td.td-data { filter: none !important; opacity: 1 !important; }
