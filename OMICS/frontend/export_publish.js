@@ -585,7 +585,8 @@
             button.textContent = '正在导入...';
             try {
                 const runningMode = useRunning ? (document.querySelector('input[name="import-running-mode"]:checked')?.value || 'filtered') : null;
-                window.configurePublishAirportSources?.({ runningMode, residentGroups });
+                const orderMode = document.querySelector('input[name="import-order-mode"]:checked')?.value || 'default';
+                window.configurePublishAirportSources?.({ runningMode, residentGroups, orderMode });
                 let imported = 0;
                 let needsNetwork = useRunning || residentGroups.length > 0;
                 if (useText) {
@@ -956,12 +957,7 @@
             window.pbState.startDate = utc.toISOString().slice(0, 10);
             window.pbState.startHour = utc.getUTCHours();
             window.pbState.validityHours = Number(data.validity_hours) || 24;
-            const dateInput = document.getElementById('pb-datetime');
-            if (dateInput) dateInput.value = `${data.forecast_date}T${String(data.start_hour_bjt).padStart(2, '0')}:00`;
-            const titleSelect = document.getElementById('pb-main-title-select');
-            if (titleSelect && titleSelect.querySelector(`option[value="${window.pbState.validityHours}"]`)) {
-                titleSelect.value = String(window.pbState.validityHours);
-            }
+            window.syncPublishTimeControls?.({ custom: true });
         }
 
         (data.airports || []).forEach(entry => {
@@ -973,11 +969,11 @@
             const icao = resolved.icao;
             const rows = (entry.rows || []).map(row => row.map(value => {
                 const rawText = String(value ?? '').trim();
-                const text = window.formatPublishWindText ? window.formatPublishWindText(rawText) : rawText;
+                const text = window.formatPublishWindTableText ? window.formatPublishWindTableText(rawText) : rawText;
                 const style = window.getMultiCellStyle ? window.getMultiCellStyle(text) : { bg: 'transparent', fg: '#1e293b', ts: 'none' };
                 return { text, bg: style.bg, fg: style.fg, ts: style.ts || 'none' };
             }));
-            window.pbState.confirmedData[icao] = { rows, notes: entry.notes || rows.map(() => '/') };
+            window.pbState.confirmedData[icao] = { rows, notes: entry.notes || rows.map(() => '/'), origin: 'table' };
             window.pbState.importedAirportTypes[icao] = entry.nature || '普通';
             window.pbState.forceShowAirports.add(icao);
             importedIcaos.push(icao);
@@ -985,6 +981,7 @@
                 window.currentApAnalysis.push({ icao, hasAlert: true, hasAlertEC: false, hasAlertTAF: false, nwp: null, tafRaw: '', tafHourly: null, autoAdoptEC: false, autoAdoptReason: '' });
             }
         });
+        window.registerPublishSourceAirports?.('table', importedIcaos);
         if (unresolved.length) alert('以下机场未能匹配机场字典，已跳过：\n' + unresolved.join('、'));
         return { count: importedIcaos.length, icaos: importedIcaos };
     }
@@ -1005,7 +1002,7 @@
                 window.pbState.forceShowAirports.add(item.icao);
                 displayOnlyCount++;
             } else {
-                window.pbState.confirmedData[item.icao] = { rows: [item.cells], notes: [item.note || '/'] };
+                window.pbState.confirmedData[item.icao] = { rows: [item.cells], notes: [item.note || '/'], origin: 'text' };
                 window.pbState.forceShowAirports.add(item.icao);
             }
             importedIcaos.push(item.icao);
@@ -1014,8 +1011,8 @@
             }
             imported++;
         });
+        if (imported > 0 && window.setTextImportAirports) window.setTextImportAirports(importedIcaos);
         if (imported > 0 && !deferRefresh) {
-            if (window.setTextImportAirports) window.setTextImportAirports(importedIcaos);
             if (window.saveConfirmedDataToLocal) window.saveConfirmedDataToLocal();
             // 🌟 有“仅展示”机场时，必须实际拉取其 TAF/EC 数据（否则表里只有空行）。
             if (displayOnlyCount > 0 && typeof window.loadForecastData === 'function') {

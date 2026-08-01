@@ -56,8 +56,10 @@ if getattr(sys, 'frozen', False):
     OMICS_CONFIG_JS_PATH = os.path.join(_PERSIST_DIR, 'runtime', 'omics_config.js')
 _SETTINGS_WRITE_LOCK = threading.RLock()
 DEFAULT_PERSONNEL_MAP = {"41060711": "吴霄"}
+CURRENT_SETTINGS_SCHEMA_VERSION = 2
 
 DEFAULT_SETTINGS_CONFIG = {
+    "schema_version": CURRENT_SETTINGS_SCHEMA_VERSION,
     "personnel_dict": dict(DEFAULT_PERSONNEL_MAP),
     "paths": {
         "taf_excel_path": "",
@@ -94,7 +96,7 @@ DEFAULT_SETTINGS_CONFIG = {
             "visibility": True,
             "weather": True,
             "temperature": True,
-            "pressure": False
+            "pressure": True
         }
     }
 }
@@ -111,6 +113,21 @@ def deep_merge_dict(base, extra):
         else:
             merged[key] = value
     return merged
+
+
+def upgrade_settings_config(config):
+    """Apply one-time defaults that cannot be expressed by a normal deep merge."""
+    upgraded = copy.deepcopy(config) if isinstance(config, dict) else {}
+    try:
+        saved_version = int(upgraded.get("schema_version", 0) or 0)
+    except (TypeError, ValueError):
+        saved_version = 0
+    if saved_version < CURRENT_SETTINGS_SCHEMA_VERSION:
+        upgraded = deep_merge_dict(upgraded, {
+            "schema_version": CURRENT_SETTINGS_SCHEMA_VERSION,
+            "publish": {"display_elements": {"pressure": True}}
+        })
+    return upgraded
 
 
 def _serialize_config_js(config):
@@ -184,12 +201,19 @@ def load_settings_config():
         # 🌟 首次运行 / 旧版本升级：从旧 settings_config.json 迁移到 omics_config.js。
         legacy = _read_legacy_json_config()
         if legacy is not None:
-            data = deep_merge_dict(data, legacy)
+            data = deep_merge_dict(data, upgrade_settings_config(legacy))
         try:
             _write_config_js(data)
         except Exception as exc:
             LOG.warning("初始化 omics_config.js 失败: %s", exc)
         return data
+    upgraded_saved = upgrade_settings_config(saved)
+    if upgraded_saved != saved:
+        try:
+            _write_config_js(upgraded_saved)
+        except Exception as exc:
+            LOG.warning("升级 omics_config.js 失败: %s", exc)
+    saved = upgraded_saved
     data = deep_merge_dict(data, saved)
     return data
 
@@ -204,10 +228,11 @@ def save_settings_config(settings):
             # 尚未生成 JS 配置时，先把旧 JSON 迁移进来作为基底，避免覆盖历史配置。
             legacy = _read_legacy_json_config()
             if legacy is not None:
-                data = deep_merge_dict(data, legacy)
+                data = deep_merge_dict(data, upgrade_settings_config(legacy))
         else:
-            data = deep_merge_dict(data, saved)
+            data = deep_merge_dict(data, upgrade_settings_config(saved))
         data = deep_merge_dict(data, settings if isinstance(settings, dict) else {})
+        data["schema_version"] = CURRENT_SETTINGS_SCHEMA_VERSION
         # Also keep personnel_mapping.json in sync for launcher/legacy readers.
         if isinstance(data.get("personnel_dict"), dict):
             save_personnel_mapping(data["personnel_dict"])

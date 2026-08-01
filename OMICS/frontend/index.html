@@ -42,47 +42,36 @@
 
                         <div id="pane-pb" class="set-pane" style="display:block;">
                             <h3 style="color:#1e40af; margin-top:0; border-bottom: 2px solid #c8d5e5; padding-bottom: 10px;">⚙ 预报产品参数与过滤</h3>
-                            <div style="display: flex; gap: 15px; margin-bottom: 15px;">
-                                <div style="flex: 1; border: 1px solid #ccc; padding: 15px; border-radius: 6px; background: white; font-size: 13px;">
-                                    <b style="color:#005A9C; display:block; margin-bottom:12px;">自定义时间基准</b>
-                                    <div style="display:flex; flex-direction:column; gap:10px;">
-                                        <div style="display:flex; align-items:center;"><span style="width:110px;">开始日期(UTC):</span><input type="date" id="cfg-start-date" style="flex:1; padding:4px; border:1px solid #ccc; border-radius:4px;"></div>
-                                        <div style="display:flex; align-items:center;"><span style="width:110px;">开始时次(UTC):</span><input type="number" id="cfg-start-hour" style="width:60px; padding:4px; border:1px solid #ccc; border-radius:4px;"><span style="margin-left:5px;">时</span></div>
-                                        <div style="display:flex; align-items:center;"><span style="width:110px;">预报总时长:</span><input type="number" id="cfg-validity" style="width:60px; padding:4px; border:1px solid #ccc; border-radius:4px;"><span style="margin-left:5px;">小时</span></div>
+                            <div class="publish-filter-settings-card">
+                                <b class="publish-settings-card-title">要素过滤及自动采纳阈值</b>
+                                <div class="publish-filter-settings-grid">
+                                    <div class="publish-filter-settings-group">
+                                        <span class="publish-settings-group-title">基础过滤</span>
+                                        <label class="publish-setting-row"><span>风速低于（隐藏）</span><span><input type="number" id="filter-wind-threshold"> m/s</span></label>
+                                        <label class="publish-setting-row"><span>能见度高于（隐藏）</span><span><input type="number" id="filter-vis-threshold"> m</span></label>
+                                        <label class="publish-setting-row"><span>气温展示区间</span><span><input type="number" id="filter-temp-low" class="short-number-input"> 至 <input type="number" id="filter-temp-high" class="short-number-input"> °C</span></label>
+                                        <label class="publish-hide-empty-option"><input type="checkbox" id="filter-hide-empty-airports"> 无要素时自动隐藏该机场</label>
                                     </div>
-                                </div>
-                                <div style="flex: 1; border: 1px solid #ccc; padding: 15px; border-radius: 6px; background: white; font-size: 13px;">
-                                    <b style="color:#005A9C; display:block; margin-bottom:12px;">要素过滤及自动采纳阈值</b>
-                                    <div style="display:flex; flex-direction:column; gap:10px;">
-                                        <div style="display:flex; align-items:center;"><span style="width:110px;">风速低于(隐藏):</span><input type="number" id="filter-wind-threshold" style="width:60px; padding:4px; border:1px solid #ccc; border-radius:4px;"><span style="margin-left:5px;">m/s</span></div>
-                                        <div style="display:flex; align-items:center;"><span style="width:110px;">能见度高于(隐藏):</span><input type="number" id="filter-vis-threshold" style="width:60px; padding:4px; border:1px solid #ccc; border-radius:4px;"><span style="margin-left:5px;">m</span></div>
-                                        <div style="display:flex; align-items:center;"><span style="width:110px;">气温展示区间:</span><input type="number" id="filter-temp-low" style="width:45px; padding:4px; border:1px solid #ccc; border-radius:4px;"><span style="margin:0 5px;">~</span><input type="number" id="filter-temp-high" style="width:45px; padding:4px; border:1px solid #ccc; border-radius:4px;"><span style="margin-left:5px;">°C</span></div>
-                                        <div style="font-weight:bold; color:#d9534f; margin-top:5px; margin-bottom:2px; font-size:12px;">自动采纳 EC 阈值 (无天气也追加):</div>
-                                        <div style="display:flex; align-items:center;"><span style="width:110px;">积冰温度 &lt;:</span><input type="number" id="cfg-ice-temp" value="10" style="width:60px; padding:4px; border:1px solid #ccc; border-radius:4px;"><span style="margin-left:5px;">°C</span></div>
-                                        <div style="display:flex; align-items:center;"><span style="width:110px;">积冰温露差 &lt;:</span><input type="number" id="cfg-ice-dew" value="1" style="width:60px; padding:4px; border:1px solid #ccc; border-radius:4px;"><span style="margin-left:5px;">°C</span></div>
-                                        <div style="display:flex; align-items:center;"><span style="width:110px;">积冰能见度 &lt;:</span><input type="number" id="cfg-ice-vis" value="1500" style="width:60px; padding:4px; border:1px solid #ccc; border-radius:4px;"><span style="margin-left:5px;">m</span></div>
-                                        <div style="display:flex; align-items:center;"><span style="width:110px;">极寒温度 &lt;:</span><input type="number" id="cfg-ext-cold-temp" value="-30" style="width:60px; padding:4px; border:1px solid #ccc; border-radius:4px;"><span style="margin-left:5px;">°C</span></div>
+                                    <div class="publish-filter-settings-group">
+                                        <span class="publish-settings-group-title">EC 自动采纳</span>
+                                        <label class="publish-setting-row"><span>积冰温度低于</span><span><input type="number" id="cfg-ice-temp" value="10"> °C</span></label>
+                                        <label class="publish-setting-row"><span>积冰温露差低于</span><span><input type="number" id="cfg-ice-dew" value="1"> °C</span></label>
+                                        <label class="publish-setting-row"><span>积冰能见度低于</span><span><input type="number" id="cfg-ice-vis" value="1500"> m</span></label>
+                                        <label class="publish-setting-row"><span>极寒温度低于</span><span><input type="number" id="cfg-ext-cold-temp" value="-30"> °C</span></label>
                                     </div>
-                                    <label style="display:block; margin-top:12px; cursor:pointer; color:#dc2626; font-weight:bold;"><input type="checkbox" id="filter-hide-empty-airports"> 无要素时自动隐藏该机场</label>
                                 </div>
                             </div>
 
                             <div style="border: 1px solid #ccc; padding: 15px; border-radius: 6px; background: white; margin-bottom: 15px; font-size: 13px;">
                                 <b style="color:#005A9C;">展示与要素控制</b><br><br>
                                 <div style="margin-bottom:10px;">📋 展示模式: <label style="cursor:pointer;"><input type="radio" name="cfg-display-mode" value="merged" checked>合并显示</label> <label style="margin-left:15px; cursor:pointer;"><input type="radio" name="cfg-display-mode" value="split">分行展示</label></div>
-                                <div style="margin-bottom:10px;">📊 启用要素: <label style="cursor:pointer;"><input type="checkbox" id="cfg-wind" checked>风</label> <label style="margin-left:10px; cursor:pointer;"><input type="checkbox" id="cfg-vis" checked>能见度</label> <label style="margin-left:10px; cursor:pointer;"><input type="checkbox" id="cfg-wx" checked>天气</label> <label style="margin-left:10px; cursor:pointer;"><input type="checkbox" id="cfg-temp" checked>气温</label> <label style="margin-left:10px; cursor:pointer;"><input type="checkbox" id="cfg-pressure">气压</label></div>
+                                <div style="margin-bottom:10px;">📊 启用要素: <label style="cursor:pointer;"><input type="checkbox" id="cfg-wind" checked>风</label> <label style="margin-left:10px; cursor:pointer;"><input type="checkbox" id="cfg-vis" checked>能见度</label> <label style="margin-left:10px; cursor:pointer;"><input type="checkbox" id="cfg-wx" checked>天气</label> <label style="margin-left:10px; cursor:pointer;"><input type="checkbox" id="cfg-temp" checked>气温</label> <label style="margin-left:10px; cursor:pointer;"><input type="checkbox" id="cfg-pressure" checked>气压</label></div>
 
                                 <div style="margin-top: 12px; border: 1px solid #eee; padding: 10px; border-radius: 4px; background:#f8fbff;">
                                     <b>天气现象过滤 (勾选则显示)</b>
                                     <div id="filter-wx-grid" style="margin-top:8px; max-height: 100px; overflow-y: auto;"></div>
                                 </div>
 
-                                <div style="margin-top: 12px; border: 1px solid #eee; padding: 10px; border-radius: 4px; background:#f8fbff;">
-                                    <b>✈ 批量激活区域 (恢复大表时的备选库)</b>
-                                    <div style="margin-top:8px; max-height: 100px; overflow-y: auto;">
-                                        <div id="region-list-domestic"></div><div id="region-list-international"></div>
-                                    </div>
-                                </div>
                             </div>
 
                             <h3 style="color:#1e40af; border-bottom: 2px solid #c8d5e5; padding-bottom: 10px; margin-top:25px;">✈️ 机场性质组与常驻管理</h3>
@@ -293,12 +282,40 @@
                                 <label style="cursor: pointer;"><input type="checkbox" id="global-toggle-ec" checked> EC</label>
                                 <button id="global-expand-ec" class="mini-btn" style="background: #64748b; color: white; border: none; padding: 2px 8px; border-radius: 4px; font-size: 11px;">合并</button>
                                 <button id="global-adopt-ec" class="mini-btn" style="background: #16a34a; color: white; border: none; padding: 2px 8px; border-radius: 4px; font-size: 11px;">一键编发</button>
+                                <button id="global-adopt-all" class="mini-btn publish-bulk-all-btn">一键全编发</button>
                                 </div>
                                 <button id="global-toggle-mode" class="mini-btn" style="background:#0f766e; color:white; border:none; padding:4px 10px; border-radius:4px; font-weight:bold; font-size:12px;">一键全展开</button>
                                 <button id="global-refresh-btn" class="mini-btn" style="background:#2563eb; color:white; border:none; padding:4px 10px; border-radius:4px; font-weight:bold; cursor:pointer;">刷新</button>
                             </div>
+                            <div class="publish-region-toolbar" aria-label="运行机场区域选择">
+                                <span class="publish-region-title">区域:</span>
+                                <label class="publish-region-all"><input type="checkbox" id="publish-region-all" checked> 全部</label>
+                                <span class="publish-region-divider"></span>
+                                <span class="publish-region-group-title">国内</span>
+                                <label><input type="checkbox" class="publish-region-option" value="华南" checked> 华南</label>
+                                <label><input type="checkbox" class="publish-region-option" value="华中" checked> 华中</label>
+                                <label><input type="checkbox" class="publish-region-option" value="华东" checked> 华东</label>
+                                <label><input type="checkbox" class="publish-region-option" value="华北" checked> 华北</label>
+                                <label><input type="checkbox" class="publish-region-option" value="东北" checked> 东北</label>
+                                <label><input type="checkbox" class="publish-region-option" value="西北" checked> 西北</label>
+                                <label><input type="checkbox" class="publish-region-option" value="西南" checked> 西南</label>
+                                <label><input type="checkbox" class="publish-region-option" value="港台" checked> 港台</label>
+                                <span class="publish-region-divider"></span>
+                                <span class="publish-region-group-title">国际</span>
+                                <label><input type="checkbox" class="publish-region-option" value="东亚" checked> 东亚</label>
+                                <label><input type="checkbox" class="publish-region-option" value="东南亚" checked> 东南亚</label>
+                                <label><input type="checkbox" class="publish-region-option" value="南亚" checked> 南亚</label>
+                                <label><input type="checkbox" class="publish-region-option" value="中东" checked> 中东</label>
+                                <label><input type="checkbox" class="publish-region-option" value="中/西亚" checked> 中/西亚</label>
+                                <label><input type="checkbox" class="publish-region-option" value="欧洲" checked> 欧洲</label>
+                                <label><input type="checkbox" class="publish-region-option" value="北美" checked> 北美</label>
+                                <label><input type="checkbox" class="publish-region-option" value="南美" checked> 南美</label>
+                                <label><input type="checkbox" class="publish-region-option" value="澳洲" checked> 澳洲</label>
+                                <label><input type="checkbox" class="publish-region-option" value="非洲" checked> 非洲</label>
+                            </div>
                             <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; border-top:1px solid #e2e8f0; padding-top:8px;">
                                 <button id="global-import-airports-btn" class="mini-btn" style="background:#1d4ed8; color:white; border:none; padding:5px 12px; border-radius:4px; font-weight:bold; cursor:pointer;">导入机场</button>
+                                <button id="global-clear-airports-btn" class="mini-btn publish-clear-btn">清空机场</button>
                                 <button id="global-export-text-btn" class="mini-btn" style="background:#d97706; color:white; border:none; padding:5px 12px; border-radius:4px; font-weight:bold; cursor:pointer;">导出文本</button>
                                 <button id="global-export-image-btn" class="mini-btn" style="background:#10b981; color:white; border:none; padding:5px 12px; border-radius:4px; font-weight:bold; cursor:pointer;">导出图片</button>
                                 <button id="global-export-excel-btn" class="mini-btn" style="background:#059669; color:white; border:none; padding:5px 12px; border-radius:4px; font-weight:bold; cursor:pointer;">导出 Excel</button>
@@ -306,16 +323,16 @@
                         </div>
 
                         <div id="pb-export-header" style="background: #4b5563; color: white; padding: 20px; border-radius: 8px 8px 0 0;">
-                            <select id="pb-main-title-select" style="appearance: none; -webkit-appearance: none; background: transparent; border: none; color: white; font-size: 44px; font-weight: bold; letter-spacing: 2px; text-align: center; display: block; margin: 0 auto 20px auto; cursor: pointer; outline: none; text-align-last: center;">
+                            <select id="pb-main-title-select" style="appearance: none; -webkit-appearance: none; background: transparent; border: none; color: white; font-size: 44px; font-weight: bold; letter-spacing: 0; text-align: center; display: block; margin: 0 auto 20px auto; cursor: pointer; outline: none; text-align-last: center;">
                                 <option value="24" style="color: black; font-size: 18px;">24小时天气预报</option>
                                 <option value="12" style="color: black; font-size: 18px;">12小时天气预报</option>
                                 <option value="8" style="color: black; font-size: 18px;">8小时天气预报</option>
                                 <option value="4" style="color: black; font-size: 18px;">4小时天气预报</option>
                                 <option value="48" style="color: black; font-size: 18px;">48小时天气预报</option>
-                                <option value="custom" style="color: black; font-size: 18px;">⚙️ 自定义参数预报</option>
+                                <option value="custom" style="color: black; font-size: 18px;">自定义参数预报</option>
                             </select>
 
-                            <div style="display: flex; justify-content: space-between; flex-wrap: nowrap; gap: 8px; margin: 0 auto 20px auto; width: 75%;">
+                            <div class="pb-alert-summary" style="display: flex; justify-content: space-between; flex-wrap: nowrap; gap: 8px; margin: 0 auto 20px auto; width: 75%;">
                                 <div style="background: #dc2626; color: white; padding: 6px 0; text-align: center; flex: 1; border-radius: 4px;">
                                     <div style="font-size: 11px; margin-bottom: 2px;">雷暴</div><div id="count-ts" style="font-size: 16px; font-weight: bold;">0</div>
                                 </div>
@@ -339,11 +356,32 @@
                                 </div>
                             </div>
 
-                            <div style="display: flex; justify-content: space-between; align-items: flex-end; border-top: 1px solid #6b7280; padding-top: 12px;">
-                                <div style="font-size: 13px; font-weight: bold;">
-                                    日期(北京时)&nbsp;&nbsp;<input type="datetime-local" id="pb-datetime" style="padding: 4px 8px; border-radius: 4px; border: none; background: #374151; color: white; outline: none;">
+                            <div class="pb-header-meta" style="display: flex; justify-content: space-between; align-items: flex-end; border-top: 1px solid #6b7280; padding-top: 12px;">
+                                <div id="pb-time-control" class="pb-time-control">
+                                    <span class="pb-time-control-label">日期（北京时）</span>
+                                    <button type="button" id="pb-time-trigger" class="pb-time-trigger" title="设置发布时段" aria-expanded="false" aria-controls="pb-time-popover">
+                                        <span id="pb-date-display">--</span><span class="pb-time-trigger-chevron" aria-hidden="true"></span>
+                                    </button>
+                                    <div id="pb-time-popover" class="pb-time-popover" hidden>
+                                        <label class="pb-time-field">
+                                            <span>基准日期（北京时）</span>
+                                            <input type="date" id="pb-datetime">
+                                        </label>
+                                        <label class="pb-time-field">
+                                            <span>开始时次（UTC）</span>
+                                            <span class="pb-time-input-with-unit"><input type="number" id="pb-start-hour" min="0" max="23" step="1"><span>时</span></span>
+                                        </label>
+                                        <label class="pb-time-field">
+                                            <span>预报总时长</span>
+                                            <span class="pb-time-input-with-unit"><input type="number" id="pb-validity-hours" min="1" max="168" step="1"><span>小时</span></span>
+                                        </label>
+                                        <div class="pb-time-actions">
+                                            <button type="button" id="pb-time-cancel" class="pb-time-action pb-time-action-secondary">取消</button>
+                                            <button type="button" id="pb-time-apply" class="pb-time-action pb-time-action-primary">应用</button>
+                                        </div>
+                                    </div>
                                 </div>
-                                <div style="font-size: 13px; font-weight: bold;">
+                                <div class="pb-forecaster-control" style="font-size: 13px; font-weight: bold;">
                                     预报员:<input type="text" id="pb-forecaster" style="width: 80px; padding: 4px; border-radius: 4px; border: none; background: #374151; color: white; text-align: center;">
                                 </div>
                             </div>
@@ -546,6 +584,10 @@
             <div class="modal-content" style="width: 640px; padding: 25px;">
                 <span class="close-button" id="close-export-modal">&times;</span>
                 <h3 style="color:#1e40af; margin-top:0; border-bottom:2px solid #c8d5e5; padding-bottom:10px;">导出文本</h3>
+                <div class="export-timezone-control" role="radiogroup" aria-label="导出文本时间标准">
+                    <label><input type="radio" name="export-text-timezone" value="bjt" checked> 北京时</label>
+                    <label><input type="radio" name="export-text-timezone" value="utc"> 世界时</label>
+                </div>
                 <textarea id="export-text-content" rows="15" style="width:100%; border:1px solid #ccc; border-radius:4px; padding:10px; font-family:monospace; font-size:14px; line-height:1.6; resize:vertical; background: #fdfdfd; outline:none;"></textarea>
                 <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:15px; border-top: 1px solid #eee; padding-top: 15px;">
                     <button id="copy-export-text-btn" class="step-button" style="padding:10px 25px; margin:0; font-size:14px; background:#28a745;">复制到剪贴板</button>
@@ -558,6 +600,11 @@
                 <span class="close-button" id="close-airport-import-modal">&times;</span>
                 <h3 style="color:#1e40af; margin-top:0; border-bottom:2px solid #c8d5e5; padding-bottom:10px;">导入机场</h3>
                 <div style="display:grid; gap:10px; font-size:13px;">
+                    <div class="airport-import-order-control">
+                        <span>显示顺序</span>
+                        <label><input type="radio" name="import-order-mode" value="default" checked> 默认顺序</label>
+                        <label><input type="radio" name="import-order-mode" value="import"> 导入顺序</label>
+                    </div>
                     <label><input type="checkbox" id="import-source-running"> 导入运行机场</label>
                     <div id="import-running-options" style="margin-left:24px; display:flex; gap:18px;">
                         <label><input type="radio" name="import-running-mode" value="filtered" checked> 筛选</label>
@@ -579,6 +626,25 @@
                 <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:16px; border-top:1px solid #eee; padding-top:15px;">
                     <button id="check-import-text-btn" class="step-button" style="padding:9px 18px; margin:0; font-size:13px; background:#f59e0b;">检查文字</button>
                     <button id="execute-airport-import-btn" class="step-button" style="padding:9px 24px; margin:0; font-size:13px; background:#2563eb;">导入所选内容</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="clear-airports-modal" class="modal" style="display:none; z-index:10000;">
+            <div class="modal-content clear-airports-content">
+                <span class="close-button" id="close-clear-airports-modal">&times;</span>
+                <h3>清空机场</h3>
+                <div class="clear-airports-options">
+                    <label class="clear-airports-all"><input type="checkbox" id="clear-source-all"> 全部来源</label>
+                    <label><input type="checkbox" class="clear-source-option" value="running"> 运行机场 <span id="clear-count-running">0</span></label>
+                    <label><input type="checkbox" class="clear-source-option" value="resident"> 常驻机场 <span id="clear-count-resident">0</span></label>
+                    <label><input type="checkbox" class="clear-source-option" value="text"> 文字导入 <span id="clear-count-text">0</span></label>
+                    <label><input type="checkbox" class="clear-source-option" value="table"> 表格导入 <span id="clear-count-table">0</span></label>
+                    <label><input type="checkbox" class="clear-source-option" value="custom"> 手动添加 <span id="clear-count-custom">0</span></label>
+                </div>
+                <div class="clear-airports-actions">
+                    <button type="button" id="cancel-clear-airports" class="pb-time-action pb-time-action-secondary">取消</button>
+                    <button type="button" id="confirm-clear-airports" class="pb-time-action clear-airports-confirm">清空所选</button>
                 </div>
             </div>
         </div>

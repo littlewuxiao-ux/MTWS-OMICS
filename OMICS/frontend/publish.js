@@ -78,9 +78,26 @@ const AIRPORT_CFG = {
     "华南": ["ZGSZ","ZGGG","ZGOW","ZGSD"], "华中": ["ZHEC","ZHHH","ZGHA","ZHCC"],
     "华东": ["ZSPD","ZSHC","ZSNB","ZSWZ","ZSYW","ZSFZ","ZSQZ","ZSAM","ZSOF","ZSNJ","ZSNT","ZSWX","ZSXZ","ZSJN","ZSWF","ZSQD","ZSYT"],
     "华北": ["ZBAA","ZBHH","ZBSJ","ZBYN","ZBTJ"], "东北": ["ZYTX","ZYTL","ZYHB","ZYCC"],
-    "西北": ["ZLLL","ZLXY","ZWWW"], "西南": ["ZUUU","ZPPP","ZULS","ZUCK","ZUGY"], "港台": ["VHHH","RCTP"]
+    "西北": ["ZLLL","ZLXY","ZWWW"], "西南": ["ZUUU","ZPPP","ZULS","ZUCK","ZUGY"], "港台": ["VHHH","RCTP","VMMC"]
+  },
+  "international": {
+    "东亚": ["RJAA","RJTT","RJBB","RKSI","RKSS","RKPC"],
+    "东南亚": ["VTBS","VVTS","VVNB","RPLL","VYYY","WMKK","WMKP","WSSS"],
+    "南亚": ["VIDP","VOMM","VABB","VOBL","VGHS","OPLA","OPIS"],
+    "中东": ["OMAA","OMDB"],
+    "中/西亚": ["OAKB","UTTT","UAAA","UAKK","UACC"],
+    "欧洲": ["EBLG","EDDF","LHBP","ENGM","EGNX","EGLL","LFPG","EHAM"],
+    "北美": ["PANC","KLAX","KJFK","KORD"],
+    "南美": [],
+    "澳洲": [],
+    "非洲": []
   }
 };
+
+const PUBLISH_REGION_NAMES = [
+  ...Object.keys(AIRPORT_CFG.domestic),
+  ...Object.keys(AIRPORT_CFG.international)
+];
 
 const ALL_WX_PHENOMENA = ['小雨','中雨','大雨','暴雨','小阵雨','中阵雨','大阵雨','弱冻雨','中冻雨','大冻雨','小雪','中雪','大雪','小阵雪','中阵雪','大阵雪','雨夹雪','弱雷雨','中雷雨','强雷雨','干雷','雾','霾','浮尘','沙暴'];
 const WX_DEFAULT_HIDDEN = new Set(['小雨', '小阵雨']);
@@ -96,7 +113,7 @@ const DEFAULT_AIRPORT_GROUPS = [
 
 const pbState = {
   startDate: '', startHour: 0, validityHours: 24,
-  showWind: true, showVis: true, showWeatherCode: true, showTemp: true, showPressure: false,
+  showWind: true, showVis: true, showWeatherCode: true, showTemp: true, showPressure: true,
   enabledRegions: {}, customCoords: {}, filterWx: {},
   filterWindThreshold: 15, filterVisThreshold: 1600, filterTempHigh: 33, filterTempLow: -28,
   filterHideEmptyAirports: true,
@@ -104,6 +121,11 @@ const pbState = {
   selectedResidentGroups: new Set(),
   runningImportMode: null,
   runningAllAirports: new Set(),
+  airportOrderMode: 'default',
+  importSequence: [],
+  sourceAirports: {
+    running: new Set(), resident: new Set(), text: new Set(), table: new Set(), custom: new Set()
+  },
   importedAirportTypes: {},
   expandedAirports: new Set(), 
   forceShowAirports: new Set(),
@@ -112,7 +134,8 @@ const pbState = {
   defaultShowTaf: true, defaultShowEc: false,
   confirmedData: {},
   // 🌟 一键编发状态：记录本次批量采纳的机场，供撤回
-  bulkAdopted: { taf: [], ec: [] },
+  bulkAdopted: { taf: null, ec: null, all: null },
+  sourceForecastCache: {},
   // 🌟 需求C：新增极寒与积冰配置参数
   cfgIceTemp: 10, cfgIceDew: 1, cfgIceVis: 1500, cfgExtColdTemp: -30
 };
@@ -138,22 +161,89 @@ function isTextImportModeActive() {
 }
 
 window.setTextImportAirports = function(icaos) {
-    pbState.textImportAirports = new Set((icaos || []).map(v => String(v || '').trim().toUpperCase()).filter(Boolean));
+    const normalized = (icaos || []).map(v => String(v || '').trim().toUpperCase()).filter(Boolean);
+    pbState.textImportAirports = new Set(normalized);
+    pbState.sourceAirports.text = new Set(normalized);
+    recordImportSequence(normalized);
 };
 
 window.clearTextImportAirports = function() {
     pbState.textImportAirports = new Set();
+    pbState.sourceAirports.text.clear();
 };
 
-window.configurePublishAirportSources = function({ runningMode = null, residentGroups = [] } = {}) {
+function recordImportSequence(icaos) {
+    (icaos || []).forEach(raw => {
+        const icao = String(raw || '').trim().toUpperCase();
+        if (!icao) return;
+        const oldIndex = pbState.importSequence.indexOf(icao);
+        if (oldIndex !== -1) pbState.importSequence.splice(oldIndex, 1);
+        pbState.importSequence.push(icao);
+    });
+}
+
+function registerSourceAirports(source, icaos, { replace = false } = {}) {
+    if (!pbState.sourceAirports[source]) pbState.sourceAirports[source] = new Set();
+    if (replace) pbState.sourceAirports[source].clear();
+    const normalized = (icaos || []).map(v => String(v || '').trim().toUpperCase()).filter(Boolean);
+    normalized.forEach(icao => pbState.sourceAirports[source].add(icao));
+    recordImportSequence(normalized);
+}
+
+window.registerPublishSourceAirports = registerSourceAirports;
+
+function getAirportRegion(icao) {
+    for (const scope of ['domestic', 'international']) {
+        for (const [region, airports] of Object.entries(AIRPORT_CFG[scope])) {
+            if (airports.includes(icao)) return region;
+        }
+    }
+    const domesticPrefixes = [
+        ['华北', /^ZB/], ['东北', /^ZY/], ['华东', /^ZS/], ['华南', /^ZG/],
+        ['华中', /^ZH/], ['西北', /^Z[WL]/], ['西南', /^Z[UP]/]
+    ];
+    for (const [region, pattern] of domesticPrefixes) {
+        if (pattern.test(icao)) return region;
+    }
+    const internationalPrefixes = [
+        ['东南亚', /^(?:RP|VD|VL|VM|VT|VV|VY|WB|WI|WM|WR|WS)/],
+        ['南亚', /^(?:OP|VA|VC|VE|VG|VI|VN|VO|VR)/],
+        ['中东', /^(?:OB|OE|OJ|OK|OL|OM|OO|OR|OS|OT|OY)/],
+        ['中/西亚', /^(?:OA|OI|UA|UB|UC|UD|UG|UK|UT)/],
+        ['东亚', /^(?:R|ZM)/], ['欧洲', /^(?:E|L|U)/],
+        ['北美', /^(?:C|K|M|P)/], ['南美', /^S/],
+        ['澳洲', /^(?:A|N|Y|NZ)/], ['非洲', /^(?:D|F|G|H)/]
+    ];
+    for (const [region, pattern] of internationalPrefixes) {
+        if (pattern.test(icao)) return region;
+    }
+    return '';
+}
+
+function isAirportRegionEnabled(icao) {
+    const allControl = document.getElementById('publish-region-all');
+    if (allControl?.checked) return true;
+    const region = getAirportRegion(icao);
+    return !!region && pbState.enabledRegions[region] !== false;
+}
+
+window.configurePublishAirportSources = function({ runningMode = null, residentGroups = [], orderMode = 'default' } = {}) {
     pbState.runningAllAirports.forEach(icao => {
         if (!pbState.textImportAirports.has(icao) && !pbState.confirmedData[icao] && !pbState.customCoords[icao]) {
             pbState.forceShowAirports.delete(icao);
         }
     });
     pbState.runningAllAirports.clear();
+    pbState.sourceAirports.running.clear();
+    pbState.sourceAirports.resident.clear();
     pbState.runningImportMode = runningMode === 'all' || runningMode === 'filtered' ? runningMode : null;
     pbState.selectedResidentGroups = new Set((residentGroups || []).map(String));
+    pbState.airportOrderMode = orderMode === 'import' ? 'import' : 'default';
+    const residentAirports = [];
+    pbState.airportGroups.forEach((group, index) => {
+        if (pbState.selectedResidentGroups.has(String(index))) residentAirports.push(...group.airports);
+    });
+    registerSourceAirports('resident', residentAirports, { replace: true });
 };
 
 window.getPublishAirportGroups = function() {
@@ -161,6 +251,81 @@ window.getPublishAirportGroups = function() {
 };
 
 window.loadForecastData = loadForecastData;
+
+function clearAirportsBySources(sources) {
+    const selected = new Set(sources || []);
+    const sourceNames = Object.keys(pbState.sourceAirports);
+    const clearAll = sourceNames.every(source => selected.has(source));
+    const affected = new Set();
+    selected.forEach(source => pbState.sourceAirports[source]?.forEach(icao => affected.add(icao)));
+
+    selected.forEach(source => pbState.sourceAirports[source]?.clear());
+    if (selected.has('running')) {
+        pbState.runningImportMode = null;
+        pbState.runningAllAirports.clear();
+    }
+    if (selected.has('resident')) pbState.selectedResidentGroups.clear();
+    if (selected.has('text')) pbState.textImportAirports.clear();
+    if (selected.has('custom')) {
+        Object.keys(pbState.customCoords).forEach(icao => delete pbState.customCoords[icao]);
+    }
+
+    const remaining = new Set();
+    sourceNames.forEach(source => pbState.sourceAirports[source].forEach(icao => remaining.add(icao)));
+    affected.forEach(icao => {
+        if (!remaining.has(icao)) {
+            delete pbState.confirmedData[icao];
+            delete pbState.importedAirportTypes[icao];
+            delete pbState.sourceForecastCache[icao];
+            pbState.forceShowAirports.delete(icao);
+        }
+    });
+
+    if (clearAll) {
+        pbState.confirmedData = {};
+        pbState.customCoords = {};
+        pbState.forceShowAirports.clear();
+        pbState.importSequence = [];
+        pbState.sourceForecastCache = {};
+        window.currentApAnalysis = [];
+    } else {
+        pbState.importSequence = pbState.importSequence.filter(icao => remaining.has(icao));
+        window.currentApAnalysis = (window.currentApAnalysis || []).filter(item => remaining.has(item.icao) || pbState.confirmedData[item.icao]);
+    }
+    pbState.bulkAdopted = { taf: null, ec: null, all: null };
+    window.saveConfirmedDataToLocal?.();
+    renderPublishTableTriRow(window.currentApAnalysis || []);
+    refreshBulkButtons();
+}
+
+function setupClearAirportsControls() {
+    const modal = document.getElementById('clear-airports-modal');
+    const allControl = document.getElementById('clear-source-all');
+    const options = Array.from(document.querySelectorAll('.clear-source-option'));
+    const close = () => { if (modal) modal.style.display = 'none'; };
+    document.getElementById('global-clear-airports-btn')?.addEventListener('click', () => {
+        options.forEach(option => {
+            option.checked = false;
+            const count = pbState.sourceAirports[option.value]?.size || 0;
+            const countElement = document.getElementById(`clear-count-${option.value}`);
+            if (countElement) countElement.textContent = String(count);
+        });
+        if (allControl) allControl.checked = false;
+        if (modal) modal.style.display = 'flex';
+    });
+    document.getElementById('close-clear-airports-modal')?.addEventListener('click', close);
+    document.getElementById('cancel-clear-airports')?.addEventListener('click', close);
+    allControl?.addEventListener('change', () => options.forEach(option => { option.checked = allControl.checked; }));
+    options.forEach(option => option.addEventListener('change', () => {
+        if (allControl) allControl.checked = options.every(item => item.checked);
+    }));
+    document.getElementById('confirm-clear-airports')?.addEventListener('click', () => {
+        const sources = options.filter(option => option.checked).map(option => option.value);
+        if (!sources.length) return;
+        clearAirportsBySources(sources);
+        close();
+    });
+}
 
 // ==========================================
 // 1. 初始化引擎
@@ -223,7 +388,7 @@ window.initPublishModule = async function() {
         PBLOG('initTopBarData 失败: ' + (e && e.stack ? e.stack : e), 'ERROR');
     }
     ALL_WX_PHENOMENA.forEach(wx => { pbState.filterWx[wx] = !WX_DEFAULT_HIDDEN.has(wx); });
-    [...Object.keys(AIRPORT_CFG.domestic)].forEach(r => { pbState.enabledRegions[r] = true; });
+    PUBLISH_REGION_NAMES.forEach(region => { pbState.enabledRegions[region] = true; });
 
     try {
         setupQuickTimeOptions(); 
@@ -233,6 +398,7 @@ window.initPublishModule = async function() {
         setupAirportInteraction();
         renderAirportGroupsConfig(); 
         setupGlobalToolbar(); 
+        setupClearAirportsControls();
         PBLOG('交互组件初始化完成');
     } catch (e) {
         PBLOG('交互组件初始化失败: ' + (e && e.stack ? e.stack : e), 'ERROR');
@@ -301,29 +467,85 @@ function initTopBarData() {
     const yyyy = now.getUTCFullYear();
     const mm = String(now.getUTCMonth() + 1).padStart(2, '0');
     const dd = String(now.getUTCDate()).padStart(2, '0');
-    const hh = String(now.getUTCHours()).padStart(2, '0');
     const dp = document.getElementById('pb-datetime');
-    if(dp) dp.value = `${yyyy}-${mm}-${dd}T${hh}:00`;
+    if(dp) dp.value = `${yyyy}-${mm}-${dd}`;
     applyTimePreset('24'); 
 }
+
+function getBjtBaseDateFromState() {
+    if (!pbState.startDate) return '';
+    const hour = String(pbState.startHour || 0).padStart(2, '0');
+    const startMs = new Date(`${pbState.startDate}T${hour}:00:00Z`).getTime();
+    if (!Number.isFinite(startMs)) return '';
+    return new Date(startMs + 8 * 3600000).toISOString().slice(0, 10);
+}
+
+function setPublishTimeFromBjtDate(baseDateBjt, startHourUtc, validityHours) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(baseDateBjt || '');
+    if (!match) return false;
+
+    const utcHour = Math.min(23, Math.max(0, Number.parseInt(startHourUtc, 10)));
+    const duration = Math.min(168, Math.max(1, Number.parseInt(validityHours, 10)));
+    if (!Number.isFinite(utcHour) || !Number.isFinite(duration)) return false;
+
+    const [, year, month, day] = match.map(Number);
+    let utcDateMs = Date.UTC(year, month - 1, day);
+    // 16-23 UTC 对应次日 00-07 北京时，因此 UTC 日期需回退一天。
+    if (utcHour >= 16) utcDateMs -= 24 * 3600000;
+
+    pbState.startDate = new Date(utcDateMs).toISOString().slice(0, 10);
+    pbState.startHour = utcHour;
+    pbState.validityHours = duration;
+    return true;
+}
+
+function setCustomPublishTitle() {
+    const titleSelect = document.getElementById('pb-main-title-select');
+    if (!titleSelect) return;
+    let option = titleSelect.querySelector('option[value="custom"]');
+    if (!option) {
+        option = document.createElement('option');
+        option.value = 'custom';
+        titleSelect.appendChild(option);
+    }
+    option.textContent = `${pbState.validityHours}小时天气预报`;
+    titleSelect.value = 'custom';
+    titleSelect.dataset.appliedValue = 'custom';
+}
+
+function syncPublishTimeControls({ custom = false } = {}) {
+    const baseDateBjt = getBjtBaseDateFromState();
+    const dateInput = document.getElementById('pb-datetime');
+    const hourInput = document.getElementById('pb-start-hour');
+    const validityInput = document.getElementById('pb-validity-hours');
+    const dateDisplay = document.getElementById('pb-date-display');
+    if (dateInput && baseDateBjt) dateInput.value = baseDateBjt;
+    if (hourInput) hourInput.value = pbState.startHour;
+    if (validityInput) validityInput.value = pbState.validityHours;
+    if (dateDisplay) dateDisplay.textContent = baseDateBjt || '--';
+    if (custom) setCustomPublishTitle();
+}
+
+window.syncPublishTimeControls = syncPublishTimeControls;
 
 function applyTimePreset(val) {
     const dp = document.getElementById('pb-datetime');
     if(!dp || !dp.value) return;
+
+    if (val === 'custom') {
+        openPublishTimePopover();
+        return;
+    }
     
-    let bjtDate = new Date(dp.value);
+    const [year, month, day] = dp.value.split('-').map(Number);
+    const bjtDate = new Date(year, month - 1, day);
     let sHourBJT = 0; let vHours = 24; 
     
     if (val === '24') { sHourBJT = 15; vHours = 24; }
     else if (val === '12') { sHourBJT = 8; vHours = 12; }
     else if (val === '8') { sHourBJT = 20; vHours = 8; }
     else if (val === '4') { sHourBJT = 4; vHours = 4; }
-    else if (val === '48') { sHourBJT = bjtDate.getHours(); vHours = 48; }
-    else if (val === 'custom') { 
-        document.getElementById('publish-settings-btn')?.click(); 
-        document.querySelector('.set-nav[data-target="pane-pb"]')?.click(); 
-        return; 
-    }
+    else if (val === '48') { sHourBJT = new Date(Date.now() + 8 * 3600000).getUTCHours(); vHours = 48; }
 
     const utcH = (sHourBJT - 8 + 24) % 24;
     const baseUTC = new Date(Date.UTC(bjtDate.getFullYear(), bjtDate.getMonth(), bjtDate.getDate(), utcH, 0, 0));
@@ -332,6 +554,15 @@ function applyTimePreset(val) {
     pbState.startDate = baseUTC.toISOString().split('T')[0];
     pbState.startHour = baseUTC.getUTCHours();
     pbState.validityHours = vHours;
+
+    const titleSelect = document.getElementById('pb-main-title-select');
+    if (titleSelect) {
+        const customOption = titleSelect.querySelector('option[value="custom"]');
+        if (customOption) customOption.textContent = '自定义参数预报';
+        titleSelect.value = val;
+        titleSelect.dataset.appliedValue = val;
+    }
+    syncPublishTimeControls();
 
     pbState.filterWindThreshold = 15;
     pbState.filterVisThreshold = 1600;
@@ -354,67 +585,210 @@ function recomputeAlertsAndRerender() {
 }
 window.recomputeAlertsAndRerender = recomputeAlertsAndRerender;
 
-// 🌟 从 DOM 采集指定机场的编辑行内容并写入 confirmedData（不触发重渲染）。
-// 抽自 btnConfirm 逻辑，供一键编发批量复用。返回是否采纳到实际数据。
-function gatherRowIntoConfirmed(icao) {
-    const allIcaoRows = Array.from(document.querySelectorAll(`tr[data-icao="${icao}"]`)).filter(r => r.classList.contains('tr-edit') || r.classList.contains('tr-edit-extra'));
-    if (!allIcaoRows.length) return false;
-    const cRows = []; const cNotes = []; let allClear = true;
-    allIcaoRows.forEach(row => {
-        const rowCells = [];
-        row.querySelectorAll('.edit-cell').forEach(td => {
-            const txt = td.textContent.trim();
-            if (txt !== '') allClear = false;
-            rowCells.push({ text: txt, bg: td.style.background, fg: td.style.color, ts: td.style.textShadow });
+function sourceRowsFromTableRow(sourceTr) {
+    if (!sourceTr) return { rows: [], note: '适航' };
+    const cellTokens = Array.from(sourceTr.querySelectorAll('.col-time')).map(cell =>
+        cell.textContent.trim().split(/\s+/).filter(token => token && token !== '—')
+    );
+    const maxRows = Math.max(1, ...cellTokens.map(tokens => tokens.length));
+    const note = sourceTr.querySelector('.col-op')?.dataset.note?.trim() || '';
+    const rows = [];
+    for (let rowIndex = 0; rowIndex < maxRows; rowIndex++) {
+        const cells = cellTokens.map(tokens => {
+            const text = tokens[rowIndex] || '';
+            const style = getMultiCellStyle(text);
+            return { text, bg: style.bg, fg: style.fg, ts: style.ts || 'none' };
         });
-        cRows.push(rowCells);
-        let note = '';
-        const noteDisplay = row.querySelector('.edit-note-display');
-        if (noteDisplay) note = noteDisplay.textContent.trim();
-        else { const ni = row.querySelector('.edit-note-input'); if (ni) note = ni.value.trim(); }
-        cNotes.push(note);
-    });
-    // 批量采纳时，若该机场在选定数据源下无任何要素，则不强制编发（避免把全部机场都标适航）。
-    if (allClear) return false;
-    cNotes.forEach((n, idx) => { if (!n) cNotes[idx] = "/"; });
-    pbState.confirmedData[icao] = { rows: cRows, notes: cNotes };
-    return true;
+        rows.push(cells);
+    }
+    const hasWeather = rows.some(row => row.some(cell => cell.text));
+    return { rows, note: hasWeather ? (note || '/') : '适航' };
 }
 
-// 🌟 绑定一键编发按钮（可重入，setupGlobalToolbar 每次渲染都会调用）。
+function getSourceForecastData(icao, source) {
+    return pbState.sourceForecastCache[icao]?.[source] || { rows: [], note: '适航' };
+}
+
+function appendSourceRowsToConfirmed(icao, source, sourceData, rowTag) {
+    const incomingRows = sourceData?.rows?.length ? sourceData.rows : [[...Array(pbState.validityHours + 1)].map(() => ({ text: '', bg: 'transparent', fg: '#1e293b', ts: 'none' }))];
+    const incomingNotes = incomingRows.map((_, index) => index === 0 ? (sourceData.note || '适航') : '/');
+    const existing = pbState.confirmedData[icao] || { rows: [], notes: [], rowSources: [], origin: 'bulk' };
+    const rows = existing.rows || [];
+    const notes = existing.notes || [];
+    const rowSources = existing.rowSources || rows.map(() => null);
+    incomingRows.forEach((row, index) => {
+        rows.push(row.map(cell => ({ ...cell })));
+        notes.push(incomingNotes[index]);
+        rowSources.push(rowTag);
+    });
+    pbState.confirmedData[icao] = { ...existing, rows, notes, rowSources, origin: existing.origin || 'bulk' };
+}
+
+function rollbackBulkTag(rowTag) {
+    Object.keys(pbState.confirmedData).forEach(icao => {
+        const data = pbState.confirmedData[icao];
+        const sources = data.rowSources || [];
+        if (!sources.includes(rowTag)) return;
+        const keep = sources.map((source, index) => source !== rowTag ? index : -1).filter(index => index >= 0);
+        data.rows = keep.map(index => data.rows[index]);
+        data.notes = keep.map(index => data.notes?.[index] || '/');
+        data.rowSources = keep.map(index => sources[index] || null);
+        if (!data.rows.length) delete pbState.confirmedData[icao];
+    });
+}
+
+function getBulkTargetIcaos() {
+    return Object.keys(pbState.sourceForecastCache).filter(icao => {
+        const tr = document.querySelector(`#forecast-table tr.tr-edit[data-icao="${icao}"]`);
+        return !!tr;
+    });
+}
+
+function setBulkButtonState(btn, active, label) {
+    if (!btn) return;
+    btn.textContent = active ? '撤回编发' : label;
+    btn.style.background = active ? '#d97706' : '';
+}
+
+function refreshBulkButtons() {
+    setBulkButtonState(document.getElementById('global-adopt-taf'), !!pbState.bulkAdopted.taf?.tags?.length, '一键编发');
+    setBulkButtonState(document.getElementById('global-adopt-ec'), !!pbState.bulkAdopted.ec?.tags?.length, '一键编发');
+    setBulkButtonState(document.getElementById('global-adopt-all'), !!pbState.bulkAdopted.all?.tags?.length, '一键全编发');
+}
+
+function applyBulkAdoption(source) {
+    const active = pbState.bulkAdopted[source];
+    if (active?.tags?.length) {
+        active.tags.forEach(rollbackBulkTag);
+        pbState.bulkAdopted[source] = null;
+    } else {
+        const tag = `bulk-${source}-${Date.now()}`;
+        const targets = getBulkTargetIcaos();
+        targets.forEach(icao => appendSourceRowsToConfirmed(icao, source, getSourceForecastData(icao, source), tag));
+        pbState.bulkAdopted[source] = { tags: [tag], airports: targets };
+    }
+    window.saveConfirmedDataToLocal?.();
+    renderPublishTableTriRow(window.currentApAnalysis);
+    refreshBulkButtons();
+}
+
 function setupBulkAdoptButton(btnId, source) {
     const btn = document.getElementById(btnId);
     if (!btn) return;
-    pbState.bulkAdopted = pbState.bulkAdopted || { taf: [], ec: [] };
-    const isOn = (pbState.bulkAdopted[source] || []).length > 0;
-    btn.textContent = isOn ? '撤回编发' : '一键编发';
-    btn.style.background = isOn ? '#d97706' : '#16a34a';
+    setBulkButtonState(btn, !!pbState.bulkAdopted[source]?.tags?.length, '一键编发');
+    btn.onclick = () => applyBulkAdoption(source);
+}
+
+function setupBulkAllButton() {
+    const btn = document.getElementById('global-adopt-all');
+    if (!btn) return;
+    const active = pbState.bulkAdopted.all?.tags?.length;
+    setBulkButtonState(btn, !!active, '一键全编发');
     btn.onclick = () => {
-        pbState.bulkAdopted = pbState.bulkAdopted || { taf: [], ec: [] };
-        const already = (pbState.bulkAdopted[source] || []).length > 0;
-        if (already) {
-            // 退回：仅删除本次批量采纳的机场确认数据。
-            (pbState.bulkAdopted[source] || []).forEach(icao => { delete pbState.confirmedData[icao]; });
-            pbState.bulkAdopted[source] = [];
-            if (window.saveConfirmedDataToLocal) window.saveConfirmedDataToLocal();
-            renderPublishTableTriRow(window.currentApAnalysis);
-            return;
+        const current = pbState.bulkAdopted.all;
+        if (current?.tags?.length) {
+            current.tags.forEach(rollbackBulkTag);
+            pbState.bulkAdopted.all = null;
+        } else {
+            const tags = [`bulk-all-taf-${Date.now()}`, `bulk-all-ec-${Date.now()}`];
+            const targets = getBulkTargetIcaos();
+            targets.forEach(icao => {
+                const tafData = getSourceForecastData(icao, 'taf');
+                const ecData = getSourceForecastData(icao, 'ec');
+                appendSourceRowsToConfirmed(icao, 'taf', tafData, tags[0]);
+                appendSourceRowsToConfirmed(icao, 'ec', ecData, tags[1]);
+            });
+            pbState.bulkAdopted.all = { tags, airports: targets };
         }
-        // 采纳：先点击所有未确认行的对应采纳按钮填充编辑行，再统一写入 confirmedData。
-        const btnClass = source === 'taf' ? '.btn-adopt-taf' : '.btn-adopt-nwp';
-        const adoptBtns = Array.from(document.querySelectorAll(`#forecast-table ${btnClass}`));
-        adoptBtns.forEach(b => b.click());
-        // 采集当前所有未确认机场的 icao（此刻仍渲染为未确认状态）。
-        const unconfirmedIcaos = Array.from(document.querySelectorAll('#forecast-table tr.tr-edit'))
-            .filter(r => r.dataset.confirmed === 'false' && r.dataset.icao)
-            .map(r => r.dataset.icao);
-        const adopted = [];
-        unconfirmedIcaos.forEach(icao => { if (gatherRowIntoConfirmed(icao)) adopted.push(icao); });
-        pbState.bulkAdopted[source] = adopted;
-        if (window.saveConfirmedDataToLocal) window.saveConfirmedDataToLocal();
+        window.saveConfirmedDataToLocal?.();
         renderPublishTableTriRow(window.currentApAnalysis);
+        refreshBulkButtons();
     };
 }
+
+function addShortTermBeforeThunder(value) {
+    const text = String(value || '');
+    return text.replace(/弱雷雨|中雷雨|强雷雨|雷雨|雷暴/g, (match, offset, source) =>
+        source.slice(Math.max(0, offset - 2), offset) === '短时' ? match : `短时${match}`
+    );
+}
+
+function buildPublishExportText(timezone = 'bjt') {
+    const confirmedIcaos = Object.keys(pbState.confirmedData);
+    if (!confirmedIcaos.length) return '⚠️ 暂无已确认编发的预报数据。请先点击表格中的【确认编发】。';
+
+    if (pbState.airportOrderMode === 'import') {
+        const importOrder = new Map(pbState.importSequence.map((icao, index) => [icao, index]));
+        confirmedIcaos.sort((a, b) =>
+            (importOrder.get(a) ?? Number.MAX_SAFE_INTEGER) - (importOrder.get(b) ?? Number.MAX_SAFE_INTEGER)
+        );
+    }
+
+    const isUtc = timezone === 'utc';
+    const timezoneOffsetHours = isUtc ? 0 : 8;
+    const startMs = new Date(`${pbState.startDate}T${String(pbState.startHour).padStart(2, '0')}:00:00Z`).getTime();
+
+    return confirmedIcaos.map(icao => {
+        const data = pbState.confirmedData[icao];
+        const rows = data.rows || [data.cells || []];
+        const notes = data.notes || [data.note || ''];
+        const maxCells = Math.max(1, ...rows.map(row => row?.length || 0));
+
+        const endpoint = (offset, withMonth = false) => {
+            const date = new Date(startMs + (offset + timezoneOffsetHours) * 3600000);
+            const month = date.getUTCMonth() + 1;
+            const day = date.getUTCDate();
+            const hour = String(date.getUTCHours()).padStart(2, '0');
+            return { month, day, hour, label: `${withMonth ? `${month}月` : ''}${day}日${hour}` };
+        };
+        const first = endpoint(0, true);
+        const last = endpoint(maxCells - 1, true);
+        const hasCrossMonth = first.month !== last.month;
+        const formatRange = (startIndex, endIndex) => {
+            const start = endpoint(startIndex, hasCrossMonth);
+            const end = endpoint(endIndex, hasCrossMonth);
+            const suffix = isUtc ? 'Z' : '时';
+            if (start.month === end.month && start.day === end.day) {
+                return `${start.label}${isUtc ? 'Z' : ''}-${end.hour}${suffix}`;
+            }
+            return `${start.label}${suffix}-${end.label}${suffix}`;
+        };
+        const formatCellValue = cell => {
+            const windText = formatPublishWindText(String(cell?.text || '').trim());
+            return addShortTermBeforeThunder(windText);
+        };
+
+        const rowTexts = rows.map((cells, rowIndex) => {
+            if (!cells?.length) return '';
+            const note = String(notes[rowIndex] || '').trim();
+            const effectiveNote = note === '/' || note === '适航' ? '' : note;
+            const isModifier = /间歇|短时|偶有|局地|阶段性|阵性/.test(effectiveNote);
+            const isWindDescription = /风/.test(effectiveNote) && !isModifier;
+            const ranges = [];
+            let currentValue = formatCellValue(cells[0]);
+            let startIndex = 0;
+            for (let index = 1; index <= cells.length; index++) {
+                const nextValue = index < cells.length ? formatCellValue(cells[index]) : null;
+                if (nextValue !== currentValue) {
+                    if (currentValue && currentValue !== '—' && currentValue !== '适航') {
+                        const inlineNote = effectiveNote && !isWindDescription ? effectiveNote : '';
+                        ranges.push(`${formatRange(startIndex, index - 1)}${inlineNote}${currentValue}`);
+                    }
+                    currentValue = nextValue;
+                    startIndex = index;
+                }
+            }
+            if (!ranges.length) return effectiveNote || '';
+            return `${isWindDescription ? `${effectiveNote}，` : ''}${ranges.join('，')}`;
+        }).filter(Boolean);
+
+        const timeText = rowTexts.length ? rowTexts.join('；') : '预计天气适航';
+        const displayName = window.GLOBAL_AIRPORT_NAME_MAP[icao] || icao;
+        return `${displayName}：${timeText}。`;
+    }).join('\n');
+}
+
+window.buildPublishExportText = buildPublishExportText;
 
 function setupGlobalToolbar() {
     const table = document.getElementById('forecast-table');
@@ -443,6 +817,27 @@ function setupGlobalToolbar() {
             recomputeAlertsAndRerender();
         };
     }
+
+    const regionAll = document.getElementById('publish-region-all');
+    const regionOptions = Array.from(document.querySelectorAll('.publish-region-option'));
+    const refreshRegions = () => {
+        regionOptions.forEach(option => { pbState.enabledRegions[option.value] = option.checked; });
+        if (regionAll) regionAll.checked = regionOptions.every(option => option.checked);
+        if (pbState.runningImportMode) loadForecastData(true);
+    };
+    if (regionAll) {
+        regionAll.onchange = () => {
+            regionOptions.forEach(option => {
+                option.checked = regionAll.checked;
+                pbState.enabledRegions[option.value] = regionAll.checked;
+            });
+            if (pbState.runningImportMode) loadForecastData(true);
+        };
+    }
+    regionOptions.forEach(option => {
+        option.checked = pbState.enabledRegions[option.value] !== false;
+        option.onchange = refreshRegions;
+    });
     
     const tafExpandBtn = document.getElementById('global-expand-taf');
     if (tafExpandBtn) {
@@ -473,6 +868,7 @@ function setupGlobalToolbar() {
     // 🌟 一键编发：把当前表中所有未确认机场批量采纳指定数据源(TAF/EC)并确认编发；再次点击退回。
     setupBulkAdoptButton('global-adopt-taf', 'taf');
     setupBulkAdoptButton('global-adopt-ec', 'ec');
+    setupBulkAllButton();
 
     const modeBtn = document.getElementById('global-toggle-mode');
     if (modeBtn) {
@@ -500,81 +896,19 @@ function setupGlobalToolbar() {
         };
     }
 
+    const refreshExportText = () => {
+        const textarea = document.getElementById('export-text-content');
+        if (!textarea) return;
+        const timezone = document.querySelector('input[name="export-text-timezone"]:checked')?.value || 'bjt';
+        textarea.value = buildPublishExportText(timezone);
+    };
+    document.querySelectorAll('input[name="export-text-timezone"]').forEach(option => {
+        option.addEventListener('change', refreshExportText);
+    });
     document.getElementById('global-export-text-btn')?.addEventListener('click', () => {
         const modal = document.getElementById('export-text-modal');
-        const textarea = document.getElementById('export-text-content');
-        if (!modal || !textarea) return;
-        
-        const startH = pbState.startHour;
-        let exportLines = [];
-        
-        const confirmedIcaos = Object.keys(pbState.confirmedData);
-        if (confirmedIcaos.length === 0) {
-            textarea.value = "⚠️ 暂无已确认编发的预报数据。请先点击表格中的【确认编发】。";
-        } else {
-            confirmedIcaos.forEach(icao => {
-                const data = pbState.confirmedData[icao];
-                const rows = data.rows || [data.cells || []];
-                const notes = data.notes || [data.note || ''];
-                const maxCells = Math.max(1, ...rows.map(row => row?.length || 0));
-                
-                const formatEndpoint = (offset, withMonth = false) => {
-                    const totalH = startH + offset + 8;
-                    const dayOffset = Math.floor(totalH / 24);
-                    const h = String(totalH % 24).padStart(2, '0');
-                    const d = new Date(pbState.startDate + 'T00:00:00Z');
-                    d.setUTCDate(d.getUTCDate() + dayOffset);
-                    return {
-                        month: d.getUTCMonth() + 1,
-                        day: d.getUTCDate(),
-                        hour: h,
-                        label: `${withMonth ? (d.getUTCMonth()+1) + '月' : ''}${d.getUTCDate()}日${h}`
-                    };
-                };
-                const hasCrossMonth = (() => {
-                    const first = formatEndpoint(0, true);
-                    const last = formatEndpoint(maxCells - 1, true);
-                    return first.month !== last.month;
-                })();
-                const formatRange = (a, b) => {
-                    const start = formatEndpoint(a, hasCrossMonth);
-                    const end = formatEndpoint(b, hasCrossMonth);
-                    // 同一天只写一次日期：5日04-07时；跨天：5日22时-6日02时；跨月自动带月。
-                    if (start.month === end.month && start.day === end.day) return `${start.label}-${end.hour}时`;
-                    return `${start.label}时-${end.label}时`;
-                };
-                
-                const rowTexts = rows.map((cells, rowIndex) => {
-                    if (!cells?.length) return '';
-                    const note = String(notes[rowIndex] || '').trim();
-                    const effectiveNote = note === '/' || note === '适航' ? '' : note;
-                    const isModifier = /间歇|短时|偶有|局地|阶段性|阵性/.test(effectiveNote);
-                    const isWindDescription = /风/.test(effectiveNote) && !isModifier;
-                    const ranges = [];
-                    let curVal = String(cells[0]?.text || '').trim();
-                    let startIdx = 0;
-                    for (let i = 1; i <= cells.length; i++) {
-                        const val = i < cells.length ? String(cells[i]?.text || '').trim() : null;
-                        if (val !== curVal) {
-                            if (curVal !== '' && curVal !== '—' && curVal !== '适航') {
-                                const inlineNote = effectiveNote && !isWindDescription ? effectiveNote : '';
-                                ranges.push(`${formatRange(startIdx, i - 1)}${inlineNote}${curVal}`);
-                            }
-                            curVal = val;
-                            startIdx = i;
-                        }
-                    }
-                    if (!ranges.length) return effectiveNote || '';
-                    return `${isWindDescription ? effectiveNote + '，' : ''}${ranges.join('，')}`;
-                }).filter(Boolean);
-                const timeStr = rowTexts.length > 0 ? rowTexts.join('；') : '预计天气适航';
-                let apName = window.GLOBAL_AIRPORT_NAME_MAP[icao];
-                let displayName = apName ? apName : icao; // 优先中文名，没有则用四字码
-                let line = `${displayName}：${timeStr}。`;
-                exportLines.push(line);
-            });
-            textarea.value = exportLines.join('\n');
-        }
+        if (!modal) return;
+        refreshExportText();
         modal.style.display = 'flex';
     });
     
@@ -597,20 +931,95 @@ function setupQuickTimeOptions() {
     const titleSelect = document.getElementById('pb-main-title-select');
     if(titleSelect) {
         titleSelect.addEventListener('change', (e) => {
+            if (e.target.value === 'custom') {
+                openPublishTimePopover();
+                return;
+            }
             const now = new Date(Date.now() + 8 * 3600000); 
-            document.getElementById('pb-datetime').value = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}T${String(now.getUTCHours()).padStart(2, '0')}:00`;
+            document.getElementById('pb-datetime').value = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}`;
             applyTimePreset(e.target.value);
         });
     }
-    const dp = document.getElementById('pb-datetime');
-    if(dp) {
-        dp.addEventListener('change', () => {
-            const selectVal = document.getElementById('pb-main-title-select').value;
-            if(selectVal !== 'custom') {
-                applyTimePreset(selectVal);
+
+    const trigger = document.getElementById('pb-time-trigger');
+    const popover = document.getElementById('pb-time-popover');
+    const closePopover = (restoreTitle = false) => {
+        if (!popover || !trigger) return;
+        popover.hidden = true;
+        trigger.setAttribute('aria-expanded', 'false');
+        syncPublishTimeControls();
+        if (restoreTitle && titleSelect) {
+            titleSelect.value = titleSelect.dataset.appliedValue || '24';
+        }
+    };
+
+    trigger?.addEventListener('click', (event) => {
+        event.stopPropagation();
+        if (popover?.hidden) openPublishTimePopover();
+        else closePopover(true);
+    });
+    popover?.addEventListener('click', event => event.stopPropagation());
+    document.getElementById('pb-time-cancel')?.addEventListener('click', () => closePopover(true));
+    document.getElementById('pb-time-apply')?.addEventListener('click', () => {
+        const dateInput = document.getElementById('pb-datetime');
+        const hourInput = document.getElementById('pb-start-hour');
+        const validityInput = document.getElementById('pb-validity-hours');
+        for (const input of [dateInput, hourInput, validityInput]) {
+            if (input && !input.checkValidity()) {
+                input.reportValidity();
+                return;
             }
+        }
+        const baseDate = dateInput?.value;
+        const startHour = hourInput?.value;
+        const validity = validityInput?.value;
+        if (!setPublishTimeFromBjtDate(baseDate, startHour, validity)) return;
+
+        setCustomPublishTitle();
+        closePopover(false);
+        renderPublishTableTriRow(window.currentApAnalysis || []);
+        if ((window.currentApAnalysis || []).length > 0) loadForecastData(true);
+    });
+    popover?.querySelectorAll('input').forEach(input => {
+        input.addEventListener('keydown', event => {
+            if (event.key === 'Enter') document.getElementById('pb-time-apply')?.click();
         });
-    }
+    });
+    document.addEventListener('click', () => {
+        if (popover && !popover.hidden) closePopover(true);
+    });
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape' && popover && !popover.hidden) closePopover(true);
+    });
+    window.addEventListener('resize', () => {
+        if (popover && !popover.hidden) positionPublishTimePopover();
+    });
+}
+
+function positionPublishTimePopover() {
+    const trigger = document.getElementById('pb-time-trigger');
+    const popover = document.getElementById('pb-time-popover');
+    if (!trigger || !popover || popover.hidden) return;
+    const control = trigger.closest('#pb-time-control') || trigger.parentElement;
+    if (!control) return;
+    const controlRect = control.getBoundingClientRect();
+    const popoverRect = popover.getBoundingClientRect();
+    const margin = 12;
+    const desiredLeft = controlRect.left;
+    const maxLeft = Math.max(margin, window.innerWidth - popoverRect.width - margin);
+    const clampedLeft = Math.max(margin, Math.min(desiredLeft, maxLeft));
+    popover.style.left = `${clampedLeft - controlRect.left}px`;
+}
+
+function openPublishTimePopover() {
+    const trigger = document.getElementById('pb-time-trigger');
+    const popover = document.getElementById('pb-time-popover');
+    if (!trigger || !popover) return;
+    syncPublishTimeControls();
+    popover.hidden = false;
+    trigger.setAttribute('aria-expanded', 'true');
+    positionPublishTimePopover();
+    document.getElementById('pb-datetime')?.focus();
 }
 
 function renderAirportGroupsConfig() {
@@ -686,9 +1095,6 @@ function populateModalForm() {
   if(q('cfg-default-taf')) q('cfg-default-taf').checked = pbState.defaultShowTaf;
   if(q('cfg-default-ec')) q('cfg-default-ec').checked = pbState.defaultShowEc;
 
-  if(q('cfg-start-date')) q('cfg-start-date').value = pbState.startDate;
-  if(q('cfg-start-hour')) q('cfg-start-hour').value = pbState.startHour;
-  if(q('cfg-validity')) q('cfg-validity').value = pbState.validityHours;
   if(q('filter-wind-threshold')) q('filter-wind-threshold').value = pbState.filterWindThreshold;
   if(q('filter-vis-threshold')) q('filter-vis-threshold').value = pbState.filterVisThreshold;
   if(q('filter-temp-high')) q('filter-temp-high').value = pbState.filterTempHigh;
@@ -698,7 +1104,6 @@ function populateModalForm() {
   c('cfg-wind', pbState.showWind); c('cfg-vis', pbState.showVis); c('cfg-wx', pbState.showWeatherCode); c('cfg-temp', pbState.showTemp); c('cfg-pressure', pbState.showPressure);
   c('filter-hide-empty-airports', pbState.filterHideEmptyAirports);
   
-  document.querySelectorAll('[data-region]').forEach(cb => { cb.checked = pbState.enabledRegions[cb.dataset.region] !== false; });
   ALL_WX_PHENOMENA.forEach((wx, idx) => { const el = q(`filter-wx-${idx}`); if(el) el.checked = pbState.filterWx[wx] !== false; });
 }
 
@@ -707,10 +1112,6 @@ function saveModalForm() {
   if(q('cfg-allow-other-carriers')) pbState.allowOtherCarriers = q('cfg-allow-other-carriers').checked;
   if(q('cfg-default-taf')) pbState.defaultShowTaf = q('cfg-default-taf').checked;
   if(q('cfg-default-ec')) pbState.defaultShowEc = q('cfg-default-ec').checked;
-
-  if(q('cfg-start-date')) pbState.startDate = q('cfg-start-date').value || pbState.startDate;
-  if(q('cfg-start-hour')) pbState.startHour = Math.min(23, Math.max(0, parseInt(q('cfg-start-hour').value) || 0));
-  if(q('cfg-validity')) pbState.validityHours = Math.max(1, parseInt(q('cfg-validity').value) || 48);
 
   if(q('filter-wind-threshold')) pbState.filterWindThreshold = parseFloat(q('filter-wind-threshold').value) || 15;
   if(q('filter-vis-threshold')) pbState.filterVisThreshold = parseFloat(q('filter-vis-threshold').value) || 1600;
@@ -721,7 +1122,6 @@ function saveModalForm() {
   pbState.showWind = c('cfg-wind'); pbState.showVis = c('cfg-vis'); pbState.showWeatherCode = c('cfg-wx'); pbState.showTemp = c('cfg-temp'); pbState.showPressure = c('cfg-pressure');
   pbState.filterHideEmptyAirports = c('filter-hide-empty-airports');
   
-  document.querySelectorAll('[data-region]').forEach(cb => { pbState.enabledRegions[cb.dataset.region] = cb.checked; });
   ALL_WX_PHENOMENA.forEach((wx, idx) => { const cb = q(`filter-wx-${idx}`); if (cb) pbState.filterWx[wx] = cb.checked; });
   
   if(q('cfg-ice-temp')) pbState.cfgIceTemp = parseFloat(q('cfg-ice-temp').value) || 10;
@@ -803,12 +1203,6 @@ function setupModalEvents() {
   document.getElementById('pb-settings-save-btn')?.addEventListener('click', () => { 
       saveModalForm(); 
       globalModal.style.display = 'none';
-      const titleSelect = document.getElementById('pb-main-title-select');
-      if(titleSelect) {
-          let opt = titleSelect.querySelector('option[value="custom"]');
-          if(!opt) { opt = document.createElement('option'); opt.value = 'custom'; titleSelect.appendChild(opt); }
-          opt.textContent = `${pbState.validityHours}小时天气预报`; titleSelect.value = 'custom'; 
-      }
       loadForecastData(); 
   });
 
@@ -823,20 +1217,6 @@ function setupModalEvents() {
           window.OMICS_patchSettingsConfig?.({ publish: buildPublishBlockFromLocal() });
       });
   });
-
-  const buildList = (id, regions) => {
-    const container = document.getElementById(id);
-    if(!container) return;
-    container.innerHTML = '';
-    regions.forEach(region => {
-      const airports = AIRPORT_CFG.domestic[region] || [];
-      if (airports.length === 0) return;
-      const label = document.createElement('label'); label.className = 'region-item';
-      label.innerHTML = `<input type="checkbox" data-region="${region}" checked> ${region} (${airports.length})`;
-      container.appendChild(label);
-    });
-  };
-  buildList('region-list-domestic', Object.keys(AIRPORT_CFG.domestic));
 
   const grid = document.getElementById('filter-wx-grid');
   if(grid) {
@@ -1102,26 +1482,36 @@ function resolvePublishWindCode(direction) {
     if (PUBLISH_WIND_LABELS[raw]) return raw;
     const degrees = Number(raw);
     if (!Number.isFinite(degrees)) return '';
-    const eightDirections = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
-    return eightDirections[Math.round(((degrees % 360) + 360) % 360 / 45) % 8];
+    const sixteenDirections = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+    return sixteenDirections[Math.round(((degrees % 360) + 360) % 360 / 22.5) % 16];
 }
 
 function formatPublishWind(direction, speed) {
     const numericSpeed = Number(speed);
     if (!Number.isFinite(numericSpeed)) return '';
     const code = resolvePublishWindCode(direction);
-    const label = PUBLISH_WIND_LABELS[code] || '大风';
-    return `${label}${numericSpeed}米/秒`;
+    return `${code || 'VRB'}${numericSpeed}`;
 }
 
 function formatPublishWindText(value) {
     const text = String(value ?? '');
     return text.replace(/(^|\s)(NNE|ENE|ESE|SSE|SSW|WSW|WNW|NNW|VRB|NE|SE|SW|NW|N|E|S|W)(\d+(?:\.\d+)?)(?=\s|$)/gi,
-        (_, prefix, code, speed) => `${prefix}${formatPublishWind(code, speed)}`);
+        (_, prefix, code, speed) => `${prefix}${PUBLISH_WIND_LABELS[code.toUpperCase()] || '风向不定'}${speed}米/秒`);
+}
+
+function formatPublishWindTableText(value) {
+    let text = String(value ?? '');
+    const labels = Object.entries(PUBLISH_WIND_LABELS).sort((a, b) => b[1].length - a[1].length);
+    labels.forEach(([code, label]) => {
+        const expression = new RegExp(`${label}\\s*(\\d+(?:\\.\\d+)?)\\s*(?:米/秒|m/s)?`, 'g');
+        text = text.replace(expression, `${code}$1`);
+    });
+    return text;
 }
 
 window.formatPublishWind = formatPublishWind;
 window.formatPublishWindText = formatPublishWindText;
+window.formatPublishWindTableText = formatPublishWindTableText;
 
 function getAlertElements(wxStr, vis, spd, direction = '') {
     let elements = [];
@@ -1197,8 +1587,9 @@ function processAirportData(apiData) {
   const sl = arr => arr ? arr.slice(idx, idx + count) : null;
   return {
     temperature_2m: sl(apiData.hourly.temperature_2m), dew_point_2m: sl(apiData.hourly.dew_point_2m), visibility: sl(apiData.hourly.visibility),
+    precipitation: sl(apiData.hourly.precipitation),
     wind_speed_10m: sl(apiData.hourly.wind_speed_10m), wind_direction_10m: sl(apiData.hourly.wind_direction_10m),
-    wind_gusts_10m: sl(apiData.hourly.wind_gusts_10m), weather_code: sl(apiData.hourly.weather_code), surface_pressure: sl(apiData.hourly.surface_pressure),
+    wind_gusts_10m: sl(apiData.hourly.wind_gusts_10m), weather_code: sl(apiData.hourly.weather_code), pressure_msl: sl(apiData.hourly.pressure_msl),
     raw_weather_code: apiData.hourly.weather_code, start_idx: idx // 🌟 保留原始完整数组和时间锚点，用于追溯过去12小时
   };
 }
@@ -1212,8 +1603,8 @@ function intensityByVis(vis, weak, mid, strong) { return vis >= 1000 ? weak : (v
 function getWeatherPhenomenon(wc, prec, vis, windSpeed) {
   if (wc >= 60 && wc <= 65) return intensityByPrecip(prec, '小雨', '中雨', '大雨');
   if (wc >= 70 && wc <= 75) return intensityByVis(vis, '小雪', '中雪', '大雪');
-  if (wc >= 96 && wc <= 99) return prec < 1.5 ? '中雷雨' : '强雷雨';
-  if (wc === 91 || wc === 92 || wc === 95) return prec === 0 ? '干雷' : intensityByPrecip(prec, '弱雷雨', '中雷雨', '强雷雨');
+  if (wc >= 96 && wc <= 99) return intensityByPrecip(prec, '弱雷雨', '中雷雨', '强雷雨');
+  if (wc === 91 || wc === 92 || wc === 95) return intensityByPrecip(prec, '弱雷雨', '中雷雨', '强雷雨');
   if (wc >= 80 && wc <= 82) return intensityByPrecip(prec, '小阵雨', '中阵雨', '大阵雨');
   if (wc === 45 || wc === 48) return '雾';
   return '';
@@ -1294,6 +1685,12 @@ async function loadForecastData(retainOrder = false) {
         if (pbState.runningImportMode) {
             setProgress('查询: 正在获取当前运行航班机场列表...');
             flightAps = await fetchActiveFlightAirports(startMs, flightEndMs, setProgress);
+            flightAps = flightAps.filter(isAirportRegionEnabled);
+            registerSourceAirports('running', flightAps, { replace: true });
+            pbState.runningAllAirports = new Set(flightAps);
+        } else {
+            pbState.sourceAirports.running.clear();
+            pbState.runningAllAirports.clear();
         }
         
         setProgress(`匹配: 识别到 ${flightAps.length} 个运行机场，正在合并所选机场来源...`);
@@ -1308,7 +1705,6 @@ async function loadForecastData(retainOrder = false) {
             if(!seen.has(ap)) { seen.add(ap); combinedAps.push(ap); }
             if (pbState.runningImportMode === 'all') {
                 pbState.forceShowAirports.add(ap);
-                pbState.runningAllAirports.add(ap);
             }
         });
         Object.keys(pbState.customCoords).forEach(ap => { if(!seen.has(ap)){ seen.add(ap); combinedAps.push(ap); } });
@@ -1340,7 +1736,7 @@ async function loadForecastData(retainOrder = false) {
         for (let i = 0; i < validAps.length; i += chunkSize) {
             const chunkLats = lats.slice(i, i + chunkSize); const chunkLons = lons.slice(i, i + chunkSize);
             // 🌟 需求C：新增 dew_point_2m 获取温露差；query_start 提前1天以含过去24小时历史降水供溯源
-            const nwpUrl = `https://api.open-meteo.com/v1/forecast?latitude=${chunkLats.join(',')}&longitude=${chunkLons.join(',')}&hourly=temperature_2m,dew_point_2m,precipitation,weather_code,visibility,wind_speed_10m,wind_direction_10m,wind_gusts_10m,surface_pressure&models=ecmwf_ifs&timezone=GMT&wind_speed_unit=ms&start_date=${queryStartDate}&end_date=${endDate}`;
+            const nwpUrl = `https://api.open-meteo.com/v1/forecast?latitude=${chunkLats.join(',')}&longitude=${chunkLons.join(',')}&hourly=temperature_2m,dew_point_2m,precipitation,weather_code,visibility,wind_speed_10m,wind_direction_10m,wind_gusts_10m,pressure_msl&models=ecmwf_ifs&timezone=GMT&wind_speed_unit=ms&start_date=${queryStartDate}&end_date=${endDate}`;
             const chunkIdx = Math.floor(i / chunkSize);
             // 🌟 不再静默吞错：记录数值预报抓取的 HTTP 状态与失败原因
             const p = fetch(nwpUrl)
@@ -1460,9 +1856,16 @@ async function loadForecastData(retainOrder = false) {
 
         setProgress('6/6 正在排版...');
         apAnalysis.forEach((ap, idx) => ap.originalIdx = idx);
+        const importOrder = new Map(pbState.importSequence.map((icao, index) => [icao, index]));
         // 🌟 问题2：判断国内(中国大陆 Z 开头，不含港澳台 VH/RC/VM)。国内排前，国际排后。
         const isDomestic = (icao) => /^Z[BGHSYLUPW]/.test(icao || '');
         apAnalysis.sort((a, b) => {
+            if (pbState.airportOrderMode === 'import') {
+                const aOrder = importOrder.has(a.icao) ? importOrder.get(a.icao) : Number.MAX_SAFE_INTEGER;
+                const bOrder = importOrder.has(b.icao) ? importOrder.get(b.icao) : Number.MAX_SAFE_INTEGER;
+                if (aOrder !== bOrder) return aOrder - bOrder;
+                return a.originalIdx - b.originalIdx;
+            }
             const getPriority = (icao, hasAlert) => {
                 if (pbState.confirmedData[icao]) return 5; 
                 if (pbState.forceShowAirports.has(icao)) return 4;
@@ -1520,7 +1923,16 @@ function renderPublishTableTriRow(apAnalysis) {
     const tbody = document.createElement('tbody');
     const startMs = new Date(`${pbState.startDate}T${String(pbState.startHour).padStart(2, '0')}:00:00Z`).getTime();
     
-    const filteredAnalysis = apAnalysis.filter(apInfo => {
+    const analysisForDisplay = pbState.airportOrderMode === 'import'
+        ? [...apAnalysis].sort((a, b) => {
+            const aOrder = pbState.importSequence.indexOf(a.icao);
+            const bOrder = pbState.importSequence.indexOf(b.icao);
+            const normalizedA = aOrder === -1 ? Number.MAX_SAFE_INTEGER : aOrder;
+            const normalizedB = bOrder === -1 ? Number.MAX_SAFE_INTEGER : bOrder;
+            return normalizedA - normalizedB;
+        })
+        : apAnalysis;
+    const filteredAnalysis = analysisForDisplay.filter(apInfo => {
         let apType = pbState.importedAirportTypes[apInfo.icao] || '普通';
         let isAlwaysShow = false; // 🌟 新增：标记该机场是否具备常驻属性
         
@@ -1589,7 +2001,8 @@ function renderPublishTableTriRow(apAnalysis) {
             let val = '', bg = 'transparent', fg = isGray ? '#94a3b8' : '#1e293b', ts = 'none';
             if (rowsToRender[0] && rowsToRender[0][i]) {
                 const c = rowsToRender[0][i];
-                val = formatPublishWindText(c.text);
+                val = c.text || '';
+                if (cData.origin !== 'text') val = formatPublishWindTableText(val);
                 const normalizedStyle = getMultiCellStyle(val);
                 bg = normalizedStyle.bg; fg = normalizedStyle.fg; ts = normalizedStyle.ts || 'none';
             }
@@ -1609,7 +2022,7 @@ function renderPublishTableTriRow(apAnalysis) {
                 for (let i = 0; i < numCells; i++) {
                     // 🌟 防崩溃：已确认数据按旧的时长(cell 数)保存，切到更长时段(如 24h→48h)时尾部 cell 不存在，需兜底
                     const c = (rowsToRender[r] && rowsToRender[r][i]) ? rowsToRender[r][i] : { text: '', bg: 'transparent', fg: '#1e293b', ts: 'none' };
-                    const normalizedText = formatPublishWindText(c.text);
+                    const normalizedText = cData.origin === 'text' ? String(c.text || '') : formatPublishWindTableText(c.text);
                     const normalizedStyle = getMultiCellStyle(normalizedText);
                     subHtml += `<td class="col-time td-data edit-cell data-cell-editable" data-c="${i}" style="${cellStyle} font-weight:bold; background:${normalizedStyle.bg}; color:${normalizedStyle.fg}; text-shadow:${normalizedStyle.ts};">${normalizedText}</td>`;
                 }
@@ -1661,10 +2074,11 @@ function renderPublishTableTriRow(apAnalysis) {
                 eWindRaw = ws > 0 ? formatPublishWind(nwp.wind_direction_10m[i], ws) : '—';
                 eVisRaw = v;
                 eTempRaw = Math.round(nwp.temperature_2m[i]) + '℃';
-                ePressRaw = nwp.surface_pressure ? Math.round(nwp.surface_pressure[i]) : '—';
+                ePressRaw = nwp.pressure_msl ? Math.round(nwp.pressure_msl[i]) : '—';
                 
                 let ext = getAlertElements(wx, v, ws, nwp.wind_direction_10m[i]);
                 eW = ext.w; if(ext.noteStr) ext.noteStr.split(' ').forEach(n => allEcNotes.add(n));
+                if (eW.includes('雷雨')) allEcNotes.add('终端区/本场');
             }
             let eStyle = getMultiCellStyle(eW);
             ecCellsHtml += `<td class="col-time td-data nwp-cell" data-c="${i}" style="${cellStyle} background:${eStyle.bg}; color:${eStyle.fg}; text-shadow:${eStyle.ts}; font-size:11px; font-weight:bold;">${eW}</td>`;
@@ -1715,6 +2129,10 @@ function renderPublishTableTriRow(apAnalysis) {
             ${ecCellsHtml}
         `;
         tbody.appendChild(trNwp);
+        pbState.sourceForecastCache[icao] = {
+            taf: sourceRowsFromTableRow(trTaf),
+            ec: sourceRowsFromTableRow(trNwp)
+        };
 
         if (pbState.showWeatherCode) appendDetail('tr-nwp-detail', '↳ 天气', ecWxHtml);
         if (pbState.showWind) appendDetail('tr-nwp-detail', '↳ 风向风速', ecWindHtml);
@@ -1755,53 +2173,66 @@ function renderPublishTableTriRow(apAnalysis) {
         const btnNwp = trNwp.querySelector('.btn-adopt-nwp');
         const editNoteDisplay = trEdit.querySelector('.edit-note-display');
 
-        const executeAdoptSplit = (sourceTr) => {
-            const cellDataArr = Array.from(sourceTr.querySelectorAll('.col-time:not(.th-lead)')).map(c => c.textContent.trim().split(' ').filter(x => x && x !== '—'));
-            const maxRows = Math.max(1, ...cellDataArr.map(arr => arr.length));
+        const executeAdoptSplit = (sourceTr, sourceKey) => {
+            const adoptedSources = new Set((trEdit.dataset.adoptedSources || '').split(',').filter(Boolean));
+            if (adoptedSources.has(sourceKey)) return;
+            const sourceData = sourceRowsFromTableRow(sourceTr);
+            const existingRows = Array.from(document.querySelectorAll(`tr[data-icao="${icao}"]`))
+                .filter(row => row.classList.contains('tr-edit') || row.classList.contains('tr-edit-extra'));
+            const hasExistingWeather = existingRows.some(row =>
+                Array.from(row.querySelectorAll('.edit-cell')).some(cell => cell.textContent.trim())
+            );
 
-            let nTr = trEdit.nextElementSibling;
-            while(nTr && nTr.classList.contains('tr-edit-extra') && nTr.dataset.icao === icao) {
-                const delTr = nTr; nTr = nTr.nextElementSibling; delTr.remove();
+            const fillCells = (rowElement, cells) => {
+                rowElement.querySelectorAll('.edit-cell').forEach((cell, index) => {
+                    const data = cells[index] || { text: '', bg: 'transparent', fg: '#1e293b', ts: 'none' };
+                    cell.textContent = data.text;
+                    cell.style.background = data.bg;
+                    cell.style.color = data.fg;
+                    cell.style.textShadow = data.ts || 'none';
+                });
+            };
+            const createExtraRow = (cells, note) => {
+                const extra = document.createElement('tr');
+                extra.className = `${gClass} tr-edit-extra`;
+                extra.dataset.confirmed = 'false';
+                extra.dataset.icao = icao;
+                let html = `
+                    <td class="col-source">附加</td>
+                    <td class="col-op">
+                        <div class="edit-note-display">${note || ''}</div>
+                        <button class="hover-btn btn-delete-extra">删除</button>
+                    </td>`;
+                cells.forEach((cell, index) => {
+                    html += `<td class="col-time td-data edit-cell data-cell-editable" data-c="${index}" style="${cellStyle} font-weight:bold; background:${cell.bg}; color:${cell.fg}; text-shadow:${cell.ts || 'none'};">${cell.text}</td>`;
+                });
+                extra.innerHTML = html;
+                return extra;
+            };
+
+            let firstIncomingIndex = 0;
+            let insertAfter = existingRows[existingRows.length - 1] || trEdit;
+            if (!hasExistingWeather) {
+                fillCells(trEdit, sourceData.rows[0]);
+                editNoteDisplay.textContent = sourceData.note || '适航';
+                firstIncomingIndex = 1;
+                insertAfter = trEdit;
             }
-
-            const mainCells = trEdit.querySelectorAll('.edit-cell');
-            for(let i=0; i<numCells; i++) {
-                const val = cellDataArr[i][0] || '';
-                mainCells[i].textContent = val;
-                const style = getMultiCellStyle(val);
-                mainCells[i].style.background = style.bg; mainCells[i].style.color = style.fg; mainCells[i].style.textShadow = style.ts;
+            for (let rowIndex = firstIncomingIndex; rowIndex < sourceData.rows.length; rowIndex++) {
+                const note = rowIndex === 0 ? sourceData.note : '/';
+                const extra = createExtraRow(sourceData.rows[rowIndex], note);
+                insertAfter.insertAdjacentElement('afterend', extra);
+                insertAfter = extra;
             }
-
-            let refTr = trEdit;
-            for(let r=1; r<maxRows; r++) {
-                const eTr = document.createElement('tr');
-                eTr.className = `${gClass} tr-edit-extra`;
-                eTr.dataset.confirmed = "false"; eTr.dataset.icao = icao;
-                let eHtml = `
-                    <td class="col-source" style="font-weight:bold; color:#1e40af; vertical-align:middle; font-size:11px; border-right:none;">附加</td>
-                    <td class="col-op" style="padding:4px; position:relative; vertical-align:middle; border-left:none;">
-                        <div class="edit-note-display" style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:11px; color:#1e40af; font-weight:bold; z-index:1;"></div>
-                        <button class="hover-btn btn-delete-extra" style="background:#d97706; color:white; width:100%; border:none; padding:6px 0; border-radius:4px; font-weight:bold; font-size:11px;">删除</button>
-                    </td>
-                `;
-                for(let i=0; i<numCells; i++) {
-                    const val = cellDataArr[i][r] || '';
-                    const style = getMultiCellStyle(val);
-                    eHtml += `<td class="col-time td-data edit-cell data-cell-editable" data-c="${i}" style="${cellStyle} font-weight:bold; background:${style.bg}; color:${style.fg}; text-shadow:${style.ts};">${val}</td>`;
-                }
-                eTr.innerHTML = eHtml;
-                refTr.insertAdjacentElement('afterend', eTr);
-                refTr = eTr;
-            }
-
-            editNoteDisplay.textContent = sourceTr.querySelector('.col-op').dataset.note || '';
+            adoptedSources.add(sourceKey);
+            trEdit.dataset.adoptedSources = Array.from(adoptedSources).join(',');
             updateRowActiveStyle(trEdit);
             updateTopCountersFromTable();
             if(window.updateAllRowspans) window.updateAllRowspans();
         };
 
-        btnTaf.onclick = () => executeAdoptSplit(trTaf);
-        btnNwp.onclick = () => executeAdoptSplit(trNwp);
+        btnTaf.onclick = () => executeAdoptSplit(trTaf, 'taf');
+        btnNwp.onclick = () => executeAdoptSplit(trNwp, 'ec');
 
         btnConfirm.onclick = () => {
             const allIcaoRows = Array.from(document.querySelectorAll(`tr[data-icao="${icao}"]`)).filter(r => r.classList.contains('tr-edit') || r.classList.contains('tr-edit-extra'));
@@ -1843,7 +2274,13 @@ function renderPublishTableTriRow(apAnalysis) {
                 cNotes.forEach((n, idx) => { if (!n) cNotes[idx] = "/"; });
             }
 
-            pbState.confirmedData[icao] = { rows: cRows, notes: cNotes };
+            const existingConfirmed = pbState.confirmedData[icao] || {};
+            pbState.confirmedData[icao] = {
+                ...existingConfirmed,
+                rows: cRows,
+                notes: cNotes,
+                rowSources: existingConfirmed.rowSources || cRows.map(() => null)
+            };
             window.saveConfirmedDataToLocal();
             
             renderPublishTableTriRow(window.currentApAnalysis);
@@ -2158,7 +2595,8 @@ function setupTableInteraction() {
               inp.focus(); inp.selectionStart = inp.selectionEnd = inp.value.length; 
               
               inp.onblur = () => {
-                  const finalVal = formatPublishWindText(inp.value.trim()) || '';
+                  const origin = pbState.confirmedData[firstTd.closest('tr')?.dataset.icao]?.origin;
+                  const finalVal = (origin === 'text' ? inp.value.trim() : formatPublishWindTableText(inp.value.trim())) || '';
                   selected.forEach(targetTd => {
                       targetTd.textContent = finalVal;
                       const style = getMultiCellStyle(finalVal);
@@ -2186,7 +2624,8 @@ function setupTableInteraction() {
       inp.focus(); inp.select();
       
       inp.onblur = () => {
-          const finalVal = formatPublishWindText(inp.value.trim());
+          const origin = pbState.confirmedData[tr.dataset.icao]?.origin;
+          const finalVal = origin === 'text' ? inp.value.trim() : formatPublishWindTableText(inp.value.trim());
           td.textContent = finalVal;
           const style = getMultiCellStyle(finalVal);
           td.style.background = style.bg;
@@ -2270,7 +2709,8 @@ function setupTableInteraction() {
     lines.forEach((line, ri) => {
       line.split('\t').forEach((val, ci) => {
         const td = cellMap[`${r0 + ri},${c0 + ci}`]; if (!td) return;
-        val = formatPublishWindText(val.trim()); td.textContent = val || '';
+        const origin = pbState.confirmedData[td.closest('tr')?.dataset.icao]?.origin;
+        val = origin === 'text' ? val.trim() : formatPublishWindTableText(val.trim()); td.textContent = val || '';
         const style = getMultiCellStyle(val);
         td.style.background = style.bg; td.style.color = style.fg; td.style.textShadow = style.ts;
         affectedTrs.add(td.closest('tr'));
@@ -2301,6 +2741,7 @@ function setupSearch() {
           _cachedAirports.unshift(icao);
           pbState.customCoords[icao] = window.AIRPORT_COORDS[icao]; 
           pbState.forceShowAirports.add(icao);
+          registerSourceAirports('custom', [icao]);
           await loadForecastData(true);
           input.value = '';
       };
@@ -2311,8 +2752,11 @@ function setupSearch() {
           
           pbState.customCoords[icao] = window.AIRPORT_COORDS[icao];
           pbState.forceShowAirports.add(icao);
-          document.querySelectorAll('[data-region]').forEach(cb => cb.checked = false); 
-          pbState.enabledRegions = {};
+          registerSourceAirports('custom', [icao]);
+          document.querySelectorAll('.publish-region-option').forEach(cb => cb.checked = false);
+          const allRegions = document.getElementById('publish-region-all');
+          if (allRegions) allRegions.checked = false;
+          PUBLISH_REGION_NAMES.forEach(region => { pbState.enabledRegions[region] = false; });
           
           await loadForecastData();
           input.value = '';
@@ -2321,8 +2765,11 @@ function setupSearch() {
 
   if(restoreBtn) {
       restoreBtn.onclick = async () => {
-          document.querySelectorAll('[data-region]').forEach(cb => { cb.checked = true; pbState.enabledRegions[cb.dataset.region] = true; });
+          document.querySelectorAll('.publish-region-option').forEach(cb => { cb.checked = true; pbState.enabledRegions[cb.value] = true; });
+          const allRegions = document.getElementById('publish-region-all');
+          if (allRegions) allRegions.checked = true;
           pbState.customCoords = {};
+          pbState.sourceAirports.custom.clear();
           pbState.forceShowAirports.clear();
           await loadForecastData();
       };
@@ -2429,6 +2876,7 @@ function setupAirportInteraction() {
               
               pbState.customCoords[icao] = window.AIRPORT_COORDS[icao]; 
               pbState.forceShowAirports.add(icao); 
+              registerSourceAirports('custom', [icao]);
               await loadForecastData(true);
           }
       });

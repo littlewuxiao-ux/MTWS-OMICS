@@ -1,4 +1,5 @@
 {
+  "schema_version": 2,
   "personnel_dict": {
     "41060711": "吴霄",
     "347657": "崔云云",
@@ -43,7 +44,7 @@
       "visibility": true,
       "weather": true,
       "temperature": true,
-      "pressure": false
+      "pressure": true
     }
   }
 }
