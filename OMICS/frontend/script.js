@@ -419,7 +419,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         const pbForecaster = document.getElementById('pb-forecaster');
 
         if (currentUserId) {
-            const chineseName = displayName || personnelDict[currentUserId] || (isOffline ? "离线模式" : "未知");
+            const mappedName = personnelDict[String(currentUserId)];
+            const normalizedDisplayName = String(displayName || '').trim();
+            const providedName = normalizedDisplayName && normalizedDisplayName !== String(currentUserId)
+                ? normalizedDisplayName
+                : '';
+            const chineseName = mappedName || providedName || (isOffline ? "离线模式" : String(currentUserId));
             userIdDisplay.textContent = `当前账号: ${chineseName}`;
 
             localStorage.setItem('sf_userId', currentUserId);
@@ -441,6 +446,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (pbForecaster) pbForecaster.value = '未知';
         }
     }
+    window.OMICS_updateDisplayUserName = updateDisplayUserName;
 
     const evalPersonSelect = document.getElementById('eval-person-select');
     const tafExcelPathInput = document.getElementById('taf-excel-path');

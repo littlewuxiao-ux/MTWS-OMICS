@@ -138,7 +138,7 @@ const pbState = {
   bulkActionInProgress: false,
   sourceForecastCache: {},
   draftData: {},
-  cfgIceTemp: 10, cfgIceVis: 1500, cfgIcePrecipHours: 12, cfgExtColdTemp: -30,
+  cfgIceTemp: 10, cfgIceDewPointDiff: 0, cfgIceVis: 1500, cfgIcePrecipHours: 12, cfgExtColdTemp: -30,
   specialConditionAirports: new Map()
 };
 
@@ -223,8 +223,6 @@ function getAirportRegion(icao) {
 }
 
 function isAirportRegionEnabled(icao) {
-    const allControl = document.getElementById('publish-region-all');
-    if (allControl?.checked) return true;
     const region = getAirportRegion(icao);
     return !!region && pbState.enabledRegions[region] !== false;
 }
@@ -399,6 +397,7 @@ window.initPublishModule = async function() {
     if (savedEcCfg) {
         pbState.filterTempHigh = Number(savedEcCfg.highTemp ?? pbState.filterTempHigh);
         pbState.cfgIceTemp = Number(savedEcCfg.groundIceTemp ?? savedEcCfg.iceTemp ?? pbState.cfgIceTemp);
+        pbState.cfgIceDewPointDiff = Number(savedEcCfg.groundIceDewPointDiff ?? savedEcCfg.iceDew ?? pbState.cfgIceDewPointDiff);
         pbState.cfgIceVis = Number(savedEcCfg.groundIceVisibility ?? savedEcCfg.iceVis ?? pbState.cfgIceVis);
         pbState.cfgIcePrecipHours = Number(savedEcCfg.precipHours ?? pbState.cfgIcePrecipHours);
         pbState.cfgExtColdTemp = Number(savedEcCfg.extremeColdTemp ?? savedEcCfg.extCold ?? pbState.cfgExtColdTemp);
@@ -668,32 +667,8 @@ function getSourceForecastData(icao, source) {
     return pbState.sourceForecastCache[icao]?.[source] || { rows: [], note: '适航' };
 }
 
-function appendSourceRowsToConfirmed(icao, source, sourceData, rowTag) {
-    const incomingRows = sourceData?.rows?.length ? sourceData.rows : [[...Array(pbState.validityHours + 1)].map(() => ({ text: '', bg: 'transparent', fg: '#1e293b', ts: 'none' }))];
-    const incomingNotes = incomingRows.map((_, index) => index === 0 ? (sourceData.note || '适航') : '/');
-    const existing = pbState.confirmedData[icao] || { rows: [], notes: [], rowSources: [], origin: 'bulk' };
-    const rows = existing.rows || [];
-    const notes = existing.notes || [];
-    const rowSources = existing.rowSources || rows.map(() => null);
-    incomingRows.forEach((row, index) => {
-        rows.push(row.map(cell => ({ ...cell })));
-        notes.push(incomingNotes[index]);
-        rowSources.push(rowTag);
-    });
-    pbState.confirmedData[icao] = { ...existing, rows, notes, rowSources, origin: existing.origin || 'bulk' };
-}
-
-function rollbackBulkTag(rowTag) {
-    Object.keys(pbState.confirmedData).forEach(icao => {
-        const data = pbState.confirmedData[icao];
-        const sources = data.rowSources || [];
-        if (!sources.includes(rowTag)) return;
-        const keep = sources.map((source, index) => source !== rowTag ? index : -1).filter(index => index >= 0);
-        data.rows = keep.map(index => data.rows[index]);
-        data.notes = keep.map(index => data.notes?.[index] || '/');
-        data.rowSources = keep.map(index => sources[index] || null);
-        if (!data.rows.length) delete pbState.confirmedData[icao];
-    });
+function clonePublishState(value) {
+    return value == null ? null : JSON.parse(JSON.stringify(value));
 }
 
 function getBulkTargetIcaos() {
@@ -702,74 +677,108 @@ function getBulkTargetIcaos() {
         .filter(icao => icao && !pbState.confirmedData[icao])));
 }
 
-function setBulkButtonState(btn, active, label) {
+function setBulkButtonState(btn, active, label, rollbackLabel) {
     if (!btn) return;
-    btn.textContent = active ? '撤回编发' : label;
+    btn.textContent = active ? rollbackLabel : label;
     btn.style.background = active ? '#d97706' : '';
 }
 
 function refreshBulkButtons() {
-    setBulkButtonState(document.getElementById('global-adopt-taf'), !!pbState.bulkAdopted.taf?.tags?.length, '一键编发');
-    setBulkButtonState(document.getElementById('global-adopt-ec'), !!pbState.bulkAdopted.ec?.tags?.length, '一键编发');
-    setBulkButtonState(document.getElementById('global-adopt-all'), !!pbState.bulkAdopted.all?.tags?.length, '一键全编发');
+    setBulkButtonState(document.getElementById('global-adopt-taf'), !!pbState.bulkAdopted.taf?.airports?.length, '一键采纳', '撤回采纳');
+    setBulkButtonState(document.getElementById('global-adopt-ec'), !!pbState.bulkAdopted.ec?.airports?.length, '一键采纳', '撤回采纳');
+    setBulkButtonState(document.getElementById('global-adopt-all'), !!pbState.bulkAdopted.all?.airports?.length, '一键编发', '撤回编发');
+}
+
+function rollbackDraftSource(icao, source) {
+    const draft = pbState.draftData[icao];
+    if (!draft) return;
+    const rowSources = draft.rowSources || draft.rows.map(() => null);
+    const keep = rowSources.map((rowSource, index) => rowSource !== source ? index : -1).filter(index => index >= 0);
+    const adoptedSources = new Set(String(draft.adoptedSources || '').split(',').filter(Boolean));
+    adoptedSources.delete(source);
+    if (!keep.length) {
+        delete pbState.draftData[icao];
+        return;
+    }
+    draft.rows = keep.map(index => draft.rows[index]);
+    draft.notes = keep.map(index => draft.notes?.[index] || '');
+    draft.rowSources = keep.map(index => rowSources[index] || null);
+    draft.adoptedSources = Array.from(adoptedSources).join(',');
 }
 
 function applyBulkAdoption(source) {
     const active = pbState.bulkAdopted[source];
-    if (active?.tags?.length) {
-        active.tags.forEach(rollbackBulkTag);
+    let skipDomDraftSync = false;
+    if (active?.airports?.length) {
+        active.airports.forEach(icao => rollbackDraftSource(icao, source));
         pbState.bulkAdopted[source] = null;
-        pbState.bulkActionInProgress = false;
-        renderPublishTableTriRow(window.currentApAnalysis);
+        // The visible rows still contain the source being withdrawn. Do not
+        // serialize that stale DOM back into draftData during the rerender.
+        skipDomDraftSync = true;
     } else {
+        persistAllPublishDraftsFromDom();
+        const targets = getBulkTargetIcaos();
         pbState.bulkActionInProgress = true;
         renderPublishTableTriRow(window.currentApAnalysis);
-        const tag = `bulk-${source}-${Date.now()}`;
-        const targets = getBulkTargetIcaos();
-        targets.forEach(icao => appendSourceRowsToConfirmed(icao, source, getSourceForecastData(icao, source), tag));
-        pbState.bulkAdopted[source] = { tags: [tag], airports: targets };
+        const buttonSelector = source === 'taf' ? '.btn-adopt-taf' : '.btn-adopt-nwp';
+        document.querySelectorAll(buttonSelector).forEach(button => button.click());
+        pbState.bulkAdopted[source] = targets.length ? { airports: targets } : null;
         pbState.bulkActionInProgress = false;
-        renderPublishTableTriRow(window.currentApAnalysis);
     }
-    window.saveConfirmedDataToLocal?.();
+    renderPublishTableTriRow(window.currentApAnalysis, !skipDomDraftSync);
     refreshBulkButtons();
 }
 
 function setupBulkAdoptButton(btnId, source) {
     const btn = document.getElementById(btnId);
     if (!btn) return;
-    setBulkButtonState(btn, !!pbState.bulkAdopted[source]?.tags?.length, '一键编发');
+    setBulkButtonState(btn, !!pbState.bulkAdopted[source]?.airports?.length, '一键采纳', '撤回采纳');
     btn.onclick = () => applyBulkAdoption(source);
 }
 
 function setupBulkAllButton() {
     const btn = document.getElementById('global-adopt-all');
     if (!btn) return;
-    const active = pbState.bulkAdopted.all?.tags?.length;
-    setBulkButtonState(btn, !!active, '一键全编发');
+    const active = pbState.bulkAdopted.all?.airports?.length;
+    setBulkButtonState(btn, !!active, '一键编发', '撤回编发');
     btn.onclick = () => {
         const current = pbState.bulkAdopted.all;
-        if (current?.tags?.length) {
-            current.tags.forEach(rollbackBulkTag);
+        if (current?.airports?.length) {
+            current.airports.forEach(icao => {
+                const confirmed = current.confirmedSnapshots[icao];
+                const draft = current.draftSnapshots[icao];
+                if (confirmed) pbState.confirmedData[icao] = clonePublishState(confirmed);
+                else delete pbState.confirmedData[icao];
+                if (draft) pbState.draftData[icao] = clonePublishState(draft);
+                else delete pbState.draftData[icao];
+            });
+            pbState.bulkAdopted.taf = current.sourceStates.taf;
+            pbState.bulkAdopted.ec = current.sourceStates.ec;
             pbState.bulkAdopted.all = null;
-            pbState.bulkActionInProgress = false;
-            renderPublishTableTriRow(window.currentApAnalysis);
         } else {
+            persistAllPublishDraftsFromDom();
+            const targets = getBulkTargetIcaos();
+            const confirmedSnapshots = {};
+            const draftSnapshots = {};
+            targets.forEach(icao => {
+                confirmedSnapshots[icao] = clonePublishState(pbState.confirmedData[icao]);
+                draftSnapshots[icao] = clonePublishState(pbState.draftData[icao]);
+            });
             pbState.bulkActionInProgress = true;
             renderPublishTableTriRow(window.currentApAnalysis);
-            const tags = [`bulk-all-taf-${Date.now()}`, `bulk-all-ec-${Date.now()}`];
-            const targets = getBulkTargetIcaos();
-            targets.forEach(icao => {
-                const tafData = getSourceForecastData(icao, 'taf');
-                const ecData = getSourceForecastData(icao, 'ec');
-                appendSourceRowsToConfirmed(icao, 'taf', tafData, tags[0]);
-                appendSourceRowsToConfirmed(icao, 'ec', ecData, tags[1]);
-            });
-            pbState.bulkAdopted.all = { tags, airports: targets };
+            targets.forEach(confirmAirportFromDom);
+            pbState.bulkAdopted.all = targets.length ? {
+                airports: targets,
+                confirmedSnapshots,
+                draftSnapshots,
+                sourceStates: { taf: pbState.bulkAdopted.taf, ec: pbState.bulkAdopted.ec }
+            } : null;
+            pbState.bulkAdopted.taf = null;
+            pbState.bulkAdopted.ec = null;
             pbState.bulkActionInProgress = false;
-            renderPublishTableTriRow(window.currentApAnalysis);
         }
         window.saveConfirmedDataToLocal?.();
+        renderPublishTableTriRow(window.currentApAnalysis);
         refreshBulkButtons();
     };
 }
@@ -781,7 +790,12 @@ function addShortTermBeforeThunder(value) {
     );
 }
 
-function buildPublishExportText(timezone = 'bjt') {
+function isDomesticMainlandAirport(icao) {
+    const region = getAirportRegion(icao);
+    return region !== '港台' && Object.keys(AIRPORT_CFG.domestic).includes(region);
+}
+
+function buildPublishExportText(timezone = 'auto') {
     const confirmedIcaos = Object.keys(pbState.confirmedData);
     if (!confirmedIcaos.length) return '⚠️ 暂无已确认编发的预报数据。请先点击表格中的【确认编发】。';
 
@@ -790,10 +804,11 @@ function buildPublishExportText(timezone = 'bjt') {
         confirmedIcaos.sort((a, b) =>
             (importOrder.get(a) ?? Number.MAX_SAFE_INTEGER) - (importOrder.get(b) ?? Number.MAX_SAFE_INTEGER)
         );
+    } else {
+        const sorted = sortPublishAirportAnalysis(confirmedIcaos.map(icao => ({ icao })));
+        confirmedIcaos.splice(0, confirmedIcaos.length, ...sorted.map(item => item.icao));
     }
 
-    const isUtc = timezone === 'utc';
-    const timezoneOffsetHours = isUtc ? 0 : 8;
     const startMs = new Date(`${pbState.startDate}T${String(pbState.startHour).padStart(2, '0')}:00:00Z`).getTime();
 
     return confirmedIcaos.map(icao => {
@@ -801,6 +816,9 @@ function buildPublishExportText(timezone = 'bjt') {
         const rows = data.rows || [data.cells || []];
         const notes = data.notes || [data.note || ''];
         const maxCells = Math.max(1, ...rows.map(row => row?.length || 0));
+        const airportTimezone = timezone === 'auto' ? (isDomesticMainlandAirport(icao) ? 'bjt' : 'utc') : timezone;
+        const isUtc = airportTimezone === 'utc';
+        const timezoneOffsetHours = isUtc ? 0 : 8;
 
         const endpoint = (offset, withMonth = false) => {
             const date = new Date(startMs + (offset + timezoneOffsetHours) * 3600000);
@@ -817,19 +835,29 @@ function buildPublishExportText(timezone = 'bjt') {
             const end = endpoint(endIndex, hasCrossMonth);
             const suffix = isUtc ? 'Z' : '时';
             if (start.month === end.month && start.day === end.day) {
-                return `${start.label}${isUtc ? 'Z' : ''}-${end.hour}${suffix}`;
+                return `${start.label}-${end.hour}${suffix}`;
             }
             return `${start.label}${suffix}-${end.label}${suffix}`;
         };
         const formatCellValue = cell => {
-            const windText = formatPublishWindText(String(cell?.text || '').trim());
+            const withoutTemperature = String(cell?.text || '').trim().split(/\s+/)
+                .filter(token => parseForecastTemperature(token) === null)
+                .join(' ');
+            const windText = formatPublishWindText(withoutTemperature);
             return addShortTermBeforeThunder(windText);
+        };
+        const getCellTemperature = cell => {
+            const temperatures = String(cell?.text || '').trim().split(/\s+/)
+                .map(parseForecastTemperature)
+                .filter(value => value !== null && value >= pbState.filterTempHigh);
+            return temperatures.length ? Math.max(...temperatures) : null;
         };
 
         const rowTexts = rows.map((cells, rowIndex) => {
             if (!cells?.length) return '';
             const note = String(notes[rowIndex] || '').trim();
-            const effectiveNote = note === '/' || note === '适航' ? '' : note;
+            const effectiveNote = (note === '/' || note === '适航' ? '' : note)
+                .split(/\s+/).filter(token => token && token !== '高温').join(' ');
             const isModifier = /间歇|短时|偶有|局地|阶段性|阵性/.test(effectiveNote);
             const isWindDescription = /风/.test(effectiveNote) && !isModifier;
             const ranges = [];
@@ -846,8 +874,28 @@ function buildPublishExportText(timezone = 'bjt') {
                     startIndex = index;
                 }
             }
-            if (!ranges.length) return effectiveNote || '';
-            return `${isWindDescription ? `${effectiveNote}，` : ''}${ranges.join('，')}`;
+
+            const temperatureRanges = [];
+            let temperatureStart = null;
+            let temperatures = [];
+            for (let index = 0; index <= cells.length; index++) {
+                const temperature = index < cells.length ? getCellTemperature(cells[index]) : null;
+                if (temperature !== null) {
+                    if (temperatureStart === null) temperatureStart = index;
+                    temperatures.push(temperature);
+                } else if (temperatureStart !== null) {
+                    const minimum = Math.min(...temperatures);
+                    const maximum = Math.max(...temperatures);
+                    const temperatureText = minimum === maximum ? `${minimum}℃` : `${minimum}-${maximum}℃`;
+                    temperatureRanges.push(`${formatRange(temperatureStart, index - 1)}温度${temperatureText}`);
+                    temperatureStart = null;
+                    temperatures = [];
+                }
+            }
+
+            const weatherText = ranges.length ? `${isWindDescription ? `${effectiveNote}，` : ''}${ranges.join('，')}` : '';
+            const combined = [weatherText, ...temperatureRanges].filter(Boolean);
+            return combined.length ? combined.join('，') : (effectiveNote || '');
         }).filter(Boolean);
 
         const timeText = rowTexts.length ? rowTexts.join('；') : '预计天气适航';
@@ -886,26 +934,40 @@ function setupGlobalToolbar() {
         };
     }
 
-    const regionAll = document.getElementById('publish-region-all');
     const regionOptions = Array.from(document.querySelectorAll('.publish-region-option'));
+    const domesticRegions = new Set(Object.keys(AIRPORT_CFG.domestic));
+    const scopeControls = {
+        domestic: document.getElementById('publish-region-domestic-all'),
+        international: document.getElementById('publish-region-international-all')
+    };
+    const optionsForScope = scope => regionOptions.filter(option =>
+        scope === 'domestic' ? domesticRegions.has(option.value) : !domesticRegions.has(option.value)
+    );
+    const syncScopeControls = () => {
+        Object.entries(scopeControls).forEach(([scope, control]) => {
+            if (control) control.checked = optionsForScope(scope).every(option => option.checked);
+        });
+    };
     const refreshRegions = () => {
         regionOptions.forEach(option => { pbState.enabledRegions[option.value] = option.checked; });
-        if (regionAll) regionAll.checked = regionOptions.every(option => option.checked);
+        syncScopeControls();
         if (pbState.runningImportMode) loadForecastData(true);
     };
-    if (regionAll) {
-        regionAll.onchange = () => {
-            regionOptions.forEach(option => {
-                option.checked = regionAll.checked;
-                pbState.enabledRegions[option.value] = regionAll.checked;
+    Object.entries(scopeControls).forEach(([scope, control]) => {
+        if (!control) return;
+        control.onchange = () => {
+            optionsForScope(scope).forEach(option => {
+                option.checked = control.checked;
+                pbState.enabledRegions[option.value] = control.checked;
             });
             if (pbState.runningImportMode) loadForecastData(true);
         };
-    }
+    });
     regionOptions.forEach(option => {
         option.checked = pbState.enabledRegions[option.value] !== false;
         option.onchange = refreshRegions;
     });
+    syncScopeControls();
     
     const tafExpandBtn = document.getElementById('global-expand-taf');
     if (tafExpandBtn) {
@@ -967,7 +1029,7 @@ function setupGlobalToolbar() {
     const refreshExportText = () => {
         const textarea = document.getElementById('export-text-content');
         if (!textarea) return;
-        const timezone = document.querySelector('input[name="export-text-timezone"]:checked')?.value || 'bjt';
+        const timezone = document.querySelector('input[name="export-text-timezone"]:checked')?.value || 'auto';
         textarea.value = buildPublishExportText(timezone);
     };
     document.querySelectorAll('input[name="export-text-timezone"]').forEach(option => {
@@ -1171,6 +1233,7 @@ function populateModalForm() {
   if(q('filter-vis-threshold')) q('filter-vis-threshold').value = pbState.filterVisThreshold;
   if(q('filter-temp-high')) q('filter-temp-high').value = pbState.filterTempHigh;
   if(q('cfg-ice-temp')) q('cfg-ice-temp').value = pbState.cfgIceTemp;
+  if(q('cfg-ice-dew-diff')) q('cfg-ice-dew-diff').value = pbState.cfgIceDewPointDiff;
   if(q('cfg-ice-vis')) q('cfg-ice-vis').value = pbState.cfgIceVis;
   if(q('cfg-ice-precip-hours')) q('cfg-ice-precip-hours').value = pbState.cfgIcePrecipHours;
   if(q('cfg-ext-cold-temp')) q('cfg-ext-cold-temp').value = pbState.cfgExtColdTemp;
@@ -1203,12 +1266,14 @@ function saveModalForm() {
   ALL_WX_PHENOMENA.forEach((wx, idx) => { const cb = q(`filter-wx-${idx}`); if (cb) pbState.filterWx[wx] = cb.checked; });
   
   pbState.cfgIceTemp = numberValue('cfg-ice-temp', 10);
+  pbState.cfgIceDewPointDiff = Math.max(0, numberValue('cfg-ice-dew-diff', 0));
   pbState.cfgIceVis = numberValue('cfg-ice-vis', 1500);
   pbState.cfgIcePrecipHours = Math.max(1, Math.round(numberValue('cfg-ice-precip-hours', 12)));
   pbState.cfgExtColdTemp = numberValue('cfg-ext-cold-temp', -30);
   localStorage.setItem('pb_auto_ec_cfg', JSON.stringify({
       highTemp: pbState.filterTempHigh,
       groundIceTemp: pbState.cfgIceTemp,
+      groundIceDewPointDiff: pbState.cfgIceDewPointDiff,
       groundIceVisibility: pbState.cfgIceVis,
       precipHours: pbState.cfgIcePrecipHours,
       extremeColdTemp: pbState.cfgExtColdTemp
@@ -1632,10 +1697,12 @@ function getCellStyleByContent(v) {
     if (v === '低云') return { bg: '#f59e0b', fg: '#FFFFFF' }; 
     if (WX_OTHER_BLUE_KEYWORDS.some(kw => v.includes(kw))) return { bg: '#bae6fd', fg: '#000000' }; 
     const temperature = parseForecastTemperature(v);
-    if (temperature !== null && temperature >= pbState.filterTempHigh) return { bg: '#bae6fd', fg: '#000000' };
+    if (temperature !== null) return temperature >= pbState.filterTempHigh
+        ? { bg: '#bae6fd', fg: '#000000' }
+        : { bg: 'transparent', fg: '#1e293b' };
     if (/风.*\d+(?:\.\d+)?(?:米\/秒)?$/.test(v) || /^(?:N|NNE|NE|ENE|E|ESE|SE|SSE|S|SSW|SW|WSW|W|WNW|NW|NNW|VRB)\d+$/.test(v)) return { bg: '#2563eb', fg: '#FFFFFF' };
     if (/^\d+$/.test(v)) return { bg: '#fde047', fg: '#000000' }; 
-    return { bg: 'transparent', fg: '#1e293b' };
+    return { bg: '#bae6fd', fg: '#000000' };
 }
 
 function getMultiCellStyle(value) {
@@ -1733,9 +1800,9 @@ function getAirportSpecialConditions(nwp) {
       if (!Number.isFinite(temperature)) continue;
       if (temperature < pbState.cfgExtColdTemp) reasons.add('极寒');
       if (temperature < pbState.cfgIceTemp) {
-          const dewPointEqualsTemperature = Number.isFinite(dewPoint) && Math.abs(temperature - dewPoint) < 0.05;
+          const dewPointDifferenceMatches = Number.isFinite(dewPoint) && Math.abs(temperature - dewPoint) <= pbState.cfgIceDewPointDiff + 0.0001;
           const lowVisibility = Number.isFinite(visibility) && visibility < pbState.cfgIceVis;
-          if (dewPointEqualsTemperature || lowVisibility || hasRecentPrecipitation(nwp, i)) reasons.add('地面结冰');
+          if (dewPointDifferenceMatches || lowVisibility || hasRecentPrecipitation(nwp, i)) reasons.add('地面结冰');
       }
   }
   return reasons;
@@ -1763,7 +1830,9 @@ function analyzeCategory(val) {
         else if (v.includes('雨')) cats.add('rain');
         else if (WX_SNOW_KEYWORDS.some(kw => v.includes(kw))) cats.add('snow');
         else if (WX_OTHER_BLUE_KEYWORDS.some(kw => v.includes(kw))) cats.add('other');
-        else if (isHighTemperatureValue(v)) cats.add('other');
+        else if (parseForecastTemperature(v) !== null) {
+            if (isHighTemperatureValue(v)) cats.add('other');
+        }
         else if (/风.*\d+(?:\.\d+)?(?:米\/秒)?$/.test(v) || /^(?:N|NNE|NE|ENE|E|ESE|SE|SSE|S|SSW|SW|WSW|W|WNW|NW|NNW|VRB)\d+$/.test(v)) {
             let spd = parseFloat(v.match(/\d+(?:\.\d+)?(?=(?:米\/秒)?$)/)?.[0] || '0');
             if (spd >= pbState.filterWindThreshold) cats.add('wind');
@@ -1773,6 +1842,7 @@ function analyzeCategory(val) {
             if (vis < pbState.filterVisThreshold) cats.add('vis');
         }
         else if (v === '低云') cats.add('cld');
+        else cats.add('other');
     });
     return Array.from(cats);
 }
@@ -1808,8 +1878,35 @@ function serializePublishRows(rows) {
             const input = row.querySelector('.edit-note-input');
             const display = row.querySelector('.edit-note-display');
             return input ? input.value : (display?.textContent || '').trim();
-        })
+        }),
+        rowSources: rows.map(row => row.dataset.rowSource || null)
     };
+}
+
+function confirmAirportFromDom(icao) {
+    const rows = getAirportEditableRows(icao);
+    if (!rows.length) return;
+    const serialized = serializePublishRows(rows);
+    const allClear = serialized.rows.every(row => row.every(cell => !cell.text));
+    if (allClear) {
+        serialized.notes = serialized.notes.map((_, index) => index === 0 ? '适航' : '');
+        serialized.rows.forEach(row => row.forEach(cell => {
+            cell.text = '';
+            cell.bg = 'transparent';
+            cell.fg = '#1e293b';
+            cell.ts = 'none';
+        }));
+    } else {
+        serialized.notes = serialized.notes.map(note => note || '/');
+    }
+    const existing = pbState.confirmedData[icao] || {};
+    pbState.confirmedData[icao] = {
+        ...existing,
+        rows: serialized.rows,
+        notes: serialized.notes,
+        rowSources: serialized.rows.map(() => null)
+    };
+    delete pbState.draftData[icao];
 }
 
 function persistDraftAirportFromDom(icao) {
@@ -1963,8 +2060,6 @@ async function loadForecastData(retainOrder = false) {
             
             let hasAlertEC = false;
             let hasAlertTAF = false;
-            let autoAdoptEC = false;
-            let autoAdoptReason = "";
             
             if (nwp) {
                 for(let i = 0; i <= pbState.validityHours; i++) {
@@ -1977,8 +2072,6 @@ async function loadForecastData(retainOrder = false) {
                     const temperature = Number(nwp.temperature_2m?.[i]);
                     if (Number.isFinite(temperature) && temperature >= pbState.filterTempHigh) {
                         hasAlertEC = true;
-                        autoAdoptEC = true;
-                        autoAdoptReason = '高温';
                     }
                 }
                 if (pbState.runningAllAirports.has(icao)) {
@@ -2007,7 +2100,7 @@ async function loadForecastData(retainOrder = false) {
             // 🌟 需求：EC/TAF 未勾选时不作为筛选依据。hasAlert 只由被勾选的数据源决定。
             // （常驻机场、手动追加、已确认机场不受此限制，在过滤/排序环节另行豁免）
             const hasAlert = isConfirmed || (pbState.defaultShowEc && hasAlertEC) || (pbState.defaultShowTaf && hasAlertTAF);
-            return { icao, hasAlert, hasAlertEC, hasAlertTAF, nwp, tafRaw, tafHourly, autoAdoptEC, autoAdoptReason };
+            return { icao, hasAlert, hasAlertEC, hasAlertTAF, nwp, tafRaw, tafHourly };
         });
 
         setProgress('6/6 正在排版...');
@@ -2066,6 +2159,7 @@ function renderPublishTableTriRow(apAnalysis, preserveDrafts = true) {
             } 
         }
         if (pbState.confirmedData[apInfo.icao]) { apInfo._apType = apType; return true; }
+        if (pbState.draftData[apInfo.icao]) { apInfo._apType = apType; return true; }
         
         // 🌟 修复 Bug：即便开启了隐藏空机场，只要它是常驻机场(isAlwaysShow)或手动追加机场，都绝不隐藏！
         // 文图互导模式下，机场列表由文本输入显式指定，因此不再受“空机场隐藏”影响。
@@ -2100,11 +2194,12 @@ function renderPublishTableTriRow(apAnalysis, preserveDrafts = true) {
         trEdit.style.cssText = rowStyle;
         trEdit.dataset.confirmed = isConfirmed ? "true" : "false";
         trEdit.dataset.icao = icao;
+        if (draftData?.rowSources?.[0]) trEdit.dataset.rowSource = draftData.rowSources[0];
         if (draftData?.adoptedSources) trEdit.dataset.adoptedSources = draftData.adoptedSources;
         
         let srcOpHTML = '';
         if (isConfirmed) {
-            srcOpHTML = `<td colspan="2" class="col-desc" style="padding:4px;" title="右键唤出撤销菜单"><input type="text" class="edit-note-input" value="${notesToRender[0] || ''}" style="width:100%; height:100%; min-height:26px; border:1px solid #ccc; border-radius:4px; text-align:center; font-size:11px; font-weight:bold; color:#1e40af; background:transparent;"></td>`;
+            srcOpHTML = `<td colspan="2" class="col-desc confirmed-note-cell" title="右键可撤销编发"><input type="text" class="edit-note-input" value=""><button type="button" class="btn-add-extra" data-icao="${icao}" title="增加一行空白要素">+</button></td>`;
         } else {
             srcOpHTML = `
                 <td colspan="2" class="col-desc draft-note-cell">
@@ -2141,9 +2236,10 @@ function renderPublishTableTriRow(apAnalysis, preserveDrafts = true) {
                 subTr.className = `${gClass} tr-edit-extra`;
                 subTr.dataset.confirmed = isConfirmed ? "true" : "false";
                 subTr.dataset.icao = icao;
+                if (draftData?.rowSources?.[r]) subTr.dataset.rowSource = draftData.rowSources[r];
                 
                 let subHtml = isConfirmed
-                    ? `<td colspan="2" class="col-desc" style="padding:4px;" title="右键唤出撤销菜单"><input type="text" class="edit-note-input" value="" style="width:100%; height:100%; min-height:26px; border:1px solid #ccc; border-radius:4px; text-align:center; font-size:11px; font-weight:bold; color:#1e40af; background:transparent;"></td>`
+                    ? `<td colspan="2" class="col-desc draft-note-cell"><input type="text" class="edit-note-input" value=""><button type="button" class="btn-delete-extra" title="删除此行">删除</button></td>`
                     : `<td colspan="2" class="col-desc draft-note-cell"><input type="text" class="edit-note-input" value=""><button class="btn-delete-extra">删除</button></td>`;
                 for (let i = 0; i < numCells; i++) {
                     // 🌟 防崩溃：已确认数据按旧的时长(cell 数)保存，切到更长时段(如 24h→48h)时尾部 cell 不存在，需兜底
@@ -2272,13 +2368,6 @@ function renderPublishTableTriRow(apAnalysis, preserveDrafts = true) {
         if (pbState.showVis) appendDetail('tr-nwp-detail', '↳ 能见度', ecVisHtml);
         if (pbState.showTemp) appendDetail('tr-nwp-detail', '↳ 气温', ecTempHtml);
         if (pbState.showPressure) appendDetail('tr-nwp-detail', '↳ 气压', ecPressHtml);
-        // 高温命中后自动把 EC 高温要素带入编辑行；结冰和极寒只写底部汇总。
-        if (!isConfirmed && apInfo.autoAdoptEC) {
-            setTimeout(() => {
-                const nwpBtn = trNwp.querySelector('.btn-adopt-nwp');
-                if (nwpBtn) nwpBtn.click();
-            }, 50); 
-        }
         const toggleExpand = (mainTr, detailClass) => {
             mainTr.classList.toggle('row-expanded');
             let isExp = mainTr.classList.contains('row-expanded');
@@ -2307,7 +2396,8 @@ function renderPublishTableTriRow(apAnalysis, preserveDrafts = true) {
             const existingRows = Array.from(document.querySelectorAll(`tr[data-icao="${icao}"]`))
                 .filter(row => row.classList.contains('tr-edit') || row.classList.contains('tr-edit-extra'));
             const hasExistingWeather = existingRows.some(row =>
-                Array.from(row.querySelectorAll('.edit-cell')).some(cell => cell.textContent.trim())
+                Array.from(row.querySelectorAll('.edit-cell')).some(cell => cell.textContent.trim()) ||
+                !!row.querySelector('.edit-note-input')?.value.trim()
             );
 
             const fillCells = (rowElement, cells) => {
@@ -2324,6 +2414,7 @@ function renderPublishTableTriRow(apAnalysis, preserveDrafts = true) {
                 extra.className = `${gClass} tr-edit-extra`;
                 extra.dataset.confirmed = 'false';
                 extra.dataset.icao = icao;
+                extra.dataset.rowSource = sourceKey;
                 let html = `
                     <td colspan="2" class="col-desc draft-note-cell">
                         <input type="text" class="edit-note-input" value="">
@@ -2342,6 +2433,7 @@ function renderPublishTableTriRow(apAnalysis, preserveDrafts = true) {
             if (!hasExistingWeather) {
                 fillCells(trEdit, sourceData.rows[0]);
                 editNoteInput.value = sourceData.note || '适航';
+                trEdit.dataset.rowSource = sourceKey;
                 firstIncomingIndex = 1;
                 insertAfter = trEdit;
             }
@@ -2363,45 +2455,8 @@ function renderPublishTableTriRow(apAnalysis, preserveDrafts = true) {
         btnNwp.onclick = () => executeAdoptSplit(trNwp, 'ec');
 
         btnConfirm.onclick = () => {
-            const allIcaoRows = Array.from(document.querySelectorAll(`tr[data-icao="${icao}"]`)).filter(r => r.classList.contains('tr-edit') || r.classList.contains('tr-edit-extra'));
-            const cRows = [];
-            const cNotes = [];
-            let allClear = true;
-            
-            allIcaoRows.forEach(row => {
-                const rowCells = [];
-                row.querySelectorAll('.edit-cell').forEach(td => {
-                    const txt = td.textContent.trim();
-                    if (txt !== '') allClear = false;
-                    rowCells.push({ text: txt, bg: td.style.background, fg: td.style.color, ts: td.style.textShadow });
-                });
-                cRows.push(rowCells);
-                
-                const noteInput = row.querySelector('.edit-note-input');
-                const noteDisplay = row.querySelector('.edit-note-display');
-                const note = noteInput ? noteInput.value.trim() : (noteDisplay?.textContent || '').trim();
-                cNotes.push(note);
-            });
-
-            
-            if (allClear) {
-                cNotes[0] = "适航"; 
-                for(let i=1; i<cNotes.length; i++) cNotes[i] = "";
-                cRows.forEach(r => r.forEach(c => { c.text=""; c.bg="transparent"; c.fg="#1e293b"; c.ts="none"; }));
-            } else {
-                cNotes.forEach((n, idx) => { if (!n) cNotes[idx] = "/"; });
-            }
-
-            const existingConfirmed = pbState.confirmedData[icao] || {};
-            pbState.confirmedData[icao] = {
-                ...existingConfirmed,
-                rows: cRows,
-                notes: cNotes,
-                rowSources: existingConfirmed.rowSources || cRows.map(() => null)
-            };
-            delete pbState.draftData[icao];
+            confirmAirportFromDom(icao);
             window.saveConfirmedDataToLocal();
-            
             renderPublishTableTriRow(window.currentApAnalysis);
         };
     });
@@ -2914,8 +2969,8 @@ function setupSearch() {
           pbState.forceShowAirports.add(icao);
           registerSourceAirports('custom', [icao]);
           document.querySelectorAll('.publish-region-option').forEach(cb => cb.checked = false);
-          const allRegions = document.getElementById('publish-region-all');
-          if (allRegions) allRegions.checked = false;
+          document.getElementById('publish-region-domestic-all').checked = false;
+          document.getElementById('publish-region-international-all').checked = false;
           PUBLISH_REGION_NAMES.forEach(region => { pbState.enabledRegions[region] = false; });
           
           await loadForecastData();
@@ -2926,8 +2981,8 @@ function setupSearch() {
   if(restoreBtn) {
       restoreBtn.onclick = async () => {
           document.querySelectorAll('.publish-region-option').forEach(cb => { cb.checked = true; pbState.enabledRegions[cb.value] = true; });
-          const allRegions = document.getElementById('publish-region-all');
-          if (allRegions) allRegions.checked = true;
+          document.getElementById('publish-region-domestic-all').checked = true;
+          document.getElementById('publish-region-international-all').checked = true;
           pbState.customCoords = {};
           pbState.sourceAirports.custom.clear();
           pbState.forceShowAirports.clear();
@@ -2949,8 +3004,8 @@ function setupAirportInteraction() {
       let tr = e.target.closest('tr');
       if (!tr) return;
 
-      // 已确认数据的撤销菜单只在备注列处理；这里处理未确认状态下的普通右键菜单。
-      if (pbState.confirmedData[tr.dataset.icao] || e.target.closest('td.col-desc')) return;
+      // 备注列保留撤销编发菜单；天气单元格可继续增加或删除附加行。
+      if (e.target.closest('td.col-desc')) return;
 
       let tempTr = tr;
       while (tempTr && !tempTr.dataset.icao) tempTr = tempTr.previousElementSibling;
@@ -2982,6 +3037,14 @@ function setupAirportInteraction() {
   });
 
   table.addEventListener('click', e => {
+      const addExtraBtn = e.target.closest('.btn-add-extra');
+      if (addExtraBtn) {
+          e.preventDefault();
+          e.stopPropagation();
+          selectedIcao = addExtraBtn.dataset.icao;
+          document.getElementById('ctx-copy-airport')?.click();
+          return;
+      }
       const btn = e.target.closest('.airport-delete-x');
       if (!btn) return;
       e.preventDefault();
@@ -3065,7 +3128,7 @@ function setupAirportInteraction() {
               </td>
           `;
       } else {
-           opCell = `<td colspan="2" class="col-desc" style="padding:4px;" title="右键唤出撤销菜单"><input type="text" class="edit-note-input" style="width:100%; height:100%; min-height:26px; border:1px solid #ccc; border-radius:4px; text-align:center; font-size:11px; font-weight:bold; color:#1e40af; background:transparent;"></td>`;
+           opCell = `<td colspan="2" class="col-desc draft-note-cell"><input type="text" class="edit-note-input" value=""><button type="button" class="btn-delete-extra" title="删除此行">删除</button></td>`;
       }
 
       let eHtml = opCell;
@@ -3079,6 +3142,8 @@ function setupAirportInteraction() {
           lastRow = lastRow.nextElementSibling;
       }
       lastRow.insertAdjacentElement('afterend', eTr);
+      if (mainTr.dataset.confirmed === 'true') persistConfirmedAirportFromDom(selectedIcao);
+      else persistDraftAirportFromDom(selectedIcao);
       
       if(window.updateAllRowspans) window.updateAllRowspans();
   });
