@@ -982,7 +982,7 @@ function setupGlobalToolbar() {
         let isTafMerged = true;
         tafExpandBtn.onclick = () => {
             isTafMerged = !isTafMerged;
-            tafExpandBtn.textContent = isTafMerged ? "合并显示" : "分行展开";
+            tafExpandBtn.textContent = isTafMerged ? "展开明细" : "收起明细";
             tafExpandBtn.style.background = isTafMerged ? "#64748b" : "#0f766e";
             document.querySelectorAll('.tr-taf').forEach(tr => tr.classList.toggle('row-expanded', !isTafMerged));
             document.querySelectorAll('.tr-taf-detail').forEach(tr => tr.style.display = isTafMerged ? 'none' : 'table-row');
@@ -995,7 +995,7 @@ function setupGlobalToolbar() {
         let isEcMerged = true;
         ecExpandBtn.onclick = () => {
             isEcMerged = !isEcMerged;
-            ecExpandBtn.textContent = isEcMerged ? "合并显示" : "分行展开";
+            ecExpandBtn.textContent = isEcMerged ? "展开明细" : "收起明细";
             ecExpandBtn.style.background = isEcMerged ? "#64748b" : "#0f766e";
             document.querySelectorAll('.tr-nwp').forEach(tr => tr.classList.toggle('row-expanded', !isEcMerged));
             document.querySelectorAll('.tr-nwp-detail').forEach(tr => tr.style.display = isEcMerged ? 'none' : 'table-row');
@@ -1013,14 +1013,14 @@ function setupGlobalToolbar() {
         let isMerged = true;
         modeBtn.onclick = () => {
             isMerged = !isMerged;
-            modeBtn.textContent = isMerged ? "一键全展开" : "取消全展开";
+            modeBtn.textContent = isMerged ? "全部展开" : "全部收起";
             modeBtn.style.background = isMerged ? "#0f766e" : "#dc2626";
             
             document.querySelectorAll('.tr-nwp, .tr-taf').forEach(tr => tr.classList.toggle('row-expanded', !isMerged));
             document.querySelectorAll('.tr-nwp-detail, .tr-taf-detail').forEach(tr => tr.style.display = isMerged ? 'none' : 'table-row');
             
-            if(tafExpandBtn) { tafExpandBtn.textContent = isMerged?"合并显示":"分行展开"; tafExpandBtn.style.background=isMerged?"#64748b":"#0f766e"; }
-            if(ecExpandBtn) { ecExpandBtn.textContent = isMerged?"合并显示":"分行展开"; ecExpandBtn.style.background=isMerged?"#64748b":"#0f766e"; }
+            if(tafExpandBtn) { tafExpandBtn.textContent = isMerged?"展开明细":"收起明细"; tafExpandBtn.style.background=isMerged?"#64748b":"#0f766e"; }
+            if(ecExpandBtn) { ecExpandBtn.textContent = isMerged?"展开明细":"收起明细"; ecExpandBtn.style.background=isMerged?"#64748b":"#0f766e"; }
             
             if(window.updateAllRowspans) window.updateAllRowspans();
         };
@@ -2335,7 +2335,7 @@ function renderPublishTableTriRow(apAnalysis, preserveDrafts = true) {
         let tafNoteStr = Array.from(allTafNotes).join(' ');
         let tafNoteHtml = tafNoteStr ? `<div style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:11px; color:#d9534f; font-weight:bold; z-index:1;">(注:${tafNoteStr})</div>` : '';
         trTaf.innerHTML = `
-            <td class="col-source" style="font-weight:bold; vertical-align:middle; font-size:11px; border-right:none; cursor:pointer; user-select:none;" title="双击展开/合并数据列">TAF</td>
+            <td class="col-source" style="font-weight:bold; vertical-align:middle; font-size:11px; border-right:none; cursor:pointer; user-select:none;" title="连续点击两次展开或收起明细">TAF</td>
             <td class="col-op" style="padding:4px; position:relative; vertical-align:middle; border-left:none;" data-note="${tafNoteStr}">
                 ${tafNoteHtml}
                 <button class="hover-btn btn-adopt-taf" style="position:relative; z-index:2; background:#dc2626; color:white; width:100%; border:none; padding:4px 0; border-radius:4px; font-size:11px; font-weight:bold;">采纳 TAF</button>
@@ -2361,7 +2361,7 @@ function renderPublishTableTriRow(apAnalysis, preserveDrafts = true) {
         let ecNoteStr = Array.from(allEcNotes).join(' ');
         let ecNoteHtml = ecNoteStr ? `<div style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:11px; color:#d9534f; font-weight:bold; z-index:1;">(注:${ecNoteStr})</div>` : '';
         trNwp.innerHTML = `
-            <td class="col-source" style="font-weight:bold; vertical-align:middle; font-size:11px; border-right:none; cursor:pointer; user-select:none;" title="双击展开/合并数据列">EC</td>
+            <td class="col-source" style="font-weight:bold; vertical-align:middle; font-size:11px; border-right:none; cursor:pointer; user-select:none;" title="连续点击两次展开或收起明细">EC</td>
             <td class="col-op" style="padding:4px; position:relative; vertical-align:middle; border-left:none;" data-note="${ecNoteStr}">
                 ${ecNoteHtml}
                 <button class="hover-btn btn-adopt-nwp" style="position:relative; z-index:2; background:#dc2626; color:white; width:100%; border:none; padding:4px 0; border-radius:4px; font-size:11px; font-weight:bold;">采纳数值</button>
@@ -2390,10 +2390,25 @@ function renderPublishTableTriRow(apAnalysis, preserveDrafts = true) {
             if (window.updateAirportRowspan) window.updateAirportRowspan(icao);
         };
 
-        const editSourceCell = trEdit.querySelector('.col-source');
-        if (editSourceCell) editSourceCell.ondblclick = () => { toggleExpand(trTaf, 'tr-taf-detail'); toggleExpand(trNwp, 'tr-nwp-detail'); };
-        trTaf.querySelector('.col-source').ondblclick = () => toggleExpand(trTaf, 'tr-taf-detail');
-        trNwp.querySelector('.col-source').ondblclick = () => toggleExpand(trNwp, 'tr-nwp-detail');
+        const bindRepeatedDoubleClick = (element, action) => {
+            let firstClickAt = 0;
+            element.addEventListener('click', event => {
+                event.preventDefault();
+                event.stopPropagation();
+                const now = performance.now();
+                if (firstClickAt && now - firstClickAt <= 450) {
+                    firstClickAt = 0;
+                    action();
+                    return;
+                }
+                firstClickAt = now;
+            });
+            // Native dblclick groups long click sequences inconsistently on
+            // Windows. Pairing click events above makes 2/4/6 clicks reliable.
+            element.addEventListener('dblclick', event => event.preventDefault());
+        };
+        bindRepeatedDoubleClick(trTaf.querySelector('.col-source'), () => toggleExpand(trTaf, 'tr-taf-detail'));
+        bindRepeatedDoubleClick(trNwp.querySelector('.col-source'), () => toggleExpand(trNwp, 'tr-nwp-detail'));
 
         const btnConfirm = trEdit.querySelector('.btn-confirm-edit');
         const btnTaf = trTaf.querySelector('.btn-adopt-taf');

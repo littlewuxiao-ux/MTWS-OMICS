@@ -276,22 +276,26 @@
                     <div id="publish-workspace">
 
                         <div class="publish-toolbar" style="display:flex; flex-direction:column; gap:8px; align-items:stretch; margin-bottom:12px; padding:10px 15px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
-                            <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-                                <div style="font-weight:bold; color:#1e40af; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-                                数据视图:
-                                <label style="cursor: pointer;"><input type="checkbox" id="global-toggle-taf" checked> TAF</label>
-                                <button id="global-expand-taf" class="mini-btn" style="background: #64748b; color: white; border: none; padding: 2px 8px; border-radius: 4px; font-size: 11px;">合并</button>
-                                <button id="global-adopt-taf" class="mini-btn" style="background: #16a34a; color: white; border: none; padding: 2px 8px; border-radius: 4px; font-size: 11px;">一键采纳</button>
-
-                                <span style="border-left:1px solid #cbd5e1; height:16px; margin: 0 4px;"></span>
-
-                                <label style="cursor: pointer;"><input type="checkbox" id="global-toggle-ec" checked> EC</label>
-                                <button id="global-expand-ec" class="mini-btn" style="background: #64748b; color: white; border: none; padding: 2px 8px; border-radius: 4px; font-size: 11px;">合并</button>
-                                <button id="global-adopt-ec" class="mini-btn" style="background: #16a34a; color: white; border: none; padding: 2px 8px; border-radius: 4px; font-size: 11px;">一键采纳</button>
-                                <button id="global-adopt-all" class="mini-btn publish-bulk-all-btn">一键编发</button>
+                            <div class="publish-view-toolbar-row">
+                                <span class="publish-view-title">数据视图</span>
+                                <div class="publish-source-control" data-source="taf">
+                                    <label><input type="checkbox" id="global-toggle-taf" checked> TAF</label>
+                                    <button id="global-expand-taf" class="mini-btn publish-expand-btn">展开明细</button>
+                                    <button id="global-adopt-taf" class="mini-btn publish-adopt-btn">一键采纳</button>
                                 </div>
-                                <button id="global-toggle-mode" class="mini-btn" style="background:#0f766e; color:white; border:none; padding:4px 10px; border-radius:4px; font-weight:bold; font-size:12px;">一键全展开</button>
-                                <button id="global-refresh-btn" class="mini-btn" style="background:#2563eb; color:white; border:none; padding:4px 10px; border-radius:4px; font-weight:bold; cursor:pointer;">刷新</button>
+                                <div class="publish-source-control" data-source="ec">
+                                    <label><input type="checkbox" id="global-toggle-ec" checked> EC</label>
+                                    <button id="global-expand-ec" class="mini-btn publish-expand-btn">展开明细</button>
+                                    <button id="global-adopt-ec" class="mini-btn publish-adopt-btn">一键采纳</button>
+                                </div>
+                                <div class="publish-compile-control">
+                                    <span>编发</span>
+                                    <button id="global-adopt-all" class="mini-btn publish-bulk-all-btn">一键编发</button>
+                                </div>
+                                <div class="publish-view-actions">
+                                    <button id="global-toggle-mode" class="mini-btn publish-expand-all-btn">全部展开</button>
+                                    <button id="global-refresh-btn" class="mini-btn publish-refresh-btn">刷新</button>
+                                </div>
                             </div>
                             <div class="publish-region-toolbar" aria-label="运行机场区域选择">
                                 <div class="publish-region-row" data-scope="domestic">
