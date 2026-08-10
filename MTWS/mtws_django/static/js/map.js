@@ -380,7 +380,7 @@ function _buildMapOption() {
             ]
         },
         series: [
-            // ① 外圈 - 闪烁（effectScatter，METAR R/Y + 有覆盖航班）
+            // ① 外圈 - 闪烁（effectScatter，scale:1 原地透明度渐变，不向外扩散）
             {
                 name: 'airports-outer-flash',
                 type: 'effectScatter',
@@ -510,12 +510,13 @@ function _buildMarkers() {
         const shouldFlash = !!(metar && metar.popup && metar.popup !== 'N');
 
         if (shouldFlash) {
-            // 闪烁项：color 设为 ringColor 让涟漪波纹可见；内圆（z:10）会覆盖中心填充色
             outerFlash.push({
                 name: code,
                 value: pos,
+                // rippleEffect.color 覆盖涟漪颜色，使其不依赖 itemStyle.color
+                rippleEffect: { color: ringColor },
                 itemStyle: {
-                    color: ringColor,
+                    color: 'transparent',
                     borderColor: ringColor,
                     borderWidth: 2,
                     opacity: 0.85

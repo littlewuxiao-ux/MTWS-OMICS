@@ -3,11 +3,13 @@
 使用 APScheduler 按 DataRefreshTimer 配置独立定时执行解析，
 解析频次与前端客户端数量无关。
 
-token 缓存机制：
+token / user_code 缓存机制：
 - current 模式下，external API 需要用户 token 认证
 - 首次由前端手动刷新（刷新按钮或页面加载）时，trigger_parsing 视图
-  会调用 set_scheduler_token() 将 token 存入此模块
-- 后续调度任务复用该缓存 token，直到下次手动刷新覆盖
+  会调用 set_scheduler_token() 将 token 存入此模块，同时调用
+  set_scheduler_user_code() 将当前值班用户标识一并缓存
+- 后续调度任务复用该缓存 token 与 user_code，直到下次手动刷新覆盖
+- user_code 用于 metar.user_code 字段，追踪报文处理时的值班人员
 """
 
 import logging
@@ -19,6 +21,7 @@ from typing import Optional
 logger = logging.getLogger('mtws.scheduler')
 
 _scheduler_token: Optional[str] = None
+_scheduler_user_code: Optional[str] = None
 _scheduler_started: bool = False
 _nwp_enabled: bool = False
 
@@ -85,6 +88,17 @@ def get_scheduler_token() -> Optional[str]:
     return _scheduler_token
 
 
+def set_scheduler_user_code(user_code: str) -> None:
+    """缓存值班用户标识，供后台调度任务写入 metar.user_code（由 trigger_parsing 视图调用）"""
+    global _scheduler_user_code
+    if user_code:
+        _scheduler_user_code = user_code
+
+
+def get_scheduler_user_code() -> Optional[str]:
+    return _scheduler_user_code
+
+
 def set_nwp_enabled(enabled: bool) -> None:
     """缓存 NWP 温度辅助开关状态（由 trigger_parsing 视图调用）"""
     global _nwp_enabled
@@ -109,7 +123,8 @@ def _run_parsing_job(update_types: list, time_mode: str) -> None:
 
     try:
         logger.info(f"调度任务启动：{update_types}，模式：{time_mode}")
-        manager = ParsingManager(time_mode=time_mode, token=token, user_code='scheduler')
+        user_code = _scheduler_user_code or 'scheduler'
+        manager = ParsingManager(time_mode=time_mode, token=token, user_code=user_code)
         result = manager.run_selective_parsing(update_types, time_mode=time_mode)
         parsers_result = result.get('parsers', {})
         if result.get('success'):

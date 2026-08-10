@@ -433,6 +433,7 @@ class MetarParser:
             import_alert='Y',
             import_alert_time=now_ms,
             user_code=user_code,
+            popup='N',
         )
     
     def _parse_metar_content(self, row: pd.Series) -> Dict:
@@ -1194,13 +1195,12 @@ class MetarParser:
         popup_type = self._check_popup_conditions(parsed_data, weather_type_dict)
         
         if popup_type:
-            should_intercept = self._check_popup_intercept(parsed_data, weather_type_dict, popup_type)
-            if should_intercept:
-                parsed_data['popup'] = 'I'
-                parsed_data['popup_time'] = current_time_ms
+            if popup_settings and popup_settings.intercept:
+                should_intercept = self._check_popup_intercept(parsed_data, weather_type_dict, popup_type, popup_settings)
+                parsed_data['popup'] = 'I' if should_intercept else 'Y'
             else:
                 parsed_data['popup'] = 'Y'
-                parsed_data['popup_time'] = current_time_ms
+            parsed_data['popup_time'] = current_time_ms
         else:
             parsed_data['popup'] = 'N'
             parsed_data['popup_time'] = None
@@ -1475,197 +1475,170 @@ class MetarParser:
             logger.error(f"检查停场类弹窗条件失败: {e}")
             return False
     
-    def _check_popup_intercept(self, parsed_data: Dict, weather_type_dict: Dict, popup_type: str) -> bool:
+    def _check_popup_intercept(self, parsed_data: Dict, weather_type_dict: Dict, popup_type: str, popup_settings) -> bool:
         """
         检查是否应该拦截弹窗
-        
+
+        前提条件按概率从高到低排列，尽早短路退出：
+        1. intercept开关（无DB）
+        2. last_metar_sqc为空（无DB）
+        3. 查询previous_metar（唯一一次DB）
+        4. previous_metar.popup == 'N'
+        5. 时间戳差值不在1~4200000ms
+        6. user_code不同
+
         Args:
             parsed_data: 当前记录的解析数据
             weather_type_dict: 当前记录的天气类型字典
             popup_type: 弹窗类型 'operation', 'parking', 'both'
-            
+            popup_settings: 弹窗配置对象
+
         Returns:
             是否应该拦截弹窗
         """
         try:
-            airport_4code = parsed_data.get('airport_4code')
-            user_code = parsed_data.get('user_code')
-            
-            if not airport_4code or not user_code:
+            # 前提1：intercept开关（主流程已拦截，此处兜底）
+            if not popup_settings or not popup_settings.intercept:
                 return False
-            
-            # 通过last_metar_sqc精确定位上一份METAR记录
+
+            # 前提2：last_metar_sqc为空 → 不拦截
             last_metar_sqc = parsed_data.get('last_metar_sqc')
             if not last_metar_sqc:
-                # last_metar_sqc为空，说明没有上一份报文，跳过拦截
                 return False
-            
+
+            # 前提3：查询上一份报文
             previous_metar = Metar.objects.filter(sqc=str(last_metar_sqc)).first()
-            
             if not previous_metar:
-                # 未找到对应记录，不拦截
                 return False
-            
-            # 解析上一份记录的天气类型字典
-            import json
+
+            # 前提4：上一份报文popup == 'N' → 不拦截
+            if previous_metar.popup == 'N':
+                return False
+
+            # 前提5：时间戳差值不在1~4200000ms（70分钟）→ 不拦截
+            current_time = parsed_data.get('metar_observation_time')
+            previous_time = previous_metar.metar_observation_time
+            if not current_time or not previous_time:
+                return False
+            time_diff = current_time - previous_time
+            if time_diff <= 0 or time_diff > 4200000:
+                return False
+
+            # 前提6：user_code不同 → 不拦截
+            if parsed_data.get('user_code') != previous_metar.user_code:
+                return False
+
+            # 解析上一份报文的天气类型字典
             previous_weather_type_dict = {}
             if previous_metar.metar_weather_type:
                 try:
                     previous_weather_type_dict = json.loads(previous_metar.metar_weather_type)
-                except:
+                except Exception:
                     previous_weather_type_dict = {}
-            
-            # 根据弹窗类型进行不同的拦截判断
+
+            # 根据弹窗类型分发拦截判断
             if popup_type == 'operation':
-                # 只满足运行类弹窗条件：仅判断运行类拦截条件
-                return self._check_operation_intercept(parsed_data, weather_type_dict, previous_metar, previous_weather_type_dict)
+                return self._check_operation_intercept(parsed_data, weather_type_dict, previous_metar, previous_weather_type_dict, popup_settings)
             elif popup_type == 'parking':
-                # 只满足停场类弹窗条件：仅判断停场类拦截条件
-                return self._check_parking_intercept(parsed_data, weather_type_dict, previous_metar, previous_weather_type_dict)
+                return self._check_parking_intercept(parsed_data, weather_type_dict, previous_metar, previous_weather_type_dict, popup_settings)
             elif popup_type == 'both':
-                # 同时满足两种弹窗条件：必须两者都满足拦截条件才拦截，任意一个不满足则不拦截
-                operation_intercept = self._check_operation_intercept(parsed_data, weather_type_dict, previous_metar, previous_weather_type_dict)
-                parking_intercept = self._check_parking_intercept(parsed_data, weather_type_dict, previous_metar, previous_weather_type_dict)
+                operation_intercept = self._check_operation_intercept(parsed_data, weather_type_dict, previous_metar, previous_weather_type_dict, popup_settings)
+                parking_intercept = self._check_parking_intercept(parsed_data, weather_type_dict, previous_metar, previous_weather_type_dict, popup_settings)
                 return operation_intercept and parking_intercept
             else:
                 return False
-                
+
         except Exception as e:
             logger.error(f"弹窗拦截判断失败: {e}")
             return False
     
-    def _check_operation_intercept(self, current_data: Dict, current_weather_dict: Dict, 
-                                   previous_metar, previous_weather_dict: Dict) -> bool:
+    def _check_operation_intercept(self, current_data: Dict, current_weather_dict: Dict,
+                                   previous_metar, previous_weather_dict: Dict, popup_settings) -> bool:
         """
-        检查运行类弹窗拦截条件
-        
-        所有条件必须同时满足才拦截：
-        1. metar_observation_time大1-4200000范围内（70分钟）
-        2. metar_wind_speed_val、metar_gust_val不变或更小
-        3. metar_visibility_val、metar_min_cloud_height不变或更大
-        4. metar_temp_val值更小且>20，或为空
-        5. metar_temp_val值更大且<-20，或为空
-        6. metar_weather_type中所有天气类型告警等级不变或降级
-        7. user_code相同
+        检查运行类弹窗拦截条件（方案B：只对比触发告警的要素）
+
+        前置快速判断：metar_change_trend_warning 或 metar_ws_warning >= 阈值 → 直接不拦截
+        要素对比：只检查 warning >= operation_metar_popup_level 的项，全部通过才拦截
         """
         try:
-            # 条件7：user_code相同
-            if current_data.get('user_code') != previous_metar.user_code:
+            threshold_level = popup_settings.operation_metar_popup_level
+
+            # 前置：change_trend 或 WS 告警达到阈值 → 直接不拦截
+            if self._check_alert_level(current_data.get('metar_change_trend_warning'), threshold_level):
                 return False
-            
-            # 条件1：时间戳差值在1-4200000范围内（70分钟）
-            current_time = current_data.get('metar_observation_time')
-            previous_time = previous_metar.metar_observation_time
-            
-            if not current_time or not previous_time:
+            if self._check_alert_level(current_data.get('metar_ws_warning'), threshold_level):
                 return False
-            
-            time_diff = current_time - previous_time
-            if time_diff <= 0 or time_diff > 4200000:
-                return False
-            
-            # 条件2：风速和阵风不变或更小
-            current_wind = current_data.get('metar_wind_speed_val')
-            previous_wind = previous_metar.metar_wind_speed_val
-            
-            if not self._is_value_same_or_smaller(current_wind, previous_wind):
-                return False
-            
-            current_gust = current_data.get('metar_gust_val')
-            previous_gust = previous_metar.metar_gust_val
-            
-            if not self._is_value_same_or_smaller(current_gust, previous_gust, none_is_smaller=True):
-                return False
-            
-            # 条件3：能见度和最低云高不变或更大
-            current_vis = current_data.get('metar_visibility_val')
-            previous_vis = previous_metar.metar_visibility_val
-            
-            if not self._is_value_same_or_larger(current_vis, previous_vis, none_is_larger=True):
-                return False
-            
-            current_cloud = current_data.get('metar_min_cloud_height')
-            previous_cloud = previous_metar.metar_min_cloud_height
-            
-            if not self._is_value_same_or_larger(current_cloud, previous_cloud, none_is_larger=True):
-                return False
-            
-            # 条件4和5：温度条件
-            current_temp = current_data.get('metar_temp_val')
-            previous_temp = previous_metar.metar_temp_val
-            
-            if not self._check_temperature_intercept_condition(current_temp, previous_temp):
-                return False
-            
-            # 条件6：天气类型告警等级不变或降级
-            if not self._check_weather_type_downgrade(current_weather_dict, previous_weather_dict, all_types=True):
-                return False
-            
+
+            # （1）风速/阵风
+            if self._check_alert_level(current_data.get('metar_wind_warning'), threshold_level):
+                if not self._is_value_same_or_smaller(current_data.get('metar_wind_speed_val'), previous_metar.metar_wind_speed_val):
+                    return False
+                if not self._is_value_same_or_smaller(current_data.get('metar_gust_val'), previous_metar.metar_gust_val, none_is_smaller=True):
+                    return False
+
+            # （2）能见度 + RVR（任一 warning 达到阈值则同时对比两项）
+            vis_triggered = self._check_alert_level(current_data.get('metar_visibility_warning'), threshold_level)
+            rvr_triggered = self._check_alert_level(current_data.get('metar_rvr_warning'), threshold_level)
+            if vis_triggered or rvr_triggered:
+                if not self._is_value_same_or_larger(current_data.get('metar_visibility_val'), previous_metar.metar_visibility_val, none_is_larger=True):
+                    return False
+                if not self._check_rvr_intercept_condition(current_data.get('rvr_min_val'), previous_metar.rvr_min_val):
+                    return False
+
+            # （3）天气现象（全部类型）
+            if self._check_alert_level(current_data.get('metar_weather_warning'), threshold_level):
+                if not self._check_weather_type_downgrade(current_weather_dict, previous_weather_dict):
+                    return False
+
+            # （4）云底高
+            if self._check_alert_level(current_data.get('metar_cloud_warning'), threshold_level):
+                if not self._is_value_same_or_larger(current_data.get('metar_min_cloud_height'), previous_metar.metar_min_cloud_height, none_is_larger=True):
+                    return False
+
+            # （5）温度（运行类专用逻辑）
+            if self._check_alert_level(current_data.get('metar_temperature_warning'), threshold_level):
+                if not self._check_operation_temperature_intercept(current_data.get('metar_temp_val'), previous_metar.metar_temp_val):
+                    return False
+
             return True
-            
+
         except Exception as e:
             logger.error(f"检查运行类拦截条件失败: {e}")
             return False
     
     def _check_parking_intercept(self, current_data: Dict, current_weather_dict: Dict,
-                                 previous_metar, previous_weather_dict: Dict) -> bool:
+                                 previous_metar, previous_weather_dict: Dict, popup_settings) -> bool:
         """
-        检查停场类弹窗拦截条件
-        
-        所有条件必须同时满足才拦截：
-        1. metar_observation_time大1-4200000范围内（70分钟）
-        2. metar_wind_speed_val、metar_gust_val不变或更小
-        3. metar_temp_val值更小且>20，或为空
-        4. metar_temp_val值更大且<-20，或为空
-        5. metar_weather_type中S、F、I、G、H类型告警等级不变或降级
-        6. user_code相同
+        检查停场类弹窗拦截条件（方案B：只对比触发告警的要素）
+
+        要素对比：只检查 warning >= parking_metar_popup_level 的项，全部通过才拦截
+        不涉及能见度、RVR、云底高
         """
         try:
             from django.conf import settings
-            
-            # 条件6：user_code相同
-            if current_data.get('user_code') != previous_metar.user_code:
-                return False
-            
-            # 条件1：时间戳差值在1-4200000范围内（70分钟）
-            current_time = current_data.get('metar_observation_time')
-            previous_time = previous_metar.metar_observation_time
-            
-            if not current_time or not previous_time:
-                return False
-            
-            time_diff = current_time - previous_time
-            if time_diff <= 0 or time_diff > 4200000:
-                return False
-            
-            # 条件2：风速和阵风不变或更小
-            current_wind = current_data.get('metar_wind_speed_val')
-            previous_wind = previous_metar.metar_wind_speed_val
-            
-            if not self._is_value_same_or_smaller(current_wind, previous_wind):
-                return False
-            
-            current_gust = current_data.get('metar_gust_val')
-            previous_gust = previous_metar.metar_gust_val
-            
-            if not self._is_value_same_or_smaller(current_gust, previous_gust, none_is_smaller=True):
-                return False
-            
-            # 条件3和4：温度条件
-            current_temp = current_data.get('metar_temp_val')
-            previous_temp = previous_metar.metar_temp_val
-            
-            if not self._check_temperature_intercept_condition(current_temp, previous_temp):
-                return False
-            
-            # 条件5：停场类天气类型告警等级不变或降级
+
+            threshold_level = popup_settings.parking_metar_popup_level
             parking_weather_types = settings.MTWS_CONFIG['POPUP_CONFIG']['PARKING_WEATHER_TYPES']
-            if not self._check_weather_type_downgrade(current_weather_dict, previous_weather_dict, 
-                                                      all_types=True, filter_types=parking_weather_types):
-                return False
-            
+
+            # （1）风速/阵风
+            if self._check_alert_level(current_data.get('metar_wind_warning'), threshold_level):
+                if not self._is_value_same_or_smaller(current_data.get('metar_wind_speed_val'), previous_metar.metar_wind_speed_val):
+                    return False
+                if not self._is_value_same_or_smaller(current_data.get('metar_gust_val'), previous_metar.metar_gust_val, none_is_smaller=True):
+                    return False
+
+            # （2）停场类天气类型（仅 S/F/I/G/H）
+            if self._check_alert_level(current_data.get('metar_weather_warning'), threshold_level):
+                if not self._check_weather_type_downgrade(current_weather_dict, previous_weather_dict, filter_types=parking_weather_types):
+                    return False
+
+            # （3）温度（停场类专用逻辑）
+            if self._check_alert_level(current_data.get('metar_temperature_warning'), threshold_level):
+                if not self._check_parking_temperature_intercept(current_data.get('metar_temp_val'), previous_metar.metar_temp_val):
+                    return False
+
             return True
-            
+
         except Exception as e:
             logger.error(f"检查停场类拦截条件失败: {e}")
             return False
@@ -1760,7 +1733,50 @@ class MetarParser:
             # 温度不变，符合条件
             return True
     
-    def _check_weather_type_downgrade(self, current_dict: Dict, previous_dict: Dict, 
+    def _check_rvr_intercept_condition(self, current_rvr, previous_rvr) -> bool:
+        """
+        RVR拦截条件：
+        - 上一份有RVR，当前有RVR：当前 >= 上一份 → 通过
+        - 上一份有RVR，当前无RVR → 通过
+        - 上一份无RVR，当前有RVR → 不通过
+        - 两者均无RVR → 通过
+        """
+        if previous_rvr is None and current_rvr is None:
+            return True
+        if previous_rvr is None and current_rvr is not None:
+            return False
+        if previous_rvr is not None and current_rvr is None:
+            return True
+        return current_rvr >= previous_rvr
+
+    def _check_operation_temperature_intercept(self, current_temp, previous_temp) -> bool:
+        """
+        运行类温度拦截条件：
+        - current_temp 为 None → 通过
+        - current_temp 不为 None 而 previous_temp 为 None → 不通过
+        - current_temp >= 0：当前 <= 上一份（降低或不变）→ 通过
+        - current_temp < 0：当前 >= 上一份（升高或不变）→ 通过
+        """
+        if current_temp is None:
+            return True
+        if previous_temp is None:
+            return False
+        if current_temp >= 0:
+            return current_temp <= previous_temp
+        else:
+            return current_temp >= previous_temp
+
+    def _check_parking_temperature_intercept(self, current_temp, previous_temp) -> bool:
+        """
+        停场类温度拦截条件：
+        - current_temp < 0 且 current_temp < previous_temp → 通过
+        - 其他所有情况 → 不通过
+        """
+        if current_temp is None or previous_temp is None:
+            return False
+        return current_temp < 0 and current_temp < previous_temp
+
+    def _check_weather_type_downgrade(self, current_dict: Dict, previous_dict: Dict,
                                       all_types=False, filter_types=None) -> bool:
         """
         检查天气类型告警等级是否不变或降级

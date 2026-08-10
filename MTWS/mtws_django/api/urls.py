@@ -5,7 +5,18 @@ API应用URL配置
 
 from django.urls import path
 from . import views
-from .airport_extra_views import airport_extra_info, airport_coords
+from .airport_extra_views import airport_extra_info, airport_coords, airport_metar_history
+from .settings_views import (
+    settings_airport_info, settings_airport_info_detail,
+    settings_area_options, settings_area_options_detail,
+    settings_data_refresh_timer, settings_data_refresh_timer_detail,
+    settings_carrier, settings_carrier_detail,
+    settings_popup,
+    settings_alert_thresholds, settings_alert_thresholds_detail,
+    settings_weather_type, settings_weather_type_detail,
+    settings_weather_alert, settings_weather_alert_detail,
+    settings_airport_location, settings_airport_location_detail,
+)
 
 app_name = 'api'
 
@@ -16,6 +27,7 @@ urlpatterns = [
     # 单个机场数据API
     path('airport/<str:airport_code>/history-reports/', views.airport_history_reports, name='airport_history_reports'),
     path('airport/<str:airport_code>/extra-info/', airport_extra_info, name='airport_extra_info'),
+    path('airport/<str:airport_code>/metar-history/', airport_metar_history, name='airport_metar_history'),
     
     # 解析控制API
     path('trigger-parsing/', views.trigger_parsing, name='trigger_parsing'),
@@ -56,6 +68,28 @@ urlpatterns = [
     # 地图告警：机场坐标批量接口
     path('airport-coords/', airport_coords, name='airport_coords'),
 
+    # 机场搜索接口（支持系统内/系统外机场）
+    path('airport-search/', views.airport_search, name='airport_search'),
+
     # 地图告警：机场实况状态批量接口（Tooltip用）
     path('airport-flight-status/', views.get_airport_flight_status, name='airport_flight_status'),
+
+    # ===== 设置管理API =====
+    path('settings/airport-info/', settings_airport_info, name='settings_airport_info'),
+    path('settings/airport-info/<str:airport_4code>/', settings_airport_info_detail, name='settings_airport_info_detail'),
+    path('settings/area-options/', settings_area_options, name='settings_area_options'),
+    path('settings/area-options/<int:option_id>/', settings_area_options_detail, name='settings_area_options_detail'),
+    path('settings/data-refresh-timer/', settings_data_refresh_timer, name='settings_data_refresh_timer'),
+    path('settings/data-refresh-timer/<int:timer_id>/', settings_data_refresh_timer_detail, name='settings_data_refresh_timer_detail'),
+    path('settings/carrier/', settings_carrier, name='settings_carrier'),
+    path('settings/carrier/<int:carrier_id>/', settings_carrier_detail, name='settings_carrier_detail'),
+    path('settings/popup/', settings_popup, name='settings_popup'),
+    path('settings/alert-thresholds/', settings_alert_thresholds, name='settings_alert_thresholds'),
+    path('settings/alert-thresholds/<str:airport_4code>/', settings_alert_thresholds_detail, name='settings_alert_thresholds_detail'),
+    path('settings/weather-type/', settings_weather_type, name='settings_weather_type'),
+    path('settings/weather-type/<int:type_id>/', settings_weather_type_detail, name='settings_weather_type_detail'),
+    path('settings/weather-alert/', settings_weather_alert, name='settings_weather_alert'),
+    path('settings/weather-alert/<int:alert_id>/', settings_weather_alert_detail, name='settings_weather_alert_detail'),
+    path('settings/airport-location/', settings_airport_location, name='settings_airport_location'),
+    path('settings/airport-location/<str:airport_4code>/', settings_airport_location_detail, name='settings_airport_location_detail'),
 ] 

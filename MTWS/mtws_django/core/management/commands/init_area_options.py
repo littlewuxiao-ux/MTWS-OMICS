@@ -43,7 +43,6 @@ class Command(BaseCommand):
                     {'classification': '国内', 'sequence': 6, 'area': '西南'},
                     {'classification': '国内', 'sequence': 7, 'area': '西北'},
                     {'classification': '国内', 'sequence': 8, 'area': '港台'},
-                    {'classification': '国内', 'sequence': 9, 'area': '其它'},
                     # 国际区域
                     {'classification': '国际', 'sequence': 1, 'area': '东亚'},
                     {'classification': '国际', 'sequence': 2, 'area': '东南亚'},

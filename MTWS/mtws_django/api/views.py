@@ -139,6 +139,7 @@ def airports_overview(request, time_mode='current'):
             airport_data = {
                 'airport_4code': airport.airport_4code,
                 'airport_name': airport.airport_name,
+                'is_configured': airport_code in configured_airports,
                 'area': airport.area,
                 'area_code': airport.area_code,
                 'classification': airport.classification,
@@ -484,7 +485,15 @@ def trigger_parsing(request, time_mode='current'):
         
         # 获取用户代码
         user_code = request.headers.get('X-User-Code')
-        
+
+        # 缓存值班用户标识供后端调度器复用
+        if user_code and time_mode == 'current':
+            try:
+                from parsers.scheduler import set_scheduler_user_code
+                set_scheduler_user_code(user_code)
+            except Exception:
+                pass
+
         # 创建解析管理器
         manager = ParsingManager(time_mode, token, user_code)
         
@@ -1094,6 +1103,7 @@ def get_popup_settings(request, time_mode='current'):
                 'data': {
                     'operation_metar_popup': popup_settings.operation_metar_popup,
                     'parking_metar_popup': popup_settings.parking_metar_popup,
+                    'intercept': popup_settings.intercept,
                 }
             })
         else:
@@ -1141,7 +1151,7 @@ def update_popup_settings(request, time_mode='current'):
             }, status=400)
         
         # 验证字段名
-        if field not in ['operation_metar_popup', 'parking_metar_popup']:
+        if field not in ['operation_metar_popup', 'parking_metar_popup', 'intercept']:
             return JsonResponse({
                 'success': False,
                 'error': '无效的字段名'
@@ -1192,6 +1202,7 @@ def update_popup_settings(request, time_mode='current'):
             'data': {
                 'operation_metar_popup': popup_settings.operation_metar_popup,
                 'parking_metar_popup': popup_settings.parking_metar_popup,
+                'intercept': popup_settings.intercept,
             }
         })
     
@@ -1525,6 +1536,359 @@ def get_nwp_data(request, time_mode='current'):
         })
     except Exception as e:
         logger.error(f"获取NWP数据失败: {e}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+# ==============================================================================
+# 机场搜索 API（支持系统内/系统外机场，系统外机场实时获取 METAR/TAF 不写库）
+# ==============================================================================
+
+def _serialize_metar(metar):
+    """将 Metar ORM 对象序列化为前端所需字典"""
+    return {
+        'metar_observation_time': metar.metar_observation_time,
+        'metar_type': metar.metar_type,
+        'metar_auto_flag': metar.metar_auto_flag,
+        'metar_wind_direction': metar.metar_wind_direction,
+        'metar_wind_speed_original': metar.metar_wind_speed_original,
+        'metar_wind_speed_val': metar.metar_wind_speed_val,
+        'metar_gust_val': metar.metar_gust_val,
+        'metar_wind_warning': metar.metar_wind_warning,
+        'metar_visibility_original': metar.metar_visibility_original,
+        'metar_visibility_val': metar.metar_visibility_val,
+        'metar_visibility_warning': metar.metar_visibility_warning,
+        'metar_weather': metar.metar_weather,
+        'metar_weather_warning': metar.metar_weather_warning,
+        'metar_weather_pre': metar.metar_weather_pre,
+        'metar_cloud': metar.metar_cloud,
+        'metar_min_cloud_height': metar.metar_min_cloud_height,
+        'metar_cloud_warning': metar.metar_cloud_warning,
+        'metar_temperature': metar.metar_temperature,
+        'metar_temp_val': metar.metar_temp_val,
+        'metar_temperature_warning': metar.metar_temperature_warning,
+        'metar_dew_point': metar.metar_dew_point,
+        'metar_ws_dsc': metar.metar_ws_dsc,
+        'metar_ws_warning': metar.metar_ws_warning,
+        'metar_change_trend': metar.metar_change_trend,
+        'metar_change_trend_warning': metar.metar_change_trend_warning,
+        'metar_rvr_dsc': metar.metar_rvr_dsc,
+        'rvr_min_org': metar.rvr_min_org,
+        'rvr_min_val': metar.rvr_min_val,
+        'metar_rvr_warning': metar.metar_rvr_warning,
+        'metar_ice_flag': metar.metar_ice_flag,
+        'metar_content': metar.metar_content,
+        'metar_warning': metar.metar_warning,
+        'metar_weather_type': metar.metar_weather_type,
+        'data_status': metar.data_status,
+        'created_at': metar.created_at,
+        'sqc': metar.sqc,
+        'popup': metar.popup,
+        'import_alert': metar.import_alert,
+        'import_alert_time': metar.import_alert_time,
+        'handle_status': metar.handle_status,
+        'import_alert_handle_time': metar.import_alert_handle_time,
+    }
+
+
+_TAF_CHANGE_DETAIL_FIELDS = [
+    'type', 'content_all', 'warning',
+    'validity_period_start', 'validity_period_end',
+    'wind_speed_mps', 'gust_mps', 'wind_warning',
+    'visibility_m', 'visibility_warning',
+    'weather1', 'weather2', 'weather3', 'weather4', 'weather5', 'weather_warning',
+    'cloud_min', 'cloud_warning',
+]
+
+
+def _serialize_taf(taf):
+    """将 Taf ORM 对象序列化为前端所需字典"""
+    result = {
+        'id': taf.id,
+        'airport_4code': taf.airport_4code,
+        'whole_validity_period': taf.whole_validity_period,
+        'taf_observation_time': taf.taf_observation_time,
+        'taf_type': taf.taf_type,
+        'taf_content': taf.taf_content,
+        'subject_validity_period_start': taf.subject_validity_period_start,
+        'subject_validity_period_end': taf.subject_validity_period_end,
+        'subject_content': taf.subject_content,
+        'subject_warning': taf.subject_warning,
+        'subject_wind_speed_mps': taf.subject_wind_speed_mps,
+        'subject_gust_mps': taf.subject_gust_mps,
+        'subject_wind_warning': taf.subject_wind_warning,
+        'subject_visibility_m': taf.subject_visibility_m,
+        'subject_visibility_warning': taf.subject_visibility_warning,
+        'subject_weather1': taf.subject_weather1,
+        'subject_weather2': taf.subject_weather2,
+        'subject_weather3': taf.subject_weather3,
+        'subject_weather4': taf.subject_weather4,
+        'subject_weather5': taf.subject_weather5,
+        'subject_weather_warning': taf.subject_weather_warning,
+        'subject_cloud_min': taf.subject_cloud_min,
+        'subject_cloud_warning': taf.subject_cloud_warning,
+        'subject_max_temp1': taf.subject_max_temp1,
+        'subject_max_temp1_time': taf.subject_max_temp1_time,
+        'subject_max_temp1_warning': taf.subject_max_temp1_warning,
+        'subject_max_temp2': taf.subject_max_temp2,
+        'subject_max_temp2_time': taf.subject_max_temp2_time,
+        'subject_max_temp2_warning': taf.subject_max_temp2_warning,
+        'subject_min_temp1': taf.subject_min_temp1,
+        'subject_min_temp1_time': taf.subject_min_temp1_time,
+        'subject_min_temp1_warning': taf.subject_min_temp1_warning,
+        'subject_min_temp2': taf.subject_min_temp2,
+        'subject_min_temp2_time': taf.subject_min_temp2_time,
+        'subject_min_temp2_warning': taf.subject_min_temp2_warning,
+        'error_report': taf.error_report,
+        'abnormal_label': taf.abnormal_label,
+        'amd_or_cor': taf.amd_or_cor,
+        'data_status': taf.data_status,
+        'created_at': taf.created_at,
+        'sqc': taf.sqc,
+        'import_alert': taf.import_alert,
+        'import_alert_time': taf.import_alert_time,
+        'handle_status': taf.handle_status,
+        'import_alert_handle_time': taf.import_alert_handle_time,
+    }
+    for i in range(1, 9):
+        for f in _TAF_CHANGE_DETAIL_FIELDS:
+            result[f'change_{i}_{f}'] = getattr(taf, f'change_{i}_{f}', None)
+    return result
+
+
+def _get_system_airport_search_data(code):
+    """从数据库读取系统内机场（has_flight=True）的搜索数据"""
+    airport = AirportInfo.objects.filter(airport_4code=code).first()
+    if not airport:
+        default_airport_info = AirportInfo.objects.filter(airport_4code='default').first()
+        if default_airport_info:
+            from copy import deepcopy
+            airport = deepcopy(default_airport_info)
+            airport.airport_4code = code
+            airport.airport_name = f'未配置机场 ({code})'
+
+    flight_data = Flight.objects.filter(
+        airport_4code=code, has_flight=True
+    ).order_by('-created_at').first()
+
+    metar_qs = Metar.objects.filter(
+        airport_4code=code, data_status__in=['N', 'C']
+    ).order_by('-metar_observation_time')[:1]
+
+    taf_record = Taf.objects.filter(
+        airport_4code=code, data_status__in=['N', 'C']
+    ).order_by('-created_at').first()
+
+    return {
+        'airport_4code': code,
+        'airport_name': airport.airport_name if airport else code,
+        'is_system_airport': True,
+        'area': airport.area if airport else '',
+        'area_code': airport.area_code if airport else '',
+        'classification': airport.classification if airport else '',
+        'forecast_phone': airport.forecast_phone if airport else '',
+        'observation_phone': airport.observation_phone if airport else '',
+        'other_phone': airport.other_phone if airport else '',
+        'flight_data': {
+            'has_flight': flight_data.has_flight if flight_data else False,
+            'time_slots': [getattr(flight_data, f'time_{i}_flight') for i in range(48)] if flight_data else [False] * 48,
+        },
+        'metar_data': [_serialize_metar(m) for m in metar_qs],
+        'taf_data': [_serialize_taf(taf_record)] if taf_record else [],
+        'computed_alerts': {},
+    }
+
+
+def _get_external_airport_search_data(code, time_mode, token):
+    """从外部 METAR/TAF API 实时获取系统外机场数据，不写入数据库"""
+    import pandas as pd
+
+    # 尝试从 airport_location 表获取机场名称
+    airport_name = code
+    try:
+        from core.models import AirportLocation
+        loc = AirportLocation.objects.filter(airport_4code=code).values('airport_name').first()
+        if loc and loc.get('airport_name'):
+            airport_name = loc['airport_name']
+    except Exception:
+        pass
+
+    metar_result = []
+    taf_result = []
+
+    try:
+        from parsers.metar_parser import MetarParser
+        from parsers.taf_parser import TafParser
+
+        adapter = AdapterFactory.create_adapter(time_mode=time_mode, token=token)
+
+        # ── METAR ────────────────────────────────────────────────────────────
+        metar_df = adapter.get_metar_data([code])
+        if metar_df is not None and not metar_df.empty:
+            metar_parser = MetarParser(time_mode=time_mode, token=token)
+            airport_metar_df = metar_df[
+                metar_df['airport4Code'].astype(str).str.strip().str.upper() == code
+            ]
+            for _, row in airport_metar_df.iterrows():
+                try:
+                    parsed = metar_parser._parse_metar_content(row)
+                    now_ms = int(datetime.now().timestamp() * 1000)
+                    metar_result.append({
+                        'metar_observation_time': parsed.get('metar_observation_time'),
+                        'metar_type': parsed.get('metar_type'),
+                        'metar_auto_flag': parsed.get('metar_auto_flag'),
+                        'metar_wind_direction': parsed.get('metar_wind_direction'),
+                        'metar_wind_speed_original': parsed.get('metar_wind_speed_original'),
+                        'metar_wind_speed_val': parsed.get('metar_wind_speed_val'),
+                        'metar_gust_val': parsed.get('metar_gust_val'),
+                        'metar_wind_warning': parsed.get('metar_wind_warning', 'N'),
+                        'metar_visibility_original': parsed.get('metar_visibility_original'),
+                        'metar_visibility_val': parsed.get('metar_visibility_val'),
+                        'metar_visibility_warning': parsed.get('metar_visibility_warning', 'N'),
+                        'metar_weather': parsed.get('metar_weather'),
+                        'metar_weather_warning': parsed.get('metar_weather_warning', 'N'),
+                        'metar_weather_pre': parsed.get('metar_weather_pre'),
+                        'metar_cloud': parsed.get('metar_cloud'),
+                        'metar_min_cloud_height': parsed.get('metar_min_cloud_height'),
+                        'metar_cloud_warning': parsed.get('metar_cloud_warning', 'N'),
+                        'metar_temperature': parsed.get('metar_temperature'),
+                        'metar_temp_val': parsed.get('metar_temp_val'),
+                        'metar_temperature_warning': parsed.get('metar_temperature_warning', 'N'),
+                        'metar_dew_point': parsed.get('metar_dew_point'),
+                        'metar_ws_dsc': parsed.get('metar_ws_dsc'),
+                        'metar_ws_warning': parsed.get('metar_ws_warning', 'N'),
+                        'metar_change_trend': parsed.get('metar_change_trend'),
+                        'metar_change_trend_warning': parsed.get('metar_change_trend_warning', 'N'),
+                        'metar_rvr_dsc': parsed.get('metar_rvr_dsc'),
+                        'rvr_min_org': parsed.get('rvr_min_org'),
+                        'rvr_min_val': parsed.get('rvr_min_val'),
+                        'metar_rvr_warning': parsed.get('metar_rvr_warning', 'N'),
+                        'metar_ice_flag': parsed.get('metar_ice_flag'),
+                        'metar_content': parsed.get('metar_content', ''),
+                        'metar_warning': parsed.get('metar_warning', 'N'),
+                        'metar_weather_type': None,
+                        'data_status': 'N',
+                        'created_at': now_ms,
+                        'sqc': str(row.get('sqc', '')).strip() or None,
+                        'popup': False,
+                        'import_alert': 'N',
+                        'import_alert_time': None,
+                        'handle_status': None,
+                        'import_alert_handle_time': None,
+                    })
+                except Exception as e:
+                    logger.warning(f"[搜索] 解析机场 {code} METAR 行失败: {e}")
+
+        # ── TAF ──────────────────────────────────────────────────────────────
+        taf_df = adapter.get_taf_data([code])
+        if taf_df is not None and not taf_df.empty:
+            taf_parser = TafParser(time_mode=time_mode, token=token)
+            airport_taf_df = taf_df[
+                taf_df['airport4Code'].astype(str).str.strip().str.upper() == code
+            ]
+            if not airport_taf_df.empty:
+                row = airport_taf_df.iloc[0]
+                try:
+                    taf_content = str(row.get('content', '')).strip()
+                    sqc = str(row.get('sqc', '')).strip()
+                    raw_obs_time = row.get('observationTime', '')
+                    try:
+                        obs_time = int(float(raw_obs_time)) if raw_obs_time not in ('', None) else None
+                    except (ValueError, TypeError):
+                        obs_time = None
+
+                    if taf_content and taf_parser.parse_taf(taf_content, code):
+                        taf_parser.observation_time = obs_time
+                        data_dict = taf_parser.to_database_dict()
+                        now_ms = int(datetime.now().timestamp() * 1000)
+                        taf_entry = {
+                            'id': None,
+                            'airport_4code': code,
+                            'sqc': sqc,
+                            'taf_type': 'TAF',
+                            'data_status': 'N',
+                            'created_at': now_ms,
+                            'import_alert': 'N',
+                            'import_alert_time': None,
+                            'handle_status': None,
+                            'import_alert_handle_time': None,
+                        }
+                        taf_entry.update(data_dict)
+                        taf_result.append(taf_entry)
+                except Exception as e:
+                    logger.warning(f"[搜索] 解析机场 {code} TAF 失败: {e}")
+
+    except Exception as e:
+        logger.error(f"[搜索] 获取机场 {code} 外部数据失败: {e}")
+
+    return {
+        'airport_4code': code,
+        'airport_name': airport_name,
+        'is_system_airport': False,
+        'area': '',
+        'area_code': '',
+        'classification': '',
+        'forecast_phone': '',
+        'observation_phone': '',
+        'other_phone': '',
+        'flight_data': {
+            'has_flight': False,
+            'time_slots': [False] * 48,
+        },
+        'metar_data': metar_result,
+        'taf_data': taf_result,
+        'computed_alerts': {},
+    }
+
+
+@require_http_methods(["GET"])
+def airport_search(request, time_mode='current'):
+    """
+    机场搜索 API。
+    GET 参数: codes=ZBAA,ZSSS  （逗号分隔的四字代码，已由前端校验并去重）
+    对系统内机场（has_flight=True）直接读库；对系统外机场实时调 METAR/TAF API，不写库。
+    """
+    try:
+        codes_param = request.GET.get('codes', '').strip()
+        if not codes_param:
+            return JsonResponse({'success': False, 'error': '缺少 codes 参数'}, status=400)
+
+        codes = [c.strip().upper() for c in codes_param.split(',') if len(c.strip()) == 4]
+        if not codes:
+            return JsonResponse({'success': False, 'error': '未找到有效的机场四字代码'}, status=400)
+
+        token = None
+        if time_mode == 'current':
+            auth_header = request.headers.get('Authorization', '')
+            if auth_header.startswith('Bearer '):
+                token = auth_header[7:]
+
+        result = []
+        for code in codes:
+            try:
+                is_system = Flight.objects.filter(airport_4code=code, has_flight=True).exists()
+                if is_system:
+                    data = _get_system_airport_search_data(code)
+                else:
+                    data = _get_external_airport_search_data(code, time_mode, token)
+                result.append(data)
+            except Exception as e:
+                logger.error(f"[搜索] 机场 {code} 数据获取失败: {e}")
+                result.append({
+                    'airport_4code': code,
+                    'airport_name': code,
+                    'is_system_airport': False,
+                    'area': '', 'area_code': '', 'classification': '',
+                    'forecast_phone': '', 'observation_phone': '', 'other_phone': '',
+                    'flight_data': {'has_flight': False, 'time_slots': [False] * 48},
+                    'metar_data': [],
+                    'taf_data': [],
+                    'computed_alerts': {},
+                })
+
+        return JsonResponse({'success': True, 'data': result})
+
+    except Exception as e:
+        logger.error(f"[搜索] airport_search 失败: {e}")
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
 

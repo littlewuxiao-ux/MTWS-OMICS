@@ -3,12 +3,18 @@
 // ==================================
 // 依赖：main.js 中的 airportData, currentTimeMode, currentToken, currentUserCode
 
+// 搜索结果临时缓存（不写入主页 airportData，关闭弹窗后清除）
+const searchAirportCache = {};
+
 // 存储图表实例和状态
 const airportDetailChart = {
   chart: null,
   hours: 3,
   selectedSeries: {},
-  airportCode: null
+  airportCode: null,
+  historyData: null,        // 历史 METAR 接口返回的解析数据
+  filteredData: null,       // 当前时段过滤后的数据点（用于天气标签重绘）
+  weatherLabelCount: 0      // 上次渲染的天气标签数量（用于清除多余标签）
 };
 
 // 显示机场详细信息
@@ -48,10 +54,20 @@ function showAirportDetailModal(airportData) {
   // 显示机场数据
   displayAirportDetailData(airportData);
 
-  // 初始化图表
-  const defaultHours = window.chartDefaultHours || 3;
+  // 初始化图表，并异步加载历史 METAR 数据
+  // 保留当前已选时段，若无则使用默认值
+  let defaultHours = window.chartDefaultHours || 3;
+  const customInput = document.getElementById('chart-time-input-detail');
+  if (customInput && customInput.classList.contains('has-value') && customInput.value) {
+    const customVal = parseInt(customInput.value);
+    if (!isNaN(customVal)) defaultHours = customVal;
+  } else {
+    const selectedRadio = document.querySelector('input[name="chart-time-detail"]:checked');
+    if (selectedRadio) defaultHours = parseInt(selectedRadio.value);
+  }
   initAirportDetailChart(airport.airport_4code, defaultHours);
   bindChartTimeSelectorForDetail(airport.airport_4code);
+  loadMetarHistoryData(airport.airport_4code);
 
   // 加载实况和预报报文
   loadHistoryReports(airport.airport_4code);
@@ -173,13 +189,16 @@ function initAirportDetailChart(airportCode, hours) {
   }
 
   // 创建新图表
-  const chart = echarts.init(chartDom, 'dark');
+  const chart = echarts.init(chartDom);
 
   // 初始化状态
   airportDetailChart.chart = chart;
   airportDetailChart.hours = hours;
   airportDetailChart.selectedSeries = {};
   airportDetailChart.airportCode = airportCode;
+  airportDetailChart.historyData = null;
+  airportDetailChart.filteredData = null;
+  airportDetailChart.weatherLabelCount = 0;
 
   // 监听容器大小变化（仅在尺寸有效时 resize，避免主页面自动更新导致 reflow 时误用错误尺寸）
   const resizeObserver = new ResizeObserver(() => {
@@ -187,6 +206,9 @@ function initAirportDetailChart(airportCode, hours) {
     const h = chartDom.getBoundingClientRect().height;
     if (w >= 50 && h >= 50) {
       chart.resize();
+      if (airportDetailChart.filteredData) {
+        renderWeatherLabels(chart, airportDetailChart.filteredData);
+      }
     }
   });
   resizeObserver.observe(chartDom);
@@ -216,11 +238,11 @@ function updateAirportDetailChart(airportCode) {
   console.log('airportData 是否存在:', typeof airportData !== 'undefined');
   console.log('airportData 长度:', airportData ? airportData.length : 0);
 
-  // 从主页数据中查找机场信息
-  const airport = airportData.find(a => a.airport_4code === airportCode);
+  // 优先从主页数据查找，其次从搜索缓存查找
+  const airport = (airportData || []).find(a => a.airport_4code === airportCode)
+    || searchAirportCache[airportCode];
   if (!airport) {
     console.log('未找到机场数据:', airportCode);
-    console.log('可用的机场代码:', airportData.map(a => a.airport_4code).slice(0, 10));
     return;
   }
 
@@ -229,8 +251,8 @@ function updateAirportDetailChart(airportCode) {
 
   const hours = airportDetailChart.hours;
 
-  // 获取历史数据
-  const metarData = airport.metar_data || [];
+  // 优先使用历史接口数据，回退到主页已加载的 metar_data
+  const metarData = airportDetailChart.historyData || airport.metar_data || [];
 
   console.log('metar_data 长度:', metarData.length);
   console.log('metar_data 示例（前3条）:', metarData.slice(0, 3));
@@ -261,8 +283,8 @@ function updateAirportDetailChart(airportCode) {
           subtext: '需要等待系统收集更多METAR数据',
           left: 'center',
           top: 'center',
-          textStyle: { color: '#95a5a6', fontSize: 14 },
-          subtextStyle: { color: '#7f8c8d', fontSize: 11 }
+          textStyle: { color: '#888', fontSize: 14 },
+          subtextStyle: { color: '#aaa', fontSize: 11 }
         }
       });
       return;
@@ -289,21 +311,21 @@ function updateAirportDetailChart(airportCode) {
         subtext: '无法获取有效的观测时间',
         left: 'center',
         top: 'center',
-        textStyle: { color: '#95a5a6', fontSize: 14 },
-        subtextStyle: { color: '#7f8c8d', fontSize: 11 }
+        textStyle: { color: '#888', fontSize: 14 },
+        subtextStyle: { color: '#aaa', fontSize: 11 }
       }
     });
     return;
   }
 
-  const startTime = latestTime - hours * 3600000 - 3600000;
+  const startTime = latestTime - hours * 3600000;
 
   console.log('时间范围:', new Date(startTime), '到', new Date(latestTime));
   console.log('latestTime:', latestTime, 'startTime:', startTime);
 
   // 过滤数据
   const filteredData = metarData.filter(item =>
-    item.metar_observation_time > startTime && item.metar_observation_time <= latestTime
+    item.metar_observation_time >= startTime && item.metar_observation_time <= latestTime
   ).sort((a, b) => a.metar_observation_time - b.metar_observation_time);
 
   console.log('过滤后数据条数:', filteredData.length);
@@ -316,8 +338,8 @@ function updateAirportDetailChart(airportCode) {
         subtext: '需要等待系统收集更多METAR数据',
         left: 'center',
         top: 'center',
-        textStyle: { color: '#95a5a6', fontSize: 14 },
-        subtextStyle: { color: '#7f8c8d', fontSize: 11 }
+        textStyle: { color: '#888', fontSize: 14 },
+        subtextStyle: { color: '#aaa', fontSize: 11 }
       }
     });
     return;
@@ -366,12 +388,18 @@ function updateAirportDetailChart(airportCode) {
       left: 'center',
       top: 'middle',
       textStyle: { color: '#f39c12', fontSize: 11 }
-    } : undefined,
+    } : { text: '' },
     tooltip: {
       trigger: 'axis',
       formatter: function (params) {
         const time = new Date(params[0].axisValue);
-        let result = `${time.getMonth() + 1}月${time.getDate()}日 ${time.getHours()}:${String(time.getMinutes()).padStart(2, '0')}<br/>`;
+        const isUtc = window.displayTimezone === 'UTC';
+        const mo = isUtc ? time.getUTCMonth() + 1 : time.getMonth() + 1;
+        const d  = isUtc ? time.getUTCDate()       : time.getDate();
+        const h  = isUtc ? time.getUTCHours()      : time.getHours();
+        const m  = isUtc ? time.getUTCMinutes()    : time.getMinutes();
+        const tz = isUtc ? 'UTC' : 'CST';
+        let result = `${mo}月${d}日 ${h}:${String(m).padStart(2, '0')} ${tz}<br/>`;
         params.forEach(param => {
           if (param.value !== null && param.value !== undefined) {
             const val = Array.isArray(param.value) ? param.value[1] : param.value;
@@ -380,6 +408,23 @@ function updateAirportDetailChart(airportCode) {
             }
           }
         });
+        // 查找对应时刻的天气现象
+        let weatherDisplay = '无';
+        if (airportDetailChart.filteredData) {
+          let hoverTime = null;
+          for (const p of params) {
+            if (Array.isArray(p.value) && p.value[0] != null) {
+              hoverTime = p.value[0];
+              break;
+            }
+          }
+          if (hoverTime == null) hoverTime = params[0].axisValue;
+          const pt = airportDetailChart.filteredData.find(
+            item => item.metar_observation_time === hoverTime
+          );
+          if (pt && pt.metar_weather) weatherDisplay = pt.metar_weather;
+        }
+        result += `天气现象: ${weatherDisplay}<br/>`;
         return result;
       }
     },
@@ -406,7 +451,7 @@ function updateAirportDetailChart(airportCode) {
       left: '94px',
       right: '94px',
       top: '35px',
-      bottom: '30px'
+      bottom: '70px'
     },
     xAxis: {
       type: 'time',
@@ -419,14 +464,14 @@ function updateAirportDetailChart(airportCode) {
           const m = window.displayTimezone === 'UTC' ? date.getUTCMinutes() : date.getMinutes();
           return `${h}:${String(m).padStart(2, '0')}`;
         },
-        color: '#ecf0f1',
+        color: '#555',
         fontSize: 10
       },
       axisTick: {
         show: true
       },
-      axisLine: { lineStyle: { color: '#7f8c8d' } },
-      splitLine: { show: true, lineStyle: { color: '#34495e' } }
+      axisLine: { lineStyle: { color: '#ccc' } },
+      splitLine: { show: true, lineStyle: { color: '#e8e8e8' } }
     },
     yAxis: [
       // yAxis[0]: 风速和阵风 - 左侧
@@ -439,13 +484,13 @@ function updateAirportDetailChart(airportCode) {
         nameTextStyle: { color: '#3498db', fontSize: 10 },
         position: 'left',
         offset: windAxisOffset,
-        axisLabel: { color: '#ecf0f1', fontSize: 10 },
-        axisLine: { show: showWindAxis, lineStyle: { color: '#7f8c8d' } },
+        axisLabel: { color: '#555', fontSize: 10 },
+        axisLine: { show: showWindAxis, lineStyle: { color: '#ccc' } },
         axisTick: { show: showWindAxis },
         splitLine: {
           show: hasAnySeriesSelected,
           lineStyle: {
-            color: 'rgba(127, 140, 141, 0.3)',
+            color: '#e8e8e8',
             type: 'solid',
             width: 1
           }
@@ -462,8 +507,8 @@ function updateAirportDetailChart(airportCode) {
         nameTextStyle: { color: '#27ae60', fontSize: 10 },
         position: 'left',
         offset: tempAxisOffset,
-        axisLabel: { color: '#ecf0f1', fontSize: 10 },
-        axisLine: { show: showTempAxis, lineStyle: { color: '#7f8c8d' } },
+        axisLabel: { color: '#555', fontSize: 10 },
+        axisLine: { show: showTempAxis, lineStyle: { color: '#ccc' } },
         axisTick: { show: showTempAxis },
         splitLine: { show: false }
       },
@@ -477,8 +522,8 @@ function updateAirportDetailChart(airportCode) {
         nameTextStyle: { color: '#f39c12', fontSize: 10 },
         position: 'right',
         offset: visAxisOffset,
-        axisLabel: { color: '#ecf0f1', fontSize: 10 },
-        axisLine: { show: showVisAxis, lineStyle: { color: '#7f8c8d' } },
+        axisLabel: { color: '#555', fontSize: 10 },
+        axisLine: { show: showVisAxis, lineStyle: { color: '#ccc' } },
         axisTick: { show: showVisAxis },
         splitLine: { show: false }
       },
@@ -492,8 +537,8 @@ function updateAirportDetailChart(airportCode) {
         nameTextStyle: { color: '#9b59b6', fontSize: 10 },
         position: 'right',
         offset: cloudAxisOffset,
-        axisLabel: { color: '#ecf0f1', fontSize: 10 },
-        axisLine: { show: showCloudAxis, lineStyle: { color: '#7f8c8d' } },
+        axisLabel: { color: '#555', fontSize: 10 },
+        axisLine: { show: showCloudAxis, lineStyle: { color: '#ccc' } },
         axisTick: { show: showCloudAxis },
         splitLine: { show: false }
       }
@@ -630,7 +675,16 @@ function updateAirportDetailChart(airportCode) {
     ]
   };
 
+  // 保存当前过滤数据，供天气标签渲染和 resize 时使用
+  airportDetailChart.filteredData = filteredData;
   airportDetailChart.chart.setOption(option);
+
+  // 在图表处理完新选项后渲染天气现象标签
+  setTimeout(() => {
+    if (airportDetailChart.chart && airportDetailChart.filteredData) {
+      renderWeatherLabels(airportDetailChart.chart, airportDetailChart.filteredData);
+    }
+  }, 0);
 
   // 监听图例选择变化
   airportDetailChart.chart.off('legendselectchanged');
@@ -646,6 +700,53 @@ function updateAirportDetailChart(airportCode) {
     // 立即重新渲染图表以更新Y轴显示状态
     updateAirportDetailChart(airportCode);
   });
+}
+
+// 在横坐标轴时间刻度标签正下方渲染天气现象斜向标签
+// 文字右端（上端）对齐时间刻度标签下方，向左下方 45° 延伸
+function renderWeatherLabels(chart, filteredData) {
+  const chartDom = document.getElementById('airport-detail-chart');
+  if (!chartDom || !chart) return;
+
+  const containerHeight = chartDom.offsetHeight;
+  // grid.bottom = 70px；x 轴刻度文字约 14px 高；再留 2px 间隙
+  const anchorY = containerHeight - 70 + 14 + 2;
+
+  const graphicItems = [];
+  let idx = 0;
+
+  filteredData.forEach(item => {
+    const weather = item.metar_weather;
+    if (!weather) return;
+
+    const xPixel = chart.convertToPixel({ xAxisIndex: 0 }, item.metar_observation_time);
+    if (xPixel == null || isNaN(xPixel)) return;
+
+    graphicItems.push({
+      id: `wl_${idx++}`,
+      type: 'text',
+      z: 5,
+      x: xPixel,
+      y: anchorY,
+      rotation: Math.PI / 4,
+      style: {
+        text: weather,
+        fontSize: 12,
+        fill: '#333',
+        align: 'right',
+        verticalAlign: 'top',
+      },
+    });
+  });
+
+  // 清除上次渲染中多余的标签（切换到更短时段时数量可能减少）
+  const prevCount = airportDetailChart.weatherLabelCount || 0;
+  for (let i = idx; i < prevCount; i++) {
+    graphicItems.push({ id: `wl_${i}`, $action: 'remove' });
+  }
+  airportDetailChart.weatherLabelCount = idx;
+
+  chart.setOption({ graphic: graphicItems });
 }
 
 // 应用自定义时间范围（机场详情）
@@ -678,6 +779,33 @@ function applyCustomChartTimeForDetail() {
   }
 }
 
+// 异步加载历史 METAR 数据并刷新图表
+function loadMetarHistoryData(airportCode) {
+  const headers = {};
+  if (currentTimeMode === 'current' && currentToken) {
+    headers['Authorization'] = `Bearer ${currentToken}`;
+  }
+
+  fetch(`/${currentTimeMode}/api/airport/${airportCode}/metar-history/`, {
+    headers: headers
+  })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success && Array.isArray(data.data) && data.data.length > 0) {
+        airportDetailChart.historyData = data.data;
+        // 仅当当前图表仍属于该机场时才刷新
+        if (airportDetailChart.airportCode === airportCode) {
+          updateAirportDetailChart(airportCode);
+        }
+      } else {
+        console.log('历史 METAR 数据为空或请求失败:', airportCode, data);
+      }
+    })
+    .catch(error => {
+      console.error('请求历史 METAR 数据失败:', error);
+    });
+}
+
 // 绑定时间选择器事件（机场详情）
 function bindChartTimeSelectorForDetail(airportCode) {
   const radios = document.querySelectorAll('input[name="chart-time-detail"]');
@@ -703,3 +831,254 @@ function bindChartTimeSelectorForDetail(airportCode) {
     this.classList.remove('has-value');
   });
 }
+
+// ==================================
+// 机场搜索结果展示
+// ==================================
+
+/**
+ * 单个机场搜索结果展示（来自 API，非主页已加载数据）。
+ * 将机场数据存入 searchAirportCache，然后调用现有 showAirportDetailModal。
+ */
+function showAirportSearchSingle(airportData) {
+  const code = airportData.airport_4code;
+
+  // 写入缓存（供图表等需要时查找）
+  searchAirportCache[code] = airportData;
+
+  // 复用现有完整详情页弹窗
+  showAirportDetailModal(airportData);
+}
+
+/**
+ * 生成机场详情 header 的 HTML（用于多机场搜索展示，避免复用固定ID元素）。
+ */
+function _buildSearchAirportHeader(airport) {
+  const code = airport.airport_4code;
+  const name = airport.airport_name || '';
+  const areaCode = airport.area_code || 'N/A';
+  const forecastPhone = airport.forecast_phone || 'N/A';
+  const obsPhone = airport.observation_phone || 'N/A';
+  const otherPhone = airport.other_phone || 'N/A';
+
+  return `
+    <div class="airport-detail-header">
+      <div class="airport-title-left">
+        <h2>${code} ${name}</h2>
+      </div>
+      <div class="airport-info-right">
+        <div class="airport-info-row-top">
+          <div class="info-item">
+            <span class="info-label">日出:</span>
+            <span class="info-value" id="search-sunrise-${code}">--:--</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">日落:</span>
+            <span class="info-value" id="search-sunset-${code}">--:--</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">跑道:</span>
+            <span class="info-value" id="search-runway-${code}">--</span>
+            <span class="airport-detail-info-hint"
+              title="日出日落和跑道数据来自外网公开数据，仅供参考。" aria-label="说明">&#x24D8;</span>
+          </div>
+        </div>
+        <div class="airport-info-row-bottom">
+          <div class="contact-item">
+            <span class="contact-label">区号:</span>
+            <span class="contact-value">${areaCode}</span>
+          </div>
+          <div class="contact-item">
+            <span class="contact-label">预报电话:</span>
+            <span class="contact-value">${forecastPhone}</span>
+          </div>
+          <div class="contact-item">
+            <span class="contact-label">观测电话:</span>
+            <span class="contact-value">${obsPhone}</span>
+          </div>
+          <div class="contact-item">
+            <span class="contact-label">其他联系方式:</span>
+            <span class="contact-value">${otherPhone}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * 生成机场数据区的 HTML（用于多机场搜索展示）。
+ * 内含 airport-data-section，title-row 由 CSS 隐藏（顶部共用时间轴）。
+ */
+function _buildSearchAirportDataSection(airport) {
+  const code = airport.airport_4code;
+  const rowHTML = (typeof createAirportRowForDetail === 'function')
+    ? createAirportRowForDetail(airport)
+    : '<div class="airport-search-empty">无法生成数据行</div>';
+
+  return `
+    <div class="airport-data-section">
+      <div class="title-row airport-detail-title-row">
+        <div class="title-weather"><span class="title-text">实况信息</span></div>
+        <div class="title-timeline">
+          <div class="timeline-row beijing-time">
+            <div id="search-block-bj-${code}" class="timeline-container"></div>
+          </div>
+          <div class="timeline-row utc-time">
+            <div id="search-block-utc-${code}" class="timeline-container"></div>
+          </div>
+        </div>
+      </div>
+      <div class="airport-detail-main" id="search-block-main-${code}">
+        ${rowHTML}
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * 多机场搜索结果展示。
+ * 在 airport-search-modal 中逐一渲染各机场的 header + data section。
+ */
+function showAirportSearchMulti(airports) {
+  const container = document.getElementById('airport-search-list');
+  if (!container) return;
+
+  // 写入缓存
+  airports.forEach(a => { searchAirportCache[a.airport_4code] = a; });
+
+  // 生成各机场 HTML
+  const blocksHTML = airports.map(airport => {
+    return `
+      <div class="airport-search-block" data-code="${airport.airport_4code}">
+        ${_buildSearchAirportHeader(airport)}
+        ${_buildSearchAirportDataSection(airport)}
+      </div>
+    `;
+  }).join('');
+
+  container.innerHTML = blocksHTML;
+
+  // 显示弹窗
+  if (typeof showModal === 'function') {
+    showModal('airport-search-modal');
+  }
+
+  // 弹窗渲染完成后，逐一为每个机场生成时间轴 + 更新网格线 + 绑定点击 + 异步加载额外信息
+  requestAnimationFrame(() => {
+    airports.forEach(airport => {
+      const code = airport.airport_4code;
+
+      // 为各机场独立生成时间轴
+      _generateSearchTimeline(`search-block-bj-${code}`, `search-block-utc-${code}`);
+
+      const mainEl = document.getElementById(`search-block-main-${code}`);
+      if (mainEl) {
+        const airportRow = mainEl.querySelector('.airport-row');
+        if (airportRow && typeof updateAirportGridForModal === 'function') {
+          updateAirportGridForModal(airportRow);
+        }
+      }
+
+      // 点击四字代码标题切换到单机场完整详情
+      const block = container.querySelector(`[data-code="${code}"]`);
+      if (block) {
+        const titleH2 = block.querySelector('.airport-title-left h2');
+        if (titleH2) {
+          titleH2.classList.add('airport-search-code-clickable');
+          titleH2.title = '点击查看完整详情';
+          titleH2.addEventListener('click', function () {
+            const cached = searchAirportCache[code];
+            if (cached && typeof showAirportDetailModal === 'function') {
+              showAirportDetailModal(cached);
+            }
+          });
+        }
+      }
+
+      // 异步加载日出日落/跑道信息
+      _loadSearchExtraInfo(code);
+    });
+  });
+}
+
+/**
+ * 为搜索结果的顶部共用时间轴生成内容（复用 generateAirportDetailTimeline 逻辑）。
+ */
+function _generateSearchTimeline(bjId, utcId) {
+  const bjEl = document.getElementById(bjId);
+  const utcEl = document.getElementById(utcId);
+  if (!bjEl || !utcEl) return;
+
+  const currentTime = (typeof getCurrentTime === 'function') ? getCurrentTime() : new Date();
+  const timeRange = (typeof currentTimeRange !== 'undefined') ? currentTimeRange : 36;
+  let bjCells = '';
+  let utcCells = '';
+
+  for (let i = 0; i < timeRange; i++) {
+    let bjHour, utcHour;
+    if ((typeof currentTimeMode !== 'undefined') && currentTimeMode === 'test') {
+      const utcTime = new Date(currentTime.getTime() + i * 3600000);
+      utcHour = utcTime.getUTCHours().toString().padStart(2, '0');
+      const bjTime = new Date(utcTime.getTime() + 28800000);
+      bjHour = bjTime.getUTCHours().toString().padStart(2, '0');
+    } else {
+      const localTime = new Date(currentTime.getTime() + i * 3600000);
+      bjHour = localTime.getHours().toString().padStart(2, '0');
+      const utcTime = new Date(localTime.getTime() - 28800000);
+      utcHour = utcTime.getHours().toString().padStart(2, '0');
+    }
+    bjCells += `<div class="timeline-cell" data-time="${i}"><span class="time-text">${i === 0 ? '' : bjHour}</span></div>`;
+    utcCells += `<div class="timeline-cell" data-time="${i}"><span class="time-text">${i === 0 ? '' : utcHour}</span></div>`;
+  }
+
+  bjEl.innerHTML = bjCells;
+  utcEl.innerHTML = utcCells;
+}
+
+/**
+ * 为搜索结果中的单个机场异步加载日出日落/跑道信息。
+ */
+function _loadSearchExtraInfo(airportCode) {
+  const sunriseEl = document.getElementById(`search-sunrise-${airportCode}`);
+  const sunsetEl = document.getElementById(`search-sunset-${airportCode}`);
+  const runwayEl = document.getElementById(`search-runway-${airportCode}`);
+  if (!sunriseEl && !sunsetEl && !runwayEl) return;
+
+  const headers = {};
+  if ((typeof currentTimeMode !== 'undefined') && currentTimeMode === 'current'
+    && (typeof currentToken !== 'undefined') && currentToken) {
+    headers['Authorization'] = `Bearer ${currentToken}`;
+  }
+
+  fetch(`/${typeof currentTimeMode !== 'undefined' ? currentTimeMode : 'current'}/api/airport/${airportCode}/extra-info/`, { headers })
+    .then(r => r.json())
+    .then(data => {
+      if (data.success) {
+        const sr = data.data.sunrise || '--:--';
+        const ss = data.data.sunset || '--:--';
+        const srUtc = data.data.sunrise_utc != null ? data.data.sunrise_utc : '--:--';
+        const ssUtc = data.data.sunset_utc != null ? data.data.sunset_utc : '--:--';
+        if (sunriseEl) sunriseEl.textContent = `${sr}CST / ${srUtc}UTC`;
+        if (sunsetEl) sunsetEl.textContent = `${ss}CST / ${ssUtc}UTC`;
+        const runways = data.data.runways || [];
+        if (runwayEl) runwayEl.textContent = runways.length > 0 ? runways.join(', ') : '--';
+      }
+    })
+    .catch(() => { /* 忽略额外信息加载失败 */ });
+}
+
+// 关闭搜索弹窗时清空搜索缓存
+(function () {
+  document.addEventListener('DOMContentLoaded', function () {
+    const modal = document.getElementById('airport-search-modal');
+    if (!modal) return;
+    const closeBtn = modal.querySelector('.modal-close');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', function () {
+        // 清空缓存
+        Object.keys(searchAirportCache).forEach(k => delete searchAirportCache[k]);
+      });
+    }
+  });
+})();

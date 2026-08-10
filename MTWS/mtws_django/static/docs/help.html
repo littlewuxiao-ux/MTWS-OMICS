@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>系统使用说明 · MTWS</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+      background: #f5f6fa;
+      color: #333;
+      min-height: 100vh;
+    }
+
+    .page-header {
+      background: #2c3e50;
+      color: #fff;
+      padding: 16px 40px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+
+    .page-header h1 {
+      font-size: 18px;
+      font-weight: bold;
+      letter-spacing: 0.5px;
+    }
+
+    .back-btn {
+      background: rgba(255,255,255,0.12);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: #fff;
+      padding: 5px 14px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+      transition: background 0.2s;
+      text-decoration: none;
+    }
+
+    .back-btn:hover { background: rgba(255,255,255,0.22); }
+
+    .page-body {
+      max-width: 900px;
+      margin: 36px auto;
+      padding: 0 24px 60px;
+    }
+
+    .doc-content {
+      background: #fff;
+      border-radius: 8px;
+      padding: 36px 44px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.07);
+      line-height: 1.8;
+      font-size: 14px;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 60px 0;
+      color: #888;
+      font-size: 15px;
+    }
+
+    /* 文档内容样式 */
+    .doc-content h1 { font-size: 22px; margin: 0 0 20px; color: #2c3e50; border-bottom: 2px solid #2c3e50; padding-bottom: 10px; }
+    .doc-content h2 { font-size: 17px; margin: 28px 0 12px; color: #2c3e50; border-left: 4px solid #2c3e50; padding-left: 12px; }
+    .doc-content h3 { font-size: 15px; margin: 18px 0 8px; color: #34495e; }
+    .doc-content h4 { font-size: 14px; margin: 14px 0 6px; color: #555; font-weight: 600; }
+    .doc-content p { margin: 0 0 12px; }
+    .doc-content hr { border: none; border-top: 1px solid #e8e8e8; margin: 22px 0; }
+
+    .doc-content table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 12px 0 20px;
+      font-size: 13px;
+    }
+    .doc-content th {
+      background: #2c3e50;
+      color: #fff;
+      padding: 9px 12px;
+      text-align: left;
+      font-weight: 600;
+    }
+    .doc-content td {
+      padding: 7px 12px;
+      border-bottom: 1px solid #eaecef;
+    }
+    .doc-content tr:last-child td { border-bottom: none; }
+    .doc-content tr:nth-child(even) td { background: #f8f9fb; }
+
+    .doc-content code {
+      background: #f1f3f5;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-family: "Consolas", "SFMono-Regular", monospace;
+      font-size: 12.5px;
+      color: #c0392b;
+    }
+
+    .doc-content pre {
+      background: #f8f9fb;
+      border: 1px solid #e0e4e8;
+      border-radius: 6px;
+      padding: 16px 18px;
+      overflow-x: auto;
+      margin: 10px 0 18px;
+    }
+
+    .doc-content pre code {
+      background: none;
+      padding: 0;
+      color: #2d3436;
+      font-size: 12.5px;
+      line-height: 1.6;
+    }
+
+    .doc-content blockquote {
+      border-left: 4px solid #bdc3c7;
+      margin: 10px 0;
+      padding: 6px 14px;
+      color: #666;
+      background: #fafbfc;
+      border-radius: 0 4px 4px 0;
+    }
+
+    .doc-content ul, .doc-content ol {
+      padding-left: 22px;
+      margin: 6px 0 12px;
+    }
+
+    .doc-content li { margin-bottom: 4px; }
+    .doc-content strong { color: #2c3e50; }
+    .doc-content em { color: #555; }
+
+    .error-msg {
+      color: #c0392b;
+      background: #fdf0ed;
+      border: 1px solid #f5c6bc;
+      border-radius: 6px;
+      padding: 16px 20px;
+      margin: 20px 0;
+    }
+  </style>
+</head>
+<body>
+  <header class="page-header">
+    <button class="back-btn" onclick="window.close()">✕ 关闭</button>
+    <h1>系统使用说明</h1>
+  </header>
+
+  <div class="page-body">
+    <div class="doc-content" id="doc-content">
+      <p class="loading">加载中...</p>
+    </div>
+  </div>
+
+  <script src="../js/marked.min.js"></script>
+  <script>
+    fetch('./system_guide.md')
+      .then(function(r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.text();
+      })
+      .then(function(text) {
+        document.getElementById('doc-content').innerHTML = marked.parse(text);
+      })
+      .catch(function(err) {
+        document.getElementById('doc-content').innerHTML =
+          '<div class="error-msg">文档加载失败：' + err.message + '<br>请确认文件 system_guide.md 存在于同目录下。</div>';
+      });
+  </script>
+</body>
+</html>

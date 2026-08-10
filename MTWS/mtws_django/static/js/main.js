@@ -35,7 +35,8 @@ let _parserStatusTimer = null;  // 后端解析状态轮询计时器
 // 弹窗开关按钮请求锁（防止请求进行中重复点击）
 const toggleCooldowns = {
     'operation-toggle': { inCooldown: false },
-    'parking-toggle':   { inCooldown: false }
+    'parking-toggle':   { inCooldown: false },
+    'intercept-toggle': { inCooldown: false }
 };
 
 // 数据更新时间记录
@@ -470,17 +471,11 @@ function applyFilterStates() {
     // 告警等级按钮状态
     updateAlertButtonState();
 
-    // 告警裕度下拉菜单状态
+    // 告警裕度滑块状态
     updateMarginSelectState();
 
-    // 告警裕度按钮状态（保留以防其他地方使用）
-    updateButtonGroupState('margin', [filters.margin.toString()]);
-
-    // 时间范围下拉菜单状态
+    // 时间范围 toggle 状态
     updateTimeRangeSelectState();
-
-    // 时间范围按钮状态（保留以防其他地方使用）
-    updateButtonGroupState('time-range', [currentTimeRange.toString()]);
 
     // NWP 温度辅助按钮状态
     updateNwpButtonState();
@@ -489,19 +484,26 @@ function applyFilterStates() {
     if (typeof updateMapButtonState === 'function') updateMapButtonState();
 }
 
-// 更新告警裕度下拉菜单状态
+// 更新告警裕度竖向轨道状态（将绿色滑块移到对应位置）
 function updateMarginSelectState() {
-    const marginSelect = document.getElementById('margin-select');
-    if (marginSelect) {
-        marginSelect.value = filters.margin.toString();
+    setMarginThumbPosition(filters.margin);
+}
+
+// 设置告警裕度滑块位置（value 0→左，4→右）
+// translateX(%) 是相对于 thumb 自身宽度，thumb=20%，每步移动 100% 自身宽 = 20% 轨道宽
+function setMarginThumbPosition(value) {
+    const thumb = document.getElementById('margin-v-thumb');
+    if (thumb) {
+        const pos = parseInt(value) * 100;
+        thumb.style.transform = `translateX(${pos}%)`;
     }
 }
 
-// 更新时间范围下拉菜单状态
+// 更新时间范围 toggle 状态
 function updateTimeRangeSelectState() {
-    const timeRangeSelect = document.getElementById('time-range-select');
-    if (timeRangeSelect) {
-        timeRangeSelect.value = currentTimeRange.toString();
+    const timeRangeToggle = document.getElementById('time-range-toggle-input');
+    if (timeRangeToggle) {
+        timeRangeToggle.checked = (currentTimeRange === 48);
     }
 }
 
@@ -1080,8 +1082,9 @@ function bindEvents() {
 
     // 功能按钮事件
     document.getElementById('settings-btn').addEventListener('click', function () {
-        // TODO: 打开设置页面
-        window.open('/settings/', '_blank');
+        if (window.SettingsModal) {
+            window.SettingsModal.open();
+        }
     });
 
     document.getElementById('monitor-btn').addEventListener('click', function () {
@@ -1091,7 +1094,7 @@ function bindEvents() {
     document.getElementById('search-btn').addEventListener('click', function () {
         const searchValue = document.getElementById('search-input').value.trim();
         if (searchValue) {
-            performSearch(searchValue);
+            handleSearchClick(searchValue);
         }
     });
 
@@ -1109,24 +1112,74 @@ function bindEvents() {
         if (e.key === 'Enter') {
             const searchValue = this.value.trim();
             if (searchValue) {
-                performSearch(searchValue);
+                handleSearchClick(searchValue);
             }
         }
     });
 
-    // 告警裕度下拉菜单事件
-    document.getElementById('margin-select').addEventListener('change', function (e) {
-        handleMarginSelectChange(e.target);
+    // 搜索框输入时控制清除按钮的显隐
+    const searchInput = document.getElementById('search-input');
+    const searchClearBtn = document.getElementById('search-clear-btn');
+    if (searchInput && searchClearBtn) {
+        searchInput.addEventListener('input', function () {
+            if (this.value.length > 0) {
+                searchClearBtn.classList.add('visible');
+            } else {
+                searchClearBtn.classList.remove('visible');
+            }
+        });
+        searchClearBtn.addEventListener('click', function () {
+            searchInput.value = '';
+            searchClearBtn.classList.remove('visible');
+            searchInput.focus();
+        });
+    }
+
+    // 点击弹窗背景（.modal 本身）关闭可关闭的弹窗（仅当该弹窗是最顶层时）
+    document.querySelectorAll('.modal').forEach(function (modal) {
+        modal.addEventListener('click', function (e) {
+            if (e.target !== modal) return;
+            // 确认当前 modal 是 z-index 最高的可见弹窗
+            if (getTopmostModal() === modal && canDismissModal(modal)) {
+                hideModal(modal.id);
+            }
+        });
     });
 
-    // 时间范围下拉菜单事件
-    document.getElementById('time-range-select').addEventListener('change', function (e) {
-        handleTimeRangeSelectChange(e.target);
+    // 告警裕度横向轨道点击事件
+    const marginTrack = document.getElementById('margin-v-track');
+    if (marginTrack) {
+        marginTrack.addEventListener('click', function (e) {
+            const rect = this.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            const fraction = Math.min(1, Math.max(0, clickX / rect.width));
+            const newValue = Math.min(4, Math.floor(fraction * 5));
+            handleMarginSliderChange(newValue);
+        });
+    }
+
+    // 时间范围 toggle 事件
+    document.getElementById('time-range-toggle-input').addEventListener('change', function (e) {
+        handleTimeRangeToggleChange(e.target.checked);
     });
 
     function canDismissModal(modal) {
         // 登录二维码是强制登录态入口：不能点遮罩或按 ESC 关闭，避免未登录时弹码消失。
-        return modal && modal.id !== 'login-modal';
+        // 设置弹窗：只能通过自带的关闭按钮关闭，不可通过点击遮罩或按 ESC 关闭。
+        return modal && modal.id !== 'login-modal' && modal.id !== 'settings-modal';
+    }
+
+    /** 返回当前所有可见弹窗中 z-index 最高的那个（即视觉最顶层） */
+    function getTopmostModal() {
+        const visible = Array.from(document.querySelectorAll('.modal')).filter(
+            m => m.style.display === 'block'
+        );
+        if (!visible.length) return null;
+        return visible.reduce((top, m) => {
+            const zTop = parseInt(window.getComputedStyle(top).zIndex) || 0;
+            const zM   = parseInt(window.getComputedStyle(m).zIndex)   || 0;
+            return zM > zTop ? m : top;
+        });
     }
 
     // 弹窗关闭事件
@@ -1140,7 +1193,8 @@ function bindEvents() {
     // ESC键关闭弹窗 & Ctrl+Shift+R检测
     document.addEventListener('keydown', function (e) {
         if (e.key === 'Escape') {
-            const openModal = document.querySelector('.modal[style*="display: block"]');
+            // 按 z-index 排序，取最顶层的可见弹窗关闭
+            const openModal = getTopmostModal();
             if (canDismissModal(openModal)) {
                 hideModal(openModal.id);
             }
@@ -1224,6 +1278,7 @@ async function initializePopupSettings() {
             if (result.success && result.data) {
                 updateToggleState('operation-toggle', result.data.operation_metar_popup);
                 updateToggleState('parking-toggle', result.data.parking_metar_popup);
+                updateToggleState('intercept-toggle', result.data.intercept);
             }
         }
     } catch (error) {
@@ -1319,53 +1374,37 @@ async function handleToggleClick(toggle) {
 }
 
 // 处理筛选按钮点击
-// 处理告警裕度下拉菜单变化
-function handleMarginSelectChange(select) {
-    const value = select.value;
+// 处理告警裕度滑块变化
+function handleMarginSliderChange(newValue) {
     const oldMargin = filters.margin;
-    const newMargin = parseInt(value);
+    newValue = parseInt(newValue);
 
-    // 只有当裕度值发生变化时才触发刷新
-    if (oldMargin !== newMargin) {
-        filters.margin = newMargin;
-        updateButtonGroupState('margin', [value]);
-
-        // 保存筛选状态
+    if (oldMargin !== newValue) {
+        filters.margin = newValue;
+        setMarginThumbPosition(newValue);
         saveFiltersToStorage();
 
-        // 告警裕度变化只需要重新计算显示，不需要重新加载数据
         if (airportData && airportData.length > 0) {
-            applyFilters(); // 重新应用筛选和重新计算告警
+            applyFilters();
         } else {
-            loadInitialData(); // 如果没有数据，先加载数据
+            loadInitialData();
         }
     }
 }
 
-// 处理时间范围下拉菜单变化
-function handleTimeRangeSelectChange(select) {
-    const value = select.value;
+// 处理时间范围 toggle 变化（false=36h, true=48h）
+function handleTimeRangeToggleChange(checked) {
+    const newTimeRange = checked ? 48 : 36;
     const oldTimeRange = currentTimeRange;
-    const newTimeRange = parseInt(value);
 
-    // 只有当时间范围发生变化时才触发刷新
     if (oldTimeRange !== newTimeRange) {
         currentTimeRange = newTimeRange;
-        updateButtonGroupState('time-range', [value]);
-
-        // 保存时间范围状态
         saveTimeRangeToStorage();
-
-        // 重新生成时间轴和重新渲染页面
         generateTimeline();
-
-        // 应用48小时模式的宽度压缩
         applyTimeRangeScaling();
 
         if (airportData && airportData.length > 0) {
-            applyFilters(); // 重新应用筛选和重新渲染
-
-            // 更新网格系统
+            applyFilters();
             setTimeout(() => {
                 updateAllAirportGrids();
             }, 100);
@@ -1378,25 +1417,8 @@ function handleFilterClick(button) {
     const value = button.getAttribute('data-value');
 
     if (group === 'margin') {
-        // 告警裕度：单选（已改为下拉菜单，此分支保留以防其他地方调用）
-        const oldMargin = filters.margin;
-        const newMargin = parseInt(value);
-
-        // 只有当裕度值发生变化时才触发刷新
-        if (oldMargin !== newMargin) {
-            filters.margin = newMargin;
-            updateButtonGroupState('margin', [value]);
-
-            // 保存筛选状态
-            saveFiltersToStorage();
-
-            // 告警裕度变化只需要重新计算显示，不需要重新加载数据
-            if (airportData && airportData.length > 0) {
-                applyFilters(); // 重新应用筛选和重新计算告警
-            } else {
-                loadInitialData(); // 如果没有数据，先加载数据
-            }
-        }
+        // 告警裕度：单选（兜底分支，统一走 handleMarginSliderChange）
+        handleMarginSliderChange(value);
     } else if (group === 'time-range') {
         // 时间范围：单选
         const oldTimeRange = currentTimeRange;
@@ -1668,21 +1690,25 @@ function updateAlertButtonState() {
     const allAlertLevels = ['red', 'yellow', 'green', 'none'];
     const allSelected = allAlertLevels.every(level => filters.alert.includes(level));
 
-    // 更新全部按钮
+    // 更新全部按钮（可能已不存在，需判断）
     const allButton = document.querySelector('[data-group="alert"][data-value="all"]');
-    if (allSelected) {
-        allButton.classList.add('selected');
-    } else {
-        allButton.classList.remove('selected');
+    if (allButton) {
+        if (allSelected) {
+            allButton.classList.add('selected');
+        } else {
+            allButton.classList.remove('selected');
+        }
     }
 
     // 更新各个告警级别按钮
     allAlertLevels.forEach(level => {
         const button = document.querySelector(`[data-group="alert"][data-value="${level}"]`);
-        if (filters.alert.includes(level)) {
-            button.classList.add('selected');
-        } else {
-            button.classList.remove('selected');
+        if (button) {
+            if (filters.alert.includes(level)) {
+                button.classList.add('selected');
+            } else {
+                button.classList.remove('selected');
+            }
         }
     });
 }
@@ -1743,12 +1769,17 @@ function applyFilters() {
     }
 
     filteredAirportData = airportData.filter(airport => {
+        // 未配置机场系统置顶：不受任何筛选限制，始终显示
+        if (airport.is_configured === false) {
+            return true;
+        }
+
         // 区域筛选：地图模式下忽略区域筛选，展示全部区域机场
         if (window._viewMode !== 'map' && !isRegionMatch(airport)) {
             return false;
         }
 
-        // 置顶机场不受告警等级筛选限制
+        // 用户置顶机场不受告警等级筛选限制
         if (isAirportPinned(airport.airport_4code)) {
             return true;
         }
@@ -1772,33 +1803,26 @@ function applyFilters() {
 
 // 检查区域筛选匹配
 function isRegionMatch(airport) {
-    // 获取机场的实际区域，如果为空则归类为其它
-    const airportArea = airport.area || '其它';
+    const airportArea = airport.area || '';
 
     // 获取当前的区域选项
     const knownDomesticRegions = (currentAreaOptions.domestic || []).map(region => region.area);
     const knownInternationalRegions = (currentAreaOptions.international || []).map(region => region.area);
 
-    // 如果是未知区域，归类为其它
-    let matchArea = airportArea;
-    if (!knownDomesticRegions.includes(airportArea) && !knownInternationalRegions.includes(airportArea)) {
-        matchArea = '其它';
-    }
-
     // 检查国内区域
-    if (knownDomesticRegions.includes(matchArea)) {
+    if (knownDomesticRegions.includes(airportArea)) {
         if (filters.domestic.length === 0) return false;
-        return filters.domestic.includes(matchArea);
+        return filters.domestic.includes(airportArea);
     }
 
     // 检查国际区域
-    if (knownInternationalRegions.includes(matchArea)) {
+    if (knownInternationalRegions.includes(airportArea)) {
         if (filters.international.length === 0) return false;
-        return filters.international.includes(matchArea);
+        return filters.international.includes(airportArea);
     }
 
-    // 未知情况，如果有任何筛选激活则显示
-    return filters.domestic.length > 0 || filters.international.length > 0;
+    // 区域不在已知列表中（未配置机场已在 applyFilters 中提前放行，此处不会到达）
+    return false;
 }
 
 // 检查告警等级筛选匹配
@@ -1871,12 +1895,16 @@ function applySorting() {
 function applyPinnedSorting() {
     const pinnedAirports = getPinnedAirports();
 
-    // 分离置顶和非置顶机场
+    // 分离三类：未配置机场（系统置顶）、用户置顶、普通
+    const unconfigured = [];
     const pinned = [];
     const unpinned = [];
 
     filteredAirportData.forEach(airport => {
-        if (pinnedAirports.hasOwnProperty(airport.airport_4code)) {
+        if (airport.is_configured === false) {
+            // 未配置机场：系统置顶，排在绝对最前
+            unconfigured.push(airport);
+        } else if (pinnedAirports.hasOwnProperty(airport.airport_4code)) {
             pinned.push({
                 airport: airport,
                 pinnedTime: pinnedAirports[airport.airport_4code]
@@ -1886,16 +1914,16 @@ function applyPinnedSorting() {
         }
     });
 
-    // 置顶机场按时间排序（最旧的在前）
+    // 用户置顶机场按置顶时间排序（最旧的在前）
     pinned.sort((a, b) => a.pinnedTime - b.pinnedTime);
 
-    // 重新组合：置顶机场在前，非置顶机场在后
-    filteredAirportData = pinned.map(item => item.airport).concat(unpinned);
+    // 重新组合：未配置（系统置顶）→ 用户置顶 → 普通
+    filteredAirportData = unconfigured.concat(pinned.map(item => item.airport)).concat(unpinned);
 }
 
 // 获取区域排序优先级
 function getRegionSortPriority(airport) {
-    const area = airport.area || '其它';
+    const area = airport.area || '';
 
     // 先查找国内区域
     if (currentAreaOptions.domestic) {
@@ -2148,8 +2176,10 @@ function createContextMenu(airportCode, x, y) {
         existingMenu.remove();
     }
 
+    // 判断是否为未配置机场（系统置顶，不可手动操作置顶）
+    const airportObj = airportData ? airportData.find(a => a.airport_4code === airportCode) : null;
+    const isUnconfigured = airportObj && airportObj.is_configured === false;
     const isPinned = isAirportPinned(airportCode);
-    const menuText = isPinned ? '取消置顶' : '置顶';
 
     const menu = document.createElement('div');
     menu.id = 'airport-context-menu';
@@ -2162,32 +2192,43 @@ function createContextMenu(airportCode, x, y) {
         border-radius: 4px;
         box-shadow: 0 2px 8px rgba(0,0,0,0.15);
         z-index: 1000;
-        min-width: 80px;
+        min-width: 100px;
         font-size: 14px;
     `;
 
-    const menuItem = document.createElement('div');
-    menuItem.textContent = menuText;
-    menuItem.style.cssText = `
-        padding: 8px 12px;
+    const menuItemStyle = `
+        padding: 8px 14px;
         cursor: pointer;
         transition: background-color 0.2s;
+        white-space: nowrap;
     `;
 
-    menuItem.addEventListener('mouseenter', () => {
-        menuItem.style.backgroundColor = '#f0f0f0';
-    });
+    function makeItem(text, onClick) {
+        const item = document.createElement('div');
+        item.textContent = text;
+        item.style.cssText = menuItemStyle;
+        item.addEventListener('mouseenter', () => { item.style.backgroundColor = '#f0f0f0'; });
+        item.addEventListener('mouseleave', () => { item.style.backgroundColor = 'transparent'; });
+        item.addEventListener('click', () => { onClick(); menu.remove(); });
+        return item;
+    }
 
-    menuItem.addEventListener('mouseleave', () => {
-        menuItem.style.backgroundColor = 'transparent';
-    });
+    // 置顶/取消置顶：未配置机场不显示此选项（系统置顶不可手动取消）
+    if (!isUnconfigured) {
+        const pinText = isPinned ? '取消置顶' : '置顶';
+        menu.appendChild(makeItem(pinText, () => toggleAirportPin(airportCode)));
+    }
 
-    menuItem.addEventListener('click', () => {
-        toggleAirportPin(airportCode);
-        menu.remove();
-    });
+    // 机场信息配置
+    menu.appendChild(makeItem('机场信息配置', () => {
+        if (!window.SettingsModal) return;
+        if (isUnconfigured) {
+            window.SettingsModal.newAirportWithCode(airportCode);
+        } else {
+            window.SettingsModal.openAndEdit(airportCode);
+        }
+    }));
 
-    menu.appendChild(menuItem);
     document.body.appendChild(menu);
 
     // 点击其他地方关闭菜单
@@ -2293,109 +2334,134 @@ function createAirportRowForDetail(airport) {
 
 // createFlightTimeline → 已迁移至 main_flight.js
 
-// 执行搜索
+// ==============================================================================
+// 机场四字代码搜索
+// ==============================================================================
+
+/**
+ * 从用户输入中解析 ICAO 四字代码列表。
+ * 规则：
+ *  - 整体只允许字母和分隔符（空格 / , / ，），首位可以是字母或分隔符
+ *  - 以分隔符拆分后，取长度恰好为 4 的字母串作为有效代码
+ *  - 返回去重后的大写代码数组；若输入含非法字符则返回 null
+ */
+function parseIcaoCodes(input) {
+    if (!input || !input.trim()) return [];
+
+    // 只允许字母与分隔符（空格 / , / ，），首位无限制
+    if (/[^a-zA-Z\s,，]/.test(input)) return null;
+
+    // 按分隔符拆分，取恰好 4 个字母的片段
+    const tokens = input.split(/[\s,，]+/).filter(t => t.length > 0);
+    const codes = [];
+    const seen = new Set();
+    for (const token of tokens) {
+        if (/^[a-zA-Z]{4}$/.test(token)) {
+            const upper = token.toUpperCase();
+            if (!seen.has(upper)) {
+                seen.add(upper);
+                codes.push(upper);
+            }
+        }
+        // 非 4 字母的片段跳过（不视为错误）
+    }
+    return codes;
+}
+
+/**
+ * 搜索入口（含解析器状态检查）：逻辑与刷新按钮保持一致。
+ * 若后端解析器正在执行，则显示等待提示并拦截本次搜索；
+ * 接口异常时乐观放行。
+ */
+function handleSearchClick(searchValue) {
+    if (!searchValue) return;
+    checkRunningParsers((err, data) => {
+        if (err) {
+            performSearch(searchValue);
+            return;
+        }
+        const running = data.running || [];
+        const queued  = data.queued  || [];
+        if (running.length > 0 || queued.length > 0) {
+            showParserRunningMessage(buildParserStatusMessage(running, queued));
+            startParserStatusPolling();
+        } else {
+            performSearch(searchValue);
+        }
+    });
+}
+
+// 执行搜索入口
 function performSearch(searchValue) {
+    const codes = parseIcaoCodes(searchValue);
+
+    if (codes === null) {
+        showError('输入格式有误：只允许字母和分隔符（空格、逗号）');
+        return;
+    }
+    if (codes.length === 0) {
+        showError('未识别到有效的四字代码（每个代码须为连续4个英文字母）');
+        return;
+    }
+
+    if (codes.length === 1) {
+        // 单个代码：优先从已加载数据中直接展示
+        const existing = (typeof airportData !== 'undefined') &&
+            airportData.find(a => a.airport_4code === codes[0]);
+        if (existing) {
+            showAirportDetailModal(existing);
+            return;
+        }
+        // 不在已加载数据中，需要从后端获取
+        fetchAndShowAirportSearch(codes);
+    } else {
+        // 多个代码：始终调接口
+        fetchAndShowAirportSearch(codes);
+    }
+}
+
+// 调后端搜索接口，然后根据结果数量选择展示方式
+function fetchAndShowAirportSearch(codes) {
     showLoading();
 
-    // 分割搜索值（支持多个机场代码）
-    const airportCodes = searchValue.toUpperCase().split(/[\s,，]+/).filter(code => code.length > 0);
+    const headers = { 'Content-Type': 'application/json' };
+    if (typeof currentToken !== 'undefined' && currentToken) {
+        headers['Authorization'] = `Bearer ${currentToken}`;
+    }
 
-    const apiUrl = `/${currentTimeMode}/api/search/airports/`;
+    const url = `/${currentTimeMode}/api/airport-search/?codes=${codes.join(',')}`;
 
-    fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-            airport_codes: airportCodes
-        })
-    })
-        .then(response => response.json())
+    fetch(url, { headers })
+        .then(r => r.json())
         .then(data => {
-            if (data.success) {
-                showSearchResults(data.data.airports);
+            if (!data.success) {
+                showError('搜索失败：' + (data.error || '未知错误'));
+                return;
+            }
+            const airports = data.data || [];
+            if (airports.length === 0) {
+                showError('未找到机场数据');
+                return;
+            }
+            if (airports.length === 1) {
+                // 单个机场：走完整详情页流程
+                if (typeof showAirportSearchSingle === 'function') {
+                    showAirportSearchSingle(airports[0]);
+                }
             } else {
-                showError('搜索失败：' + data.error);
+                // 多个机场：走简化展示流程
+                if (typeof showAirportSearchMulti === 'function') {
+                    showAirportSearchMulti(airports);
+                }
             }
         })
-        .catch(error => {
-            console.error('搜索失败:', error);
-            showError('搜索失败，请重试');
+        .catch(err => {
+            console.error('机场搜索请求失败:', err);
+            showError('搜索请求失败，请重试');
         })
         .finally(() => {
             hideLoading();
         });
-}
-
-// 显示搜索结果
-function showSearchResults(airports) {
-    const searchResults = document.getElementById('search-results');
-
-    if (!airports || airports.length === 0) {
-        searchResults.innerHTML = '<div class="empty-state"><div class="empty-state-message">未找到相关机场</div></div>';
-        showModal('search-modal');
-        return;
-    }
-
-    const resultsHTML = airports.map(airport => `
-        <div class="search-result-item">
-            <div class="search-result-header">
-                ${airport.airport_4code} ${airport.airport_name}
-            </div>
-            <div class="search-result-info">
-                <span>区域: ${airport.region || '未知'}</span>
-                <span>坐标: ${airport.latitude || 'N/A'}, ${airport.longitude || 'N/A'}</span>
-            </div>
-            <div class="search-result-content">
-                <h4>实况天气 (METAR)</h4>
-                ${airport.metar_data && airport.metar_data.length > 0 ?
-            airport.metar_data.map(metar => `
-                        <div class="original-content">
-                            <div style="margin-bottom: 8px;">
-                                ${createWeatherInfo(metar)}
-                            </div>
-                            <div style="font-size: 10px; color: #666; margin-top: 8px;">
-                                <strong>原文:</strong> ${metar.metar_content || 'N/A'}
-                            </div>
-                        </div>
-                    `).join('') :
-            '<div class="no-data">无METAR数据</div>'
-        }
-                
-                <h4>预报天气 (TAF)</h4>
-                ${airport.taf_data && airport.taf_data.length > 0 ?
-            airport.taf_data.map(taf => `
-                        <div class="original-content">
-                            <div style="margin-bottom: 8px;">
-                                时间: ${taf.taf_observation_time ? new Date(taf.taf_observation_time).toLocaleString('zh-CN') : 'N/A'}<br>
-                                有效期: ${taf.whole_validity_period || 'N/A'}<br>
-                                类型: ${taf.taf_type || 'N/A'}
-                            </div>
-                            <div style="font-size: 10px; color: #666; margin-top: 8px;">
-                                <strong>原文:</strong> ${taf.taf_content || 'N/A'}
-                            </div>
-                        </div>
-                    `).join('') :
-            '<div class="no-data">无TAF数据</div>'
-        }
-                
-                <h4>航班信息</h4>
-                ${airport.flight_data ? `
-                    <div class="original-content">
-                        是否有航班: ${airport.flight_data.has_flight ? '是' : '否'}<br>
-                        总航班数: ${airport.flight_data.total_flights || 0}<br>
-                        出发航班: ${airport.flight_data.departure_flights || 0}<br>
-                        到达航班: ${airport.flight_data.arrival_flights || 0}<br>
-                        更新时间: ${new Date(airport.flight_data.last_updated).toLocaleString('zh-CN')}
-                    </div>
-                ` : '<div class="no-data">无航班数据</div>'}
-            </div>
-        </div>
-    `).join('');
-
-    searchResults.innerHTML = resultsHTML;
-    showModal('search-modal');
 }
 
 // 刷新数据（刷新按钮入口）

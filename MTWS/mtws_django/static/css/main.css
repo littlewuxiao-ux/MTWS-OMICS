@@ -151,7 +151,7 @@ body {
   border-radius: 4px;
   transition: all 0.3s ease;
   font-family: inherit;
-  min-width: 60px;
+  min-width: 50px;
   text-align: center;
 }
 
@@ -298,13 +298,18 @@ body {
   font-size: 13px;
   border-radius: 4px;
   height: 32px;
-  /* 与告警按钮高度一致 */
   display: flex;
   align-items: center;
   min-width: 75px;
+  max-width: 100px; /* 新增：限制最大宽度 */
   text-align: center;
   word-spacing: 8px;
+  overflow: hidden; /* 新增：隐藏溢出内容 */
+  text-overflow: ellipsis; /* 新增：显示省略号 */
+  white-space: nowrap; /* 新增：防止换行 */
+  cursor: help; /* 可选：鼠标悬停时显示帮助图标 */
 }
+
 
 /* 弹窗控制区域 */
 .popup-control-section {
@@ -365,7 +370,8 @@ body {
 }
 
 #timezone-toggle-input,
-#view-mode-toggle-input {
+#view-mode-toggle-input,
+#time-range-toggle-input {
   display: none;
 }
 
@@ -419,6 +425,65 @@ body {
   transform: translateX(100%);
 }
 
+/* 时间范围切换开关（36h/48h） */
+.time-range-toggle-track {
+  width: 80px;
+}
+
+#time-range-toggle-input:checked + .timezone-toggle-track .timezone-toggle-thumb {
+  transform: translateX(100%);
+}
+
+/* 功能区中间区域：两行布局（与左右区域对齐） */
+.function-middle {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  flex-shrink: 0;
+  width: fit-content;
+}
+
+/* 告警裕度横向5段轨道（仿时区开关样式，5选1） */
+.margin-h-track {
+  position: relative;
+  width: 100%;
+  height: 32px;
+  border-radius: 4px;
+  border: 1px solid white;
+  background-color: #34495e;
+  display: flex;
+  flex-direction: row;
+  overflow: hidden;
+  cursor: pointer;
+  user-select: none;
+}
+
+/* 各段标签：最顶层，白色，始终可见 */
+.margin-h-label {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: bold;
+  color: white;
+  position: relative;
+  z-index: 2;
+  pointer-events: none;
+}
+
+/* 滑块：绿色，中间层，滑到对应段 */
+.margin-h-thumb {
+  position: absolute;
+  width: 20%;
+  height: 100%;
+  background: #27ae60;
+  border-radius: 4px;
+  transition: transform 0.2s ease;
+  transform: translateX(0);
+  z-index: 1;
+}
+
 /* 功能区机场排序下拉（与同排告警裕度 select-group 对齐）*/
 #airport-sort-select.airport-sort-filter-select {
   min-width: 100px;
@@ -436,8 +501,14 @@ body:not(.display-timezone-utc) .content-section > .title-row .timeline-backgrou
 }
 
 /* 搜索输入框 */
+.search-input-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
 .search-input {
-  padding: 6px 12px;
+  padding: 6px 28px 6px 12px; /* right padding留给清除按钮 */
   border: 1px solid #ddd;
   background-color: white;
   color: #333;
@@ -445,6 +516,7 @@ body:not(.display-timezone-utc) .content-section > .title-row .timeline-backgrou
   border-radius: 4px;
   width: 250px;
   font-family: inherit;
+  box-sizing: border-box;
 }
 
 .search-input::placeholder {
@@ -455,6 +527,30 @@ body:not(.display-timezone-utc) .content-section > .title-row .timeline-backgrou
   outline: none;
   border-color: #3498db;
   box-shadow: 0 0 5px rgba(52, 152, 219, 0.3);
+}
+
+.search-clear-btn {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: #e74c3c;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+  display: none;
+  user-select: none;
+}
+
+.search-clear-btn:hover {
+  color: #c0392b;
+}
+
+.search-clear-btn.visible {
+  display: block;
 }
 
 /* 5.3 内容区域 */
@@ -947,7 +1043,7 @@ body:not(.display-timezone-utc) .content-section > .title-row .timeline-backgrou
 #airport-detail-content {
   flex: 1 1 auto;
   min-height: 0;
-  overflow: hidden;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   padding: 0;
@@ -1082,17 +1178,15 @@ body:not(.display-timezone-utc) .content-section > .title-row .timeline-backgrou
 
 /* 弹窗内的时间轴标题行缩放已在上面定义 */
 
-/* 机场报文区域：占满剩余高度，底边始终在弹窗 padding 内 */
+/* 机场报文区域：随内容自动收缩/扩展 */
 .airport-reports-section {
-  flex: 1 1 auto;
-  min-height: 0;
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   margin-bottom: 0;
   padding: 10px;
   background-color: #f8f9fa;
   border-radius: 4px;
-  overflow: hidden;
 }
 
 .airport-reports-section h3 {
@@ -1132,9 +1226,10 @@ body:not(.display-timezone-utc) .content-section > .title-row .timeline-backgrou
 
 .airport-chart {
   width: 100%;
-  height: 240px;
-  background-color: #2c3e50;
+  height: 280px;
+  background-color: #ffffff;
   border-radius: 4px;
+  border: 1px solid #e0e0e0;
 }
 
 /* 图表控制行 - 图例和时间选择器在同一行 */
@@ -1168,7 +1263,7 @@ body:not(.display-timezone-utc) .content-section > .title-row .timeline-backgrou
 }
 
 .airport-chart-section .chart-time-label {
-  color: white;
+  color: #555;
   font-weight: bold;
   font-size: 12px;
   white-space: nowrap;
@@ -1190,7 +1285,7 @@ body:not(.display-timezone-utc) .content-section > .title-row .timeline-backgrou
   align-items: center;
   gap: 2px;
   cursor: pointer;
-  color: white;
+  color: #555;
 }
 
 .airport-chart-section .chart-time-radio input[type="radio"] {
@@ -1210,20 +1305,20 @@ body:not(.display-timezone-utc) .content-section > .title-row .timeline-backgrou
   width: 80px;
   height: 18px;
   padding: 0 6px;
-  background-color: transparent;
-  border: 1px solid white;
-  color: white;
+  background-color: #fff;
+  border: 1px solid #ccc;
+  color: #555;
   border-radius: 3px;
   font-size: 11px;
   box-sizing: border-box;
 }
 
 .airport-chart-section .chart-time-input::placeholder {
-  color: rgba(255, 255, 255, 0.6);
+  color: #bbb;
 }
 
 .airport-chart-section .chart-time-input.has-value {
-  color: white;
+  color: #555;
 }
 
 .airport-chart-section .chart-time-btn {
@@ -1243,11 +1338,10 @@ body:not(.display-timezone-utc) .content-section > .title-row .timeline-backgrou
   background-color: #2980b9;
 }
 
-/* 带完整边框的内容区，占满报表区剩余高度，仅内部报文行滚动 */
+/* 报文内容区：随内容自动收缩/扩展，不再固定高度 */
 .reports-content {
-  flex: 1 1 auto;
-  min-height: 30px;
-  overflow-y: auto;
+  flex: 0 0 auto;
+  overflow-y: visible;
   overflow-x: hidden;
   color: #495057;
   font-style: normal;
@@ -1272,6 +1366,85 @@ body:not(.display-timezone-utc) .content-section > .title-row .timeline-backgrou
 
 .report-line:last-child {
   margin-bottom: 0;
+}
+
+/* ============================================================
+   机场搜索多结果弹窗
+   ============================================================ */
+.airport-search-modal-content {
+  background-color: #2c3e50;
+  padding: 20px;
+  border-radius: 8px;
+  max-height: 90vh;
+  overflow-y: auto;
+  min-width: min(1200px, 95vw);
+  max-width: 95vw;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* 机场条目列表区域（可滚动） */
+.airport-search-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  overflow-y: auto;
+  max-height: calc(90vh - 120px);
+}
+
+/* 单个机场搜索条目 */
+.airport-search-block {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+}
+
+.airport-search-block:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+/* 搜索条目的 header（复用现有 airport-detail-header 样式） */
+.airport-search-block .airport-detail-header {
+  margin-bottom: 6px;
+}
+
+/* 搜索条目的 data section */
+.airport-search-block .airport-data-section {
+  margin-bottom: 0;
+}
+
+/* 单机场详情弹窗叠加在多机场弹窗之上 */
+#airport-detail-modal {
+  z-index: 20010;
+}
+
+/* 多机场视图中可点击的四字代码标题 */
+.airport-search-code-clickable {
+  cursor: pointer;
+  text-decoration: underline dotted currentColor;
+  transition: color 0.15s;
+}
+
+.airport-search-code-clickable:hover {
+  color: #3498db;
+}
+
+/* 加载状态 */
+.airport-search-loading {
+  color: #ecf0f1;
+  text-align: center;
+  padding: 20px;
+  font-size: 14px;
+}
+
+/* 无结果提示 */
+.airport-search-empty {
+  color: #bdc3c7;
+  text-align: center;
+  padding: 20px;
+  font-size: 14px;
 }
 
 .report-time {
@@ -2666,6 +2839,34 @@ body:not(.display-timezone-utc) .content-section > .title-row .timeline-backgrou
   min-height: 0;
 }
 
+/* ===== 系统使用说明：帮助图标 ===== */
+.help-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.6);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 11px;
+  font-weight: bold;
+  cursor: pointer;
+  margin-left: 8px;
+  vertical-align: sub;
+  line-height: 1;
+  transition: border-color 0.2s, color 0.2s, background 0.2s;
+  flex-shrink: 0;
+}
+
+.help-icon-btn:hover {
+  border-color: #fff;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+
 /* 地图模式：国内/国际区域按钮视觉上全部呈选中状态 */
 body.map-mode #domestic-button-group .filter-btn,
 body.map-mode #international-button-group .filter-btn {
@@ -2673,3 +2874,485 @@ body.map-mode #international-button-group .filter-btn {
   color: #2c3e50;
   font-weight: bold;
 }
+
+/* ===================== 设置弹窗 ===================== */
+.settings-modal-content {
+  width: 92%;
+  max-width: 1100px;
+  max-height: 88vh;
+  height: 88vh;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+
+.settings-modal-header {
+  padding: 10px 14px 10px 20px;
+  border-bottom: 1px solid #e0e0e0;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.settings-modal-header h3 {
+  margin: 0;
+  font-size: 16px;
+  color: #2c3e50;
+}
+.settings-modal-close-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 32px;
+  background-color: #e53935;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background-color 0.15s;
+}
+.settings-modal-close-btn:hover {
+  background-color: #c62828;
+}
+
+/* Tab bar */
+.settings-tabs {
+  display: flex;
+  border-bottom: 2px solid #ddd;
+  flex-shrink: 0;
+  background: #f8f9fa;
+}
+.settings-tab {
+  padding: 10px 20px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 13px;
+  color: #666;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -2px;
+  transition: color 0.2s, border-color 0.2s;
+}
+.settings-tab:hover { color: #2c3e50; }
+.settings-tab.active {
+  color: #27ae60;
+  border-bottom-color: #27ae60;
+  font-weight: bold;
+}
+
+/* Tab body */
+.settings-tab-body {
+  flex: 1;
+  overflow: hidden;
+}
+.settings-tab-pane {
+  display: none;
+  height: 100%;
+  flex-direction: column;
+}
+.settings-tab-pane.active { display: flex; }
+
+/* Split layout: list left + form right */
+.settings-split {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  gap: 0;
+}
+.settings-list-panel {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid #e0e0e0;
+}
+.settings-list-toolbar {
+  padding: 10px 14px;
+  flex-shrink: 0;
+  border-bottom: 1px solid #eee;
+}
+.settings-list-scroll {
+  flex: 1;
+  overflow-y: auto;
+}
+.settings-form-panel {
+  width: 340px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 14px;
+  background: #fafafa;
+}
+.settings-form-panel h4 {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: #2c3e50;
+}
+.settings-form-scroll {
+  flex: 1;
+  overflow-y: auto;
+}
+
+/* Table */
+.settings-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.settings-table th {
+  background: #f0f2f5;
+  padding: 8px 10px;
+  text-align: left;
+  font-weight: 600;
+  color: #444;
+  border-bottom: 1px solid #ddd;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.settings-table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid #f0f0f0;
+  color: #333;
+  vertical-align: middle;
+}
+.settings-table tr:hover td { background: #f5f8ff; }
+.settings-table tr.editing td { background: #e8f4fd; }
+
+/* Carrier inactive style */
+.settings-carrier-inactive { opacity: 0.4; }
+
+/* Form rows */
+.settings-form-row {
+  margin-bottom: 12px;
+}
+.settings-form-row label {
+  display: block;
+  font-size: 12px;
+  color: #555;
+  margin-bottom: 4px;
+  font-weight: 500;
+}
+.settings-required { color: #e74c3c; }
+.settings-hint {
+  font-size: 11px;
+  color: #888;
+  font-weight: normal;
+  margin-left: 4px;
+}
+.settings-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #333;
+  background: #fff;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.settings-input:focus { border-color: #27ae60; }
+.settings-input-sm { width: 90px; }
+.settings-select { cursor: pointer; }
+
+/* Toggle switch (2-way, same look as timezone toggle) */
+.settings-toggle-wrap { display: inline-flex; align-items: center; }
+.settings-toggle-label { cursor: pointer; user-select: none; }
+.settings-toggle-chk { display: none; }
+.settings-toggle-track {
+  position: relative;
+  width: 88px;
+  height: 30px;
+  border-radius: 4px;
+  border: 1px solid #bbb;
+  background-color: #34495e;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+}
+.settings-toggle-side {
+  flex: 1;
+  text-align: center;
+  font-size: 12px;
+  font-weight: bold;
+  color: white;
+  position: relative;
+  z-index: 2;
+  pointer-events: none;
+}
+.settings-toggle-thumb {
+  position: absolute;
+  width: 50%;
+  height: 100%;
+  background: #27ae60;
+  border-radius: 4px;
+  transition: transform 0.25s ease;
+  transform: translateX(0);
+  z-index: 1;
+}
+.settings-toggle-chk:checked + .settings-toggle-track .settings-toggle-thumb {
+  transform: translateX(100%);
+}
+
+/* 3-segment track (R/Y/G) – same look as margin-h-track */
+.settings-track-wrap { display: inline-flex; }
+.settings-track {
+  position: relative;
+  width: 150px;
+  height: 30px;
+  border-radius: 4px;
+  border: 1px solid #bbb;
+  background: #34495e;
+  display: flex;
+  overflow: hidden;
+  cursor: pointer;
+  user-select: none;
+}
+.settings-track-seg {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: bold;
+  color: white;
+  position: relative;
+  z-index: 2;
+  pointer-events: none;
+}
+.settings-track-thumb {
+  position: absolute;
+  width: 33.33%;
+  height: 100%;
+  background: #27ae60;
+  border-radius: 4px;
+  transition: transform 0.2s ease;
+  z-index: 1;
+}
+
+/* Action buttons in toolbar / table */
+.settings-add-btn {
+  padding: 6px 14px;
+  background: #27ae60;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.settings-add-btn:hover { background: #219d55; }
+.settings-edit-btn, .settings-del-btn, .settings-save-inline-btn, .settings-cancel-inline-btn {
+  padding: 3px 10px;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 11px;
+  margin-right: 4px;
+}
+.settings-edit-btn { background: #3498db; color: white; }
+.settings-edit-btn:hover { background: #2980b9; }
+.settings-del-btn { background: #e74c3c; color: white; }
+.settings-del-btn:hover { background: #c0392b; }
+.settings-save-inline-btn { background: #27ae60; color: white; }
+.settings-save-inline-btn:hover { background: #219d55; }
+.settings-cancel-inline-btn { background: #95a5a6; color: white; }
+.settings-cancel-inline-btn:hover { background: #7f8c8d; }
+
+/* Form action buttons (Save / Cancel in side panel) */
+.settings-form-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  flex-shrink: 0;
+}
+.settings-btn-save {
+  padding: 7px 20px;
+  background: #27ae60;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.settings-btn-save:hover { background: #219d55; }
+.settings-btn-cancel {
+  padding: 7px 20px;
+  background: #95a5a6;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.settings-btn-cancel:hover { background: #7f8c8d; }
+
+/* Popup settings form */
+.settings-popup-form {
+  padding: 16px 20px;
+  max-width: 500px;
+}
+
+/* Timer table full-width */
+.settings-timer-table-wrap {
+  padding: 10px;
+  flex: 1;
+  overflow-y: auto;
+}
+.settings-timer-table { width: 100%; }
+.settings-timer-input {
+  width: 80px;
+  padding: 4px 6px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 12px;
+  text-align: center;
+}
+.settings-timer-input:focus { border-color: #27ae60; outline: none; }
+
+/* Table auto-width: content-driven column widths, no wrapping */
+.settings-table-auto {
+  table-layout: auto;
+  width: auto;
+  min-width: 100%;
+}
+.settings-table-auto th,
+.settings-table-auto td {
+  white-space: nowrap;
+}
+
+/* Default row read-only style */
+.settings-row-readonly td {
+  color: #999;
+  font-style: italic;
+  background: #fafafa;
+}
+.settings-readonly-badge {
+  font-size: 11px;
+  color: #aaa;
+  background: #f0f0f0;
+  border-radius: 3px;
+  padding: 2px 6px;
+}
+
+/* Form divider between required and optional fields */
+.settings-form-divider {
+  border-top: 1px dashed #ddd;
+  margin: 10px 0 12px;
+}
+
+/* Area options: bold divider row between classifications */
+.settings-area-divider-row td {
+  padding: 4px 0;
+  border: none;
+  background: transparent;
+}
+.settings-area-divider {
+  border-top: 2px solid #555;
+  margin: 2px 0;
+}
+
+/* 告警阈值宽表单面板 */
+.settings-threshold-form-panel {
+  width: 420px;
+}
+/* 告警阈值分组 */
+.settings-threshold-group {
+  margin-bottom: 12px;
+  border: 1px solid #e8e8e8;
+  border-radius: 4px;
+  padding: 8px 10px;
+  background: #fdfdfd;
+}
+.settings-threshold-group-title {
+  font-size: 11px;
+  font-weight: bold;
+  color: #555;
+  margin-bottom: 6px;
+}
+.settings-threshold-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.settings-threshold-row label {
+  font-size: 11px;
+  color: #666;
+  margin-bottom: 0;
+  white-space: nowrap;
+}
+.settings-threshold-input {
+  width: 72px;
+  padding: 4px 6px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 12px;
+  text-align: center;
+}
+.settings-threshold-input:focus { border-color: #27ae60; outline: none; }
+
+/* 机场坐标搜索布局 */
+.loc-search-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 10px 4px;
+}
+.loc-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.loc-search-input {
+  flex: 0 0 220px;
+  font-size: 13px;
+}
+.loc-result-area {
+  min-height: 40px;
+}
+.loc-result-table {
+  width: auto;
+}
+.loc-not-found {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: #fff8e1;
+  border: 1px solid #ffe082;
+  border-radius: 4px;
+  color: #666;
+  font-size: 13px;
+}
+.loc-add-inline-btn {
+  padding: 3px 10px;
+  font-size: 12px;
+}
+.loc-form-card {
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 14px 16px;
+  background: #fafafa;
+  max-width: 380px;
+}
+.loc-form-card h4 {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: #333;
+}
+
+/* Toast/message bar */
+.settings-msg {
+  padding: 6px 14px;
+  font-size: 12px;
+  min-height: 24px;
+  flex-shrink: 0;
+}
+.settings-msg.success { color: #27ae60; }
+.settings-msg.error { color: #e74c3c; }

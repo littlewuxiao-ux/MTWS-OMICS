@@ -13,6 +13,37 @@ logger = logging.getLogger('mtws.api')
 
 
 @require_http_methods(["GET"])
+def airport_metar_history(request, airport_code, time_mode='current'):
+    """
+    获取机场历史 METAR 图表数据（供详情页 ECharts 图表使用）。
+    返回最近 72 小时内的解析数据点列表。
+    """
+    try:
+        token = None
+        if time_mode == 'current':
+            auth_header = request.headers.get('Authorization', '')
+            if auth_header.startswith('Bearer '):
+                token = auth_header[7:]
+            else:
+                return JsonResponse(
+                    {'success': False, 'error': '未找到认证 token，请先登录'},
+                    status=401,
+                )
+
+        from parsers.metar_history import fetch_and_parse_metar_history
+        chart_data = fetch_and_parse_metar_history(
+            airport_code, time_mode=time_mode, token=token
+        )
+        return JsonResponse({'success': True, 'data': chart_data})
+
+    except Exception as exc:
+        logger.error(f'获取历史 METAR 数据失败 [{airport_code}]: {exc}')
+        return JsonResponse(
+            {'success': False, 'error': str(exc)}, status=500
+        )
+
+
+@require_http_methods(["GET"])
 def airport_coords(request, time_mode=None):
     """
     按机场代码列表返回经纬度坐标（来自 airport_location 表）。
