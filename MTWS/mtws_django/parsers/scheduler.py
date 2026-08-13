@@ -111,15 +111,30 @@ def get_nwp_enabled() -> bool:
 
 def _run_parsing_job(update_types: list, time_mode: str) -> None:
     """APScheduler 调用的解析任务主函数"""
+    global _scheduler_token, _scheduler_user_code
     from parsers.parsing_manager import ParsingManager
+    from utils.auth_broker_client import get_token_from_broker
 
     token = _scheduler_token
     if time_mode == 'current' and not token:
-        logger.warning(
-            f"调度任务跳过 {update_types}：尚无缓存 token，"
-            "请先通过前端手动刷新一次以完成 token 缓存"
-        )
-        return
+        # 本地缓存为空（尚未有前端请求推送过），主动查询统一登录态 AuthBroker
+        # 失败重试 3 次、每次间隔 5 秒，全部失败后跳过本次任务
+        token, broker_user_code, reachable = get_token_from_broker()
+        if token:
+            _scheduler_token = token
+            if broker_user_code and not _scheduler_user_code:
+                _scheduler_user_code = broker_user_code
+        elif not reachable:
+            logger.warning(
+                f"调度任务跳过 {update_types}：AuthBroker 连接失败（已重试3次），"
+                "请检查统一服务启动器是否已启动"
+            )
+            return
+        else:
+            logger.warning(
+                f"调度任务跳过 {update_types}：AuthBroker 确认当前无有效 token，请重新扫码登录"
+            )
+            return
 
     try:
         logger.info(f"调度任务启动：{update_types}，模式：{time_mode}")
@@ -132,6 +147,14 @@ def _run_parsing_job(update_types: list, time_mode: str) -> None:
             logger.info(f"调度任务完成：{update_types}，共 {total} 条记录")
         else:
             logger.warning(f"调度任务失败：{update_types}，{result.get('message', '')}")
+            # 所有解析器均失败且无任何数据，判定为 token 已失效，
+            # 主动上报 AuthBroker 以便统一服务启动器立即显示过期提示
+            all_failed = bool(parsers_result) and all(not p.get('success', False) for p in parsers_result.values())
+            if time_mode == 'current' and all_failed and result.get('total_records', 0) == 0:
+                from utils.auth_broker_client import report_token_invalid
+                logger.warning(f"调度任务判定 token 已失效：{update_types}，上报 AuthBroker")
+                report_token_invalid(source="MTWS调度任务")
+                _scheduler_token = None
         # 更新各数据类型的内存解析状态
         for data_type in update_types:
             pr = parsers_result.get(data_type, {})

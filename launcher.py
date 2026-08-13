@@ -780,7 +780,8 @@ class AuthBrokerServer:
                     broker.app.set_auth_state(token, user_code, display_name, source=source)
                     self._send_json({"success": True, **broker.app.get_auth_state(include_token=False)}); return
                 if path == "/auth/clear":
-                    broker.app.clear_auth_state(source=data.get("source") or "unknown")
+                    # expired=True 由后端定时任务在确认 token 失效时上报，用于让统一登录态面板立即显示过期提示
+                    broker.app.clear_auth_state(source=data.get("source") or "unknown", expired=bool(data.get("expired", False)))
                     self._send_json({"success": True}); return
                 self._send_json({"success": False, "error": "not found"}, 404)
 
@@ -1047,29 +1048,26 @@ class LauncherApp(ctk.CTk):
         return str(user_code)
 
     def _save_auth_state(self):
-        """不再在中控台磁盘缓存 token；登录态由前端 localStorage 持有并回灌。"""
+        """将当前登录态落盘，供 launcher 重启后恢复，使后端定时任务无需等待前端重新推送。"""
         try:
             AUTH_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-            # 只写一个无 token 的安全占位，用于覆盖旧版可能留下的 token 缓存。
-            snapshot = {
-                "logged_in": False,
-                "token": None,
-                "userCode": None,
-                "displayName": None,
-                "login_time": None,
-                "source": "frontend-localStorage",
-                "expired": False,
-            }
             with open(AUTH_STATE_FILE, "w", encoding="utf-8") as f:
-                json.dump(snapshot, f, ensure_ascii=False)
+                json.dump(self.auth_state, f, ensure_ascii=False)
+            try:
+                os.chmod(AUTH_STATE_FILE, 0o600)
+            except Exception:
+                pass
         except Exception:
             pass
 
     def _load_auth_state(self):
-        """启动时清理旧版磁盘 token 缓存；中控台不从磁盘自动登录。"""
+        """启动时从磁盘恢复登录态，避免 launcher 重启后需要重新扫码才能供定时任务使用。"""
         try:
             if AUTH_STATE_FILE.exists():
-                self._save_auth_state()
+                with open(AUTH_STATE_FILE, "r", encoding="utf-8") as f:
+                    saved = json.load(f)
+                if isinstance(saved, dict) and set(saved.keys()) >= set(self.auth_state.keys()):
+                    self.auth_state = saved
         except Exception:
             pass
 

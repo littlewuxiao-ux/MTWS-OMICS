@@ -13,12 +13,21 @@ import json
 import logging
 import requests
 
-# Nginx 统一登录态由前端通过 /auth/status 管理；后端只使用前端请求传入的 token。
+# Nginx 统一登录态由前端通过 /auth/status 管理；业务接口优先使用前端请求传入的 token，
+# 前端未传时（例如未来新增无前端定时任务）回退查询 AuthBroker 统一登录态。
 
 
 def resolve_auth_token(provided_token=None):
-    """OMICS 后端不再保存/读取统一登录态；业务接口使用前端传入的 token。"""
-    return provided_token
+    """业务接口使用前端传入的 token；前端未传时回退查询统一登录态 AuthBroker。"""
+    if provided_token:
+        return provided_token
+    try:
+        from .logic.auth_broker_client import get_token_from_broker
+    except ImportError:
+        from logic.auth_broker_client import get_token_from_broker
+    # 处于实时请求路径中，只查询一次，避免重试阻塞前端请求
+    token, _user_code, _reachable = get_token_from_broker(retry_times=1)
+    return token
 
 def _persistent_base_dir():
     """运行时可写配置的持久目录。
