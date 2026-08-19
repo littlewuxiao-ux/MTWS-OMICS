@@ -749,13 +749,14 @@
   <div class="modal-content airport-detail-content">
     <span class="modal-close">&times;</span>
     <div id="airport-detail-content">
-      <!-- 第1行：机场代码和名称 + 机场信息 -->
-      <div class="airport-detail-header">
-        <div class="airport-title-left">
-          <h2 id="airport-title"></h2>
+      <!-- 第1行：机场代码和名称（居中） + 日出日落/跑道/联系方式（同一行，左右分布） -->
+      <div class="airport-detail-header airport-detail-header-main">
+        <div class="airport-title-center">
+          <h2 id="airport-title-code"></h2>
+          <div class="airport-title-name" id="airport-title-name"></div>
         </div>
-        <div class="airport-info-right">
-          <div class="airport-info-row-top">
+        <div class="airport-info-row">
+          <div class="airport-info-left">
             <div class="info-item">
               <span class="info-label">日出:</span>
               <span class="info-value" id="sunrise-time">--:--</span>
@@ -770,21 +771,21 @@
                 title="日出日落时间采用外网公开数据获取的机场坐标经过计算得到，跑道号为公开数据直接获取，以上数据仅做参考，如需详细资料请参考官方数据。" aria-label="说明">&#x24D8;</span>
             </div>
           </div>
-          <div class="airport-info-row-bottom">
+          <div class="airport-info-contacts">
             <div class="contact-item">
               <span class="contact-label">区号:</span>
               <span class="contact-value" id="area-code">N/A</span>
             </div>
             <div class="contact-item">
-              <span class="contact-label">预报电话:</span>
+              <span class="contact-label">预报:</span>
               <span class="contact-value" id="forecast-phone">N/A</span>
             </div>
             <div class="contact-item">
-              <span class="contact-label">观测电话:</span>
+              <span class="contact-label">观测:</span>
               <span class="contact-value" id="observation-phone">N/A</span>
             </div>
             <div class="contact-item">
-              <span class="contact-label">其他联系方式:</span>
+              <span class="contact-label">其他:</span>
               <span class="contact-value" id="other-phone">N/A</span>
             </div>
           </div>
@@ -819,41 +820,45 @@
         </div>
       </div>
 
-      <!-- 图表区域 -->
-      <div class="airport-chart-section">
-        <div class="airport-chart-container">
-          <div class="airport-chart" id="airport-detail-chart"></div>
-          <div class="chart-controls-row">
-            <div class="chart-time-selector">
-              <div class="chart-time-radios">
-                <label class="chart-time-radio"><input type="radio" name="chart-time-detail" value="3"
-                    checked><span>3</span></label>
-                <label class="chart-time-radio"><input type="radio" name="chart-time-detail"
-                    value="6"><span>6</span></label>
-                <label class="chart-time-radio"><input type="radio" name="chart-time-detail"
-                    value="12"><span>12</span></label>
-                <label class="chart-time-radio"><input type="radio" name="chart-time-detail"
-                    value="24"><span>24</span></label>
-                <label class="chart-time-radio"><input type="radio" name="chart-time-detail"
-                    value="48"><span>48</span></label>
-                <label class="chart-time-radio"><input type="radio" name="chart-time-detail"
-                    value="72"><span>72</span></label>
-              </div>
-              <div class="chart-time-custom">
-                <input type="number" class="chart-time-input" id="chart-time-input-detail" placeholder="2-72小时" min="2"
-                  max="72">
-                <button class="chart-time-btn" onclick="applyCustomChartTimeForDetail()">确定</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
       <!-- 实况/预报报文 -->
       <div class="airport-reports-section">
         <h3>实况/预报报文</h3>
         <div class="reports-content">
           <!-- 报文内容 -->
+        </div>
+      </div>
+
+      <!-- 图表区域：默认折叠，点击标题栏展开后才加载图表 -->
+      <div class="airport-chart-section collapsed" id="airport-chart-section">
+        <div class="chart-section-title-bar" onclick="toggleAirportChartSection()">
+          <span class="chart-toggle-icon">&#9656;</span>
+          <span class="chart-section-title-text">实况趋势图表</span>
+          <div class="chart-time-selector" onclick="event.stopPropagation()">
+            <div class="chart-time-radios">
+              <label class="chart-time-radio"><input type="radio" name="chart-time-detail" value="3"
+                  checked><span>3</span></label>
+              <label class="chart-time-radio"><input type="radio" name="chart-time-detail"
+                  value="6"><span>6</span></label>
+              <label class="chart-time-radio"><input type="radio" name="chart-time-detail"
+                  value="12"><span>12</span></label>
+              <label class="chart-time-radio"><input type="radio" name="chart-time-detail"
+                  value="24"><span>24</span></label>
+              <label class="chart-time-radio"><input type="radio" name="chart-time-detail"
+                  value="48"><span>48</span></label>
+              <label class="chart-time-radio"><input type="radio" name="chart-time-detail"
+                  value="72"><span>72</span></label>
+            </div>
+            <div class="chart-time-custom">
+              <input type="number" class="chart-time-input" id="chart-time-input-detail" placeholder="2-72小时" min="2"
+                max="72">
+              <button class="chart-time-btn" onclick="applyCustomChartTimeForDetail()">确定</button>
+            </div>
+          </div>
+        </div>
+        <div class="airport-chart-body">
+          <div class="airport-chart-container">
+            <div class="airport-chart" id="airport-detail-chart"></div>
+          </div>
         </div>
       </div>
     </div>

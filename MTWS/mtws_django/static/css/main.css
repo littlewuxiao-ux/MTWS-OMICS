@@ -630,6 +630,10 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
 .airport-detail-title-row .title-weather {
   height: 30px;
   min-height: 30px;
+  box-sizing: border-box;
+  border-left: 3px solid #3498db;
+  justify-content: flex-start;
+  padding-left: 8px;
 }
 
 .title-timeline {
@@ -1086,6 +1090,79 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
   background-color: transparent;
 }
 
+/* 单机场详情弹窗专用头部：代码/名称居中，下方一行左右分布日出日落跑道/联系方式 */
+.airport-detail-header-main {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  height: auto;
+  gap: 6px;
+}
+
+.airport-title-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.airport-title-center h2 {
+  color: #ffffff;
+  font-size: 24px;
+  font-weight: bold;
+  margin: 0;
+}
+
+.airport-title-name {
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.airport-info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+}
+
+.airport-info-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.airport-info-contacts {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.airport-info-left .info-item,
+.airport-info-contacts .contact-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  background-color: rgba(255, 255, 255, 0.06);
+  padding: 2px 8px;
+  border-radius: 3px;
+}
+
+.airport-info-left .info-label,
+.airport-info-contacts .contact-label {
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.airport-info-left .info-value,
+.airport-info-contacts .contact-value {
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+}
+
 .airport-title-left {
   flex-shrink: 0;
 }
@@ -1100,9 +1177,11 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
 .airport-info-right {
   display: flex;
   flex-direction: column;
-  gap: 0px;
+  gap: 6px;
   justify-content: center;
   margin-left: 40px;
+  padding-left: 16px;
+  border-left: 1px solid rgba(255, 255, 255, 0.15);
 }
 
 .airport-info-row-top,
@@ -1110,25 +1189,37 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
   display: flex;
   justify-content: flex-end;
   align-items: center;
-  gap: 20px;
+  gap: 10px;
 }
 
+.airport-info-row-bottom {
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
 
-.airport-info-right .info-item {
+.airport-info-right .info-item,
+.airport-info-right .contact-item {
   display: flex;
   align-items: center;
   gap: 4px;
+  white-space: nowrap;
+  background-color: rgba(255, 255, 255, 0.06);
+  padding: 2px 8px;
+  border-radius: 3px;
 }
 
-.airport-info-right .info-label {
-  color: #ffffff;
-  font-size: 14px;
+.airport-info-right .info-label,
+.airport-info-right .contact-label {
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 12px;
   font-weight: 500;
 }
 
-.airport-info-right .info-value {
+.airport-info-right .info-value,
+.airport-info-right .contact-value {
   color: #ffffff;
-  font-size: 14px;
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .airport-detail-info-hint {
@@ -1138,33 +1229,17 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
   font-size: 14px;
 }
 
-.airport-info-right .contact-item {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  white-space: nowrap;
-}
-
-.airport-info-right .contact-label {
-  color: #ffffff;
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.airport-info-right .contact-value {
-  color: #ffffff;
-  font-size: 14px;
-}
-
 .airport-data-section {
   flex-shrink: 0;
   margin-bottom: 10px;
   overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
 }
 
 .airport-detail-title-row {
-  background-color: #bdc3c7;
-  color: #2c3e50;
+  background-color: #2c3e50;
+  color: #ffffff;
   transform: scale(0.85);
   transform-origin: left top;
   width: 117.6%;
@@ -1174,11 +1249,66 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
   position: static;
 }
 
+/* 时间轴数字随标题行统一改为白色字体（仅限机场详情弹窗内，不影响主页时间轴） */
+.airport-detail-title-row .beijing-time,
+.airport-detail-title-row .utc-time {
+  color: #ffffff;
+}
+
+/* 标题时间轴单元格不显示分隔竖线，仅保留白色数字 */
+.airport-detail-title-row .timeline-cell {
+  border-right: none;
+}
+
 .airport-detail-main {
-  background-color: #ecf0f1;
+  background-color: #2c3e50;
   transform-origin: left top;
   margin-top: 0;
   padding-top: 0;
+}
+
+/* 深色背景测试：表示时间的竖线/分行横线改为白色（仅限机场详情弹窗内，不影响主页网格线） */
+.airport-detail-main .grid-vertical-line {
+  background-color: rgba(255, 255, 255, 0.35);
+}
+
+.airport-detail-main .grid-vertical-line.utc-00-line {
+  background-color: rgba(255, 255, 255, 0.7);
+}
+
+.airport-detail-main .grid-horizontal-line {
+  background-color: rgba(255, 255, 255, 0.35);
+}
+
+/* 实况数据文字（风/温/能见度等具体数值）随深色背景改为白色 */
+.airport-detail-main .weather-row,
+.airport-detail-main [style*="color: black"] {
+  color: #ffffff !important;
+}
+
+/* 无告警的航班信息文字（默认深灰 #333，在深色背景下不可见）改为白色 */
+.airport-detail-main [style*="color: #333"] {
+  color: #ffffff !important;
+}
+
+.airport-detail-main .no-data,
+.airport-detail-main .no-taf-data-overlay {
+  background: transparent;
+  color: rgba(255, 255, 255, 0.6);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+/* 机场行/实况信息块本身自带不透明白色背景，需去除以露出深色底色 */
+.airport-detail-main .airport-row,
+.airport-detail-main .weather-info {
+  background-color: transparent;
+  border-bottom-color: rgba(255, 255, 255, 0.25);
+}
+
+/* 用于标示时刻的静态竖线（每小时格子分隔线）改为白色 */
+.airport-detail-main .timeline-cell,
+.airport-detail-main .forecast-row .timeline-cell {
+  border-right-color: rgba(255, 255, 255, 0.25);
 }
 
 /* 弹窗内的机场行缩放 */
@@ -1208,20 +1338,24 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
-  margin-bottom: 0;
+  margin-bottom: 10px;
   padding: 10px;
-  background-color: #f8f9fa;
+  background-color: #2c3e50;
+  border: 1px solid rgba(255, 255, 255, 0.3);
   border-radius: 4px;
 }
 
 .airport-reports-section h3 {
   flex-shrink: 0;
-  color: #2c3e50;
+  color: #ffffff;
   font-size: 12px;
   font-weight: bold;
   margin: 0 0 0px 0;
   padding-bottom: 8px;
-  border-bottom: 1px solid #dee2e6;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+  border-left: 3px solid #3498db;
+  padding-left: 8px;
+  box-sizing: border-box;
   transform: scale(0.85);
   transform-origin: left top;
   width: 117.6%;
@@ -1229,13 +1363,65 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
 }
 
 
-/* 机场图表区域 */
+/* 机场图表区域：默认折叠的可展开面板 */
 .airport-chart-section {
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
   margin-bottom: 10px;
   padding: 10px;
-  background-color: #f8f9fa;
+  background-color: #2c3e50;
+  border: 1px solid rgba(255, 255, 255, 0.3);
   border-radius: 4px;
+}
+
+/* 图表折叠面板标题栏：点击展开/收起，右侧内嵌时间选择器 */
+.chart-section-title-bar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: bold;
+  padding: 0 0 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+  border-left: 3px solid #3498db;
+  padding-left: 8px;
+  box-sizing: border-box;
+  transform: scale(0.85);
+  transform-origin: left top;
+  width: 117.6%;
+  margin-bottom: -2.7px;
+}
+
+.chart-toggle-icon {
+  display: inline-block;
+  color: #3498db;
+  font-size: 10px;
+  transition: transform 0.15s ease;
+}
+
+.airport-chart-section:not(.collapsed) .chart-toggle-icon {
+  transform: rotate(90deg);
+}
+
+.chart-section-title-text {
+  white-space: nowrap;
+}
+
+.chart-section-title-bar .chart-time-selector {
+  margin-left: auto;
+}
+
+/* 折叠时不渲染图表主体，展开后才占用空间/触发渲染 */
+.airport-chart-body {
+  padding-top: 10px;
+}
+
+.airport-chart-section.collapsed .airport-chart-body {
+  display: none;
 }
 
 .airport-chart-container {
@@ -1252,28 +1438,9 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
 .airport-chart {
   width: 100%;
   height: 280px;
-  background-color: #ffffff;
+  background-color: transparent;
   border-radius: 4px;
-  border: 1px solid #e0e0e0;
-}
-
-/* 图表控制行 - 图例和时间选择器在同一行 */
-.chart-controls-row {
-  position: absolute;
-  top: 8px;
-  left: 50%;
-  right: 0;
-  height: 20px;
-  z-index: 10;
-  pointer-events: none;
-  display: flex;
-  justify-content: flex-start;
-  align-items: center;
-  padding-left: 30px;
-}
-
-.chart-controls-row>* {
-  pointer-events: auto;
+  border: 1px solid rgba(255, 255, 255, 0.3);
 }
 
 /* 复用弹窗的图表时间选择器样式 */
@@ -1288,7 +1455,7 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
 }
 
 .airport-chart-section .chart-time-label {
-  color: #555;
+  color: rgba(255, 255, 255, 0.75);
   font-weight: bold;
   font-size: 12px;
   white-space: nowrap;
@@ -1310,7 +1477,7 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
   align-items: center;
   gap: 2px;
   cursor: pointer;
-  color: #555;
+  color: rgba(255, 255, 255, 0.75);
 }
 
 .airport-chart-section .chart-time-radio input[type="radio"] {
@@ -1368,11 +1535,11 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
   flex: 0 0 auto;
   overflow-y: visible;
   overflow-x: hidden;
-  color: #495057;
+  color: #ffffff;
   font-style: normal;
   padding: 10px;
-  background-color: white;
-  border: 1px solid #dee2e6;
+  background-color: #2c3e50;
+  border: 1px solid rgba(255, 255, 255, 0.3);
   border-radius: 4px;
   transform: scale(0.85);
   transform-origin: left top;
@@ -1381,16 +1548,34 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
   scrollbar-gutter: stable;
 }
 
-/* 报文行样式 */
+/* 报文行样式：左侧色条按报文类型区分（实况/预报） */
 .report-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
   margin-bottom: 5px;
   /* 进一步减少行间距 */
   line-height: 1.2;
   /* 更紧凑的行高 */
+  padding-left: 8px;
+  border-left: 3px solid #ccc;
 }
 
 .report-line:last-child {
   margin-bottom: 0;
+}
+
+.report-line.metar-line {
+  border-left-color: #3498db;
+}
+
+.report-line.taf-line {
+  border-left-color: #16a085;
+}
+
+.report-line .report-content {
+  flex: 1;
+  min-width: 0;
 }
 
 /* ============================================================
@@ -1486,7 +1671,7 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
   font-size: 16px;
   line-height: 1.2;
   /* 进一步减少行高 */
-  color: #2c3e50;
+  color: #ffffff;
   word-break: break-all;
   display: block;
 }
