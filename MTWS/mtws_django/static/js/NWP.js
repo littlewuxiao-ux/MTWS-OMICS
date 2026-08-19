@@ -113,6 +113,11 @@ function renderAllNwpOverlays(nwpData) {
 
         renderNwpOverlayForAirport(forecastTimeline, temperatures);
     });
+
+    // 机场详情弹窗（若已打开）使用独立的行结构，不在 .airport-row 遍历范围内，需单独渲染
+    if (typeof renderNwpOverlayForAirportDetail === 'function') {
+        renderNwpOverlayForAirportDetail();
+    }
 }
 
 /**

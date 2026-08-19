@@ -87,7 +87,7 @@ function _syncPanelPosition() {
     const panel = document.getElementById('map-alert-panel');
     if (!panel) return;
 
-    const titleRow = document.querySelector('.content-section > .title-row');
+    const titleRow = document.querySelector('.main-title-row');
     const topPx = (titleRow && titleRow.getBoundingClientRect().top > 0)
         ? Math.round(titleRow.getBoundingClientRect().top)
         : 180;

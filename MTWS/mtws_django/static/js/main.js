@@ -2476,7 +2476,7 @@ function showModal(modalId) {
     const modal = document.getElementById(modalId);
     if (modal) {
         modal.style.display = 'block';
-        document.body.style.overflow = 'hidden';
+        // 不设置 body.overflow：hidden/auto 都会让 body 成为滚动容器，sticky 吸顶失效。
     }
 }
 
@@ -2485,7 +2485,13 @@ function hideModal(modalId) {
     const modal = document.getElementById(modalId);
     if (modal) {
         modal.style.display = 'none';
-        document.body.style.overflow = 'auto';
+        // 不可设为 auto：body 会变成垂直滚动容器，导致 sticky 吸顶失效。
+        // 仅在没有其它弹窗仍打开时清除内联样式，恢复 CSS 默认 visible。
+        const stillOpen = Array.from(document.querySelectorAll('.modal'))
+            .some(m => m.style.display === 'block');
+        if (!stillOpen) {
+            document.body.style.overflow = '';
+        }
     }
 }
 

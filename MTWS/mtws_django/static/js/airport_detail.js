@@ -6,6 +6,9 @@
 // 搜索结果临时缓存（不写入主页 airportData，关闭弹窗后清除）
 const searchAirportCache = {};
 
+// 当前详情弹窗展示中的机场代码（用于温度辅助覆盖层随数据刷新重绘）
+let currentDetailAirportCode = null;
+
 // 存储图表实例和状态
 const airportDetailChart = {
   chart: null,
@@ -35,6 +38,9 @@ function showAirportDetailModal(airportData) {
   // 主页数据是扁平结构，直接使用airportData
   const airport = airportData;
 
+  // 记录当前展示的机场代码，供温度辅助覆盖层刷新使用
+  currentDetailAirportCode = airport.airport_4code;
+
   // 第1行：机场代码和名称
   document.getElementById('airport-title').textContent =
     `${airport.airport_4code} ${airport.airport_name || ''}`;
@@ -51,8 +57,14 @@ function showAirportDetailModal(airportData) {
   // 生成时间轴
   generateAirportDetailTimeline();
 
+  // 显示弹窗（需在渲染温度辅助覆盖层前显示，以便可见性判断准确）
+  showModal('airport-detail-modal');
+
   // 显示机场数据
   displayAirportDetailData(airportData);
+
+  // 若温度辅助已开启，为详情页机场行叠加温度标记（与主页同一位置）
+  renderNwpOverlayForAirportDetail();
 
   // 初始化图表，并异步加载历史 METAR 数据
   // 保留当前已选时段，若无则使用默认值
@@ -71,9 +83,27 @@ function showAirportDetailModal(airportData) {
 
   // 加载实况和预报报文
   loadHistoryReports(airport.airport_4code);
+}
 
-  // 显示弹窗
-  showModal('airport-detail-modal');
+/**
+ * 为机场详情弹窗渲染温度辅助（NWP）覆盖层。
+ * 详情页机场行（.airport-row-detail）不参与主页 renderAllNwpOverlays 的 .airport-code 匹配遍历，
+ * 因此需要单独渲染；渲染位置/样式复用 NWP.js 中的 renderNwpOverlayForAirport，与主页保持一致。
+ */
+function renderNwpOverlayForAirportDetail() {
+  if (typeof nwpEnabled === 'undefined' || !nwpEnabled) return;
+  if (!currentDetailAirportCode) return;
+
+  const modal = document.getElementById('airport-detail-modal');
+  if (!modal || modal.style.display !== 'block') return;
+
+  const temperatures = (typeof _nwpCache !== 'undefined') ? _nwpCache[currentDetailAirportCode] : null;
+  if (!temperatures || temperatures.length === 0) return;
+
+  const forecastTimeline = document.querySelector('#airport-detail-main .forecast-timeline');
+  if (!forecastTimeline) return;
+
+  renderNwpOverlayForAirport(forecastTimeline, temperatures);
 }
 
 // 加载机场额外信息

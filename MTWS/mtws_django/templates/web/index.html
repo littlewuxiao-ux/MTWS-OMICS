@@ -4,6 +4,9 @@
 <!-- 服务器断连提示横幅（轮询失败时显示，恢复后自动隐藏） -->
 <div id="server-offline-banner">⚠ 服务器连接已断开，正在等待重连...</div>
 
+<!-- 顶栏 + 功能区 + 时间轴整行：作为一块 sticky（top:0）。
+     三条各自 sticky 时，title-row 的 top:180px 无法跟随功能区真实高度，会随列表滚走。 -->
+<div class="page-chrome">
 <!-- 5.1 头部区域 -->
 <header class="header-section">
   <h1 class="system-title">
@@ -150,33 +153,34 @@
   </div>
 </section>
 
-<!-- 5.3 内容区域 -->
-<section class="content-section">
-  <!-- 标题行区域 -->
-  <div class="title-row">
-    <!-- 机场标题 -->
-    <div class="title-airport">
-      <span class="title-text">机场</span>
-    </div>
-
-    <!-- 实况信息标题 -->
-    <div class="title-weather">
-      <span class="title-text">实况信息</span>
-    </div>
-
-    <!-- 时间轴 -->
-    <div class="title-timeline">
-      <!-- 北京时时间轴 -->
-      <div class="timeline-row beijing-time">
-        <div id="beijing-timeline" class="timeline-container"></div>
-      </div>
-      <!-- 世界时时间轴 -->
-      <div class="timeline-row utc-time">
-        <div id="utc-timeline" class="timeline-container"></div>
-      </div>
-    </div>
+<!-- 时间轴标题行 -->
+<div class="title-row main-title-row">
+  <!-- 机场标题 -->
+  <div class="title-airport">
+    <span class="title-text">机场</span>
   </div>
 
+  <!-- 实况信息标题 -->
+  <div class="title-weather">
+    <span class="title-text">实况信息</span>
+  </div>
+
+  <!-- 时间轴 -->
+  <div class="title-timeline">
+    <!-- 北京时时间轴 -->
+    <div class="timeline-row beijing-time">
+      <div id="beijing-timeline" class="timeline-container"></div>
+    </div>
+    <!-- 世界时时间轴 -->
+    <div class="timeline-row utc-time">
+      <div id="utc-timeline" class="timeline-container"></div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- 5.3 内容区域 -->
+<section class="content-section">
   <!-- 正文区域 -->
   <div class="content-main" id="content-main">
     <!-- 机场信息将通过JavaScript动态加载 -->

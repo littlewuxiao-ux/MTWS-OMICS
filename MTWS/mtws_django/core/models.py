@@ -213,9 +213,10 @@ class DataRefreshTimer(models.Model):
         ('metar', '实况数据'),
         ('taf', '预报数据'),
         ('flight', '航班数据'),
+        ('aircraft_parking', '停场数据'),
     ]
     
-    data = models.CharField(max_length=10, choices=DATA_TYPE_CHOICES, unique=True, verbose_name='数据类型')
+    data = models.CharField(max_length=20, choices=DATA_TYPE_CHOICES, unique=True, verbose_name='数据类型')
     init_time = models.FloatField(verbose_name='起始时间(分钟)', help_text='支持小数，如2.5表示2分30秒')
     interval = models.FloatField(verbose_name='更新间隔(分钟)', help_text='支持小数，如2.5表示每2分30秒更新一次')
     
