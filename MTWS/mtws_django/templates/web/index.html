@@ -828,34 +828,35 @@
         </div>
       </div>
 
-      <!-- 图表区域：默认折叠，点击标题栏展开后才加载图表 -->
+      <!-- 图表区域：默认折叠，点击开关展开后才加载图表 -->
       <div class="airport-chart-section collapsed" id="airport-chart-section">
-        <div class="chart-section-title-bar" onclick="toggleAirportChartSection()">
-          <span class="chart-toggle-icon">&#9656;</span>
-          <span class="chart-section-title-text">实况趋势图表</span>
-          <div class="chart-time-selector" onclick="event.stopPropagation()">
-            <div class="chart-time-radios">
-              <label class="chart-time-radio"><input type="radio" name="chart-time-detail" value="3"
-                  checked><span>3</span></label>
-              <label class="chart-time-radio"><input type="radio" name="chart-time-detail"
-                  value="6"><span>6</span></label>
-              <label class="chart-time-radio"><input type="radio" name="chart-time-detail"
-                  value="12"><span>12</span></label>
-              <label class="chart-time-radio"><input type="radio" name="chart-time-detail"
-                  value="24"><span>24</span></label>
-              <label class="chart-time-radio"><input type="radio" name="chart-time-detail"
-                  value="48"><span>48</span></label>
-              <label class="chart-time-radio"><input type="radio" name="chart-time-detail"
-                  value="72"><span>72</span></label>
-            </div>
-            <div class="chart-time-custom">
-              <input type="number" class="chart-time-input" id="chart-time-input-detail" placeholder="2-72小时" min="2"
-                max="72">
-              <button class="chart-time-btn" onclick="applyCustomChartTimeForDetail()">确定</button>
-            </div>
-          </div>
+        <div class="chart-toggle-switch" onclick="toggleAirportChartSection()">
+          <span class="chart-toggle-switch-text" id="chart-toggle-switch-text">&gt;&gt; 点击展开实况趋势图表 &lt;&lt;</span>
         </div>
         <div class="airport-chart-body">
+          <div class="chart-time-selector-row">
+            <div class="chart-time-selector">
+              <div class="chart-time-radios">
+                <label class="chart-time-radio"><input type="radio" name="chart-time-detail" value="3"
+                    checked><span>3</span></label>
+                <label class="chart-time-radio"><input type="radio" name="chart-time-detail"
+                    value="6"><span>6</span></label>
+                <label class="chart-time-radio"><input type="radio" name="chart-time-detail"
+                    value="12"><span>12</span></label>
+                <label class="chart-time-radio"><input type="radio" name="chart-time-detail"
+                    value="24"><span>24</span></label>
+                <label class="chart-time-radio"><input type="radio" name="chart-time-detail"
+                    value="48"><span>48</span></label>
+                <label class="chart-time-radio"><input type="radio" name="chart-time-detail"
+                    value="72"><span>72</span></label>
+              </div>
+              <div class="chart-time-custom">
+                <input type="number" class="chart-time-input" id="chart-time-input-detail" placeholder="2-72小时" min="2"
+                  max="72">
+                <button class="chart-time-btn" onclick="applyCustomChartTimeForDetail()">确定</button>
+              </div>
+            </div>
+          </div>
           <div class="airport-chart-container">
             <div class="airport-chart" id="airport-detail-chart"></div>
           </div>

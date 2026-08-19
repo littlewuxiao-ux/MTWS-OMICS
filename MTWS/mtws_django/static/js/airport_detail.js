@@ -224,14 +224,23 @@ function displayHistoryReports(data) {
 function collapseAirportChartSection() {
   const section = document.getElementById('airport-chart-section');
   if (section) section.classList.add('collapsed');
+  updateChartToggleSwitchText(true);
 }
 
-// 点击图表标题栏：展开/收起面板；首次展开时才真正初始化图表并请求历史数据
+// 更新开关文案：collapsed=true 显示"点击展开"，false 显示"点击收起"
+function updateChartToggleSwitchText(collapsed) {
+  const textEl = document.getElementById('chart-toggle-switch-text');
+  if (!textEl) return;
+  textEl.textContent = collapsed ? '>> 点击展开实况趋势图表 <<' : '>> 点击收起实况趋势图表 <<';
+}
+
+// 点击图表展开/收起开关：首次展开时才真正初始化图表并请求历史数据
 function toggleAirportChartSection() {
   const section = document.getElementById('airport-chart-section');
   if (!section) return;
 
   const collapsed = section.classList.toggle('collapsed');
+  updateChartToggleSwitchText(collapsed);
   if (collapsed) return;
 
   if (!airportDetailChart.initialized) {
@@ -508,13 +517,12 @@ function updateAirportDetailChart(airportCode) {
       ],
       selected: airportDetailChart.selectedSeries,
       top: 13,
-      right: '50%',
+      left: 'center',
       orient: 'horizontal',
       itemGap: 8,
       textStyle: { fontSize: 10 },
       itemWidth: 12,
-      itemHeight: 12,
-      padding: [0, 30, 0, 0]
+      itemHeight: 12
     },
     grid: {
       left: '94px',
@@ -920,6 +928,16 @@ function showAirportSearchSingle(airportData) {
 }
 
 /**
+ * 从多机场搜索结果中点击四字代码，打开该机场的完整详情弹窗。
+ * 详情弹窗以更高 z-index 叠加显示，关闭后自动回落到搜索结果弹窗。
+ */
+function openAirportDetailFromSearchResult(code) {
+  const airport = searchAirportCache[code];
+  if (!airport) return;
+  showAirportDetailModal(airport);
+}
+
+/**
  * 生成机场详情 header 的 HTML（用于多机场搜索展示，避免复用固定ID元素）。
  */
 function _buildSearchAirportHeader(airport) {
@@ -928,15 +946,16 @@ function _buildSearchAirportHeader(airport) {
   const areaCode = airport.area_code || 'N/A';
   const forecastPhone = airport.forecast_phone || 'N/A';
   const obsPhone = airport.observation_phone || 'N/A';
-  const otherPhone = airport.other_phone || 'N/A';
 
   return `
     <div class="airport-detail-header">
-      <div class="airport-title-left">
-        <h2>${code} ${name}</h2>
+      <div class="airport-title-inline">
+        <h2 class="airport-code-clickable" onclick="openAirportDetailFromSearchResult('${code}')"
+          title="点击查看机场详情">${code}</h2>
+        <span class="airport-title-name-inline">${name}</span>
       </div>
-      <div class="airport-info-right">
-        <div class="airport-info-row-top">
+      <div class="airport-info-row airport-info-row-compact">
+        <div class="airport-info-left">
           <div class="info-item">
             <span class="info-label">日出:</span>
             <span class="info-value" id="search-sunrise-${code}">--:--</span>
@@ -945,29 +964,19 @@ function _buildSearchAirportHeader(airport) {
             <span class="info-label">日落:</span>
             <span class="info-value" id="search-sunset-${code}">--:--</span>
           </div>
-          <div class="info-item">
-            <span class="info-label">跑道:</span>
-            <span class="info-value" id="search-runway-${code}">--</span>
-            <span class="airport-detail-info-hint"
-              title="日出日落和跑道数据来自外网公开数据，仅供参考。" aria-label="说明">&#x24D8;</span>
-          </div>
         </div>
-        <div class="airport-info-row-bottom">
+        <div class="airport-info-contacts">
           <div class="contact-item">
             <span class="contact-label">区号:</span>
             <span class="contact-value">${areaCode}</span>
           </div>
           <div class="contact-item">
-            <span class="contact-label">预报电话:</span>
+            <span class="contact-label">预报:</span>
             <span class="contact-value">${forecastPhone}</span>
           </div>
           <div class="contact-item">
-            <span class="contact-label">观测电话:</span>
+            <span class="contact-label">观测:</span>
             <span class="contact-value">${obsPhone}</span>
-          </div>
-          <div class="contact-item">
-            <span class="contact-label">其他联系方式:</span>
-            <span class="contact-value">${otherPhone}</span>
           </div>
         </div>
       </div>
@@ -1046,22 +1055,6 @@ function showAirportSearchMulti(airports) {
         const airportRow = mainEl.querySelector('.airport-row');
         if (airportRow && typeof updateAirportGridForModal === 'function') {
           updateAirportGridForModal(airportRow);
-        }
-      }
-
-      // 点击四字代码标题切换到单机场完整详情
-      const block = container.querySelector(`[data-code="${code}"]`);
-      if (block) {
-        const titleH2 = block.querySelector('.airport-title-left h2');
-        if (titleH2) {
-          titleH2.classList.add('airport-search-code-clickable');
-          titleH2.title = '点击查看完整详情';
-          titleH2.addEventListener('click', function () {
-            const cached = searchAirportCache[code];
-            if (cached && typeof showAirportDetailModal === 'function') {
-              showAirportDetailModal(cached);
-            }
-          });
         }
       }
 

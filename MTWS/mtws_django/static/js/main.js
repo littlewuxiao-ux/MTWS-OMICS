@@ -2396,11 +2396,11 @@ function performSearch(searchValue) {
     const codes = parseIcaoCodes(searchValue);
 
     if (codes === null) {
-        showError('输入格式有误：只允许字母和分隔符（空格、逗号）');
+        alert('输入格式有误：只允许字母和分隔符（空格、逗号）');
         return;
     }
     if (codes.length === 0) {
-        showError('未识别到有效的四字代码（每个代码须为连续4个英文字母）');
+        alert('未识别到有效的四字代码（每个代码须为连续4个英文字母）');
         return;
     }
 
@@ -2421,8 +2421,15 @@ function performSearch(searchValue) {
 }
 
 // 调后端搜索接口，然后根据结果数量选择展示方式
+// 注意：搜索不应影响主页当前已展示的内容，因此不调用 showLoading()/hideLoading()
+// （它们会清空 #content-main），仅在搜索按钮上给出轻量的加载中提示。
 function fetchAndShowAirportSearch(codes) {
-    showLoading();
+    const searchBtn = document.getElementById('search-btn');
+    const originalBtnText = searchBtn ? searchBtn.textContent : null;
+    if (searchBtn) {
+        searchBtn.disabled = true;
+        searchBtn.textContent = '搜索中...';
+    }
 
     const headers = { 'Content-Type': 'application/json' };
     if (typeof currentToken !== 'undefined' && currentToken) {
@@ -2435,12 +2442,12 @@ function fetchAndShowAirportSearch(codes) {
         .then(r => r.json())
         .then(data => {
             if (!data.success) {
-                showError('搜索失败：' + (data.error || '未知错误'));
+                alert('搜索失败：' + (data.error || '未知错误'));
                 return;
             }
             const airports = data.data || [];
             if (airports.length === 0) {
-                showError('未找到机场数据');
+                alert('未找到机场数据');
                 return;
             }
             if (airports.length === 1) {
@@ -2457,10 +2464,13 @@ function fetchAndShowAirportSearch(codes) {
         })
         .catch(err => {
             console.error('机场搜索请求失败:', err);
-            showError('搜索请求失败，请重试');
+            alert('搜索请求失败，请重试');
         })
         .finally(() => {
-            hideLoading();
+            if (searchBtn) {
+                searchBtn.disabled = false;
+                searchBtn.textContent = originalBtnText;
+            }
         });
 }
 
@@ -3730,6 +3740,7 @@ function updateAirportGridForModal(airportElement) {
     const positions = calculateVerticalLinePositions(horizontalWidth, timeSlots);
     const midnightIndexes = findMidnightBoldLineIndexes(getCurrentTime());
 
+    // 弹窗为深色主题：普通线统一为半透明白，00UTC/00CST整点线为3px不透明白（与主页加粗逻辑一致，仅配色不同）
     positions.forEach((position, index) => {
         const line = document.createElement('div');
         line.className = 'grid-vertical-line';
@@ -3741,7 +3752,7 @@ function updateAirportGridForModal(airportElement) {
             top: 0;
             width: ${isMidnightLine ? '3px' : '1px'};
             height: ${airportHeight}px;
-            background-color: ${isMidnightLine ? '#666' : '#ddd'};
+            background-color: ${isMidnightLine ? '#ffffff' : 'rgba(255, 255, 255, 0.3)'};
             z-index: 0;
             pointer-events: none;
         `;
@@ -3769,7 +3780,7 @@ function updateAirportGridForModal(airportElement) {
             top: ${data.position}px;
             width: ${horizontalWidth}px;
             height: 1px;
-            background-color: #ddd;
+            background-color: rgba(255, 255, 255, 0.3);
             z-index: 0;
             pointer-events: none;
         `;
@@ -3790,14 +3801,14 @@ function updateAirportGridForModal(airportElement) {
             left: ${leftOffset}px;
             width: ${horizontalWidth}px;
             height: ${forecastHeight}px;
-            background: #f8f9fa;
+            background: #2c3e50;
             z-index: 10;
             display: flex;
             align-items: center;
             justify-content: center;
             font-size: 14px;
-            color: #666;
-            border: 1px solid #ddd;
+            color: #ffffff;
+            border: 1px solid rgba(255, 255, 255, 0.3);
             box-sizing: border-box;
         `;
         overlay.textContent = '没有有效的TAF数据';
