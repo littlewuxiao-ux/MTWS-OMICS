@@ -948,13 +948,16 @@ function _buildSearchAirportHeader(airport) {
   const obsPhone = airport.observation_phone || 'N/A';
 
   return `
-    <div class="airport-detail-header">
+    <div class="airport-detail-header airport-search-header">
       <div class="airport-title-inline">
         <h2 class="airport-code-clickable" onclick="openAirportDetailFromSearchResult('${code}')"
           title="点击查看机场详情">${code}</h2>
-        <span class="airport-title-name-inline">${name}</span>
       </div>
+      <div class="airport-code-divider"></div>
       <div class="airport-info-row airport-info-row-compact">
+        <div class="info-item airport-name-item">
+          <span class="info-value">${name}</span>
+        </div>
         <div class="airport-info-left">
           <div class="info-item">
             <span class="info-label">日出:</span>
@@ -1058,10 +1061,31 @@ function showAirportSearchMulti(airports) {
         }
       }
 
+      // 渲染温度辅助（NWP）覆盖层：搜索结果弹窗不在主页 .airport-row 遍历范围内，需单独渲染
+      renderNwpOverlayForAirportSearch(code);
+
       // 异步加载日出日落/跑道信息
       _loadSearchExtraInfo(code);
     });
   });
+}
+
+/**
+ * 为多机场搜索结果中的单个机场渲染温度辅助（NWP）覆盖层。
+ * 逻辑与 renderNwpOverlayForAirportDetail 一致，仅容器定位方式不同（按机场代码查找搜索区块）。
+ */
+function renderNwpOverlayForAirportSearch(code) {
+  if (typeof nwpEnabled === 'undefined' || !nwpEnabled) return;
+
+  const temperatures = (typeof _nwpCache !== 'undefined') ? _nwpCache[code] : null;
+  if (!temperatures || temperatures.length === 0) return;
+
+  const forecastTimeline = document.querySelector(`#search-block-main-${code} .forecast-timeline`);
+  if (!forecastTimeline) return;
+
+  if (typeof renderNwpOverlayForAirport === 'function') {
+    renderNwpOverlayForAirport(forecastTimeline, temperatures);
+  }
 }
 
 /**

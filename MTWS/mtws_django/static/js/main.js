@@ -2487,6 +2487,18 @@ function showModal(modalId) {
     if (modal) {
         modal.style.display = 'block';
         // 不设置 body.overflow：hidden/auto 都会让 body 成为滚动容器，sticky 吸顶失效。
+
+        // 层级规则：实况弹窗（.metar-popup-overlay，z-index 30000）默认应始终显示在
+        // 机场详情/搜索结果弹窗之上；唯一例外是从实况弹窗内点击"查看详情"打开机场详情弹窗时，
+        // 该次打开的详情弹窗需临时高于实况弹窗。此标记由 handleBatchHandle 在调用前设置。
+        if (modalId === 'airport-detail-modal') {
+            if (window._openDetailAboveMetarPopup) {
+                modal.style.zIndex = '30010';
+                window._openDetailAboveMetarPopup = false;
+            } else {
+                modal.style.zIndex = '';
+            }
+        }
     }
 }
 
@@ -2501,6 +2513,10 @@ function hideModal(modalId) {
             .some(m => m.style.display === 'block');
         if (!stillOpen) {
             document.body.style.overflow = '';
+        }
+
+        if (modalId === 'airport-detail-modal') {
+            modal.style.zIndex = '';
         }
     }
 }
@@ -3502,9 +3518,12 @@ function calculateHorizontalLinePositions(airportRowHeight) {
 }
 
 // 计算横线宽度
-function calculateHorizontalWidth() {
+// 注意：必须传入具体的机场行元素，在其自身范围内查找 .forecast-timeline，
+// 不能用全局 document.querySelector（会导致所有机场行都错误地共用同一个机场的宽度）
+function calculateHorizontalWidth(airportElement) {
     const minWidth = 1680 - 80 - 200; // 1400px
-    const contentWidth = document.querySelector('.forecast-timeline')?.scrollWidth || minWidth;
+    const scopedTimeline = airportElement ? airportElement.querySelector('.forecast-timeline') : null;
+    const contentWidth = scopedTimeline?.scrollWidth || minWidth;
     return Math.max(minWidth, contentWidth);
 }
 
@@ -3585,8 +3604,12 @@ function createVerticalLines(airportElement, airportHeight, horizontalWidth, tim
 
 // 更新机场网格
 function updateAirportGrid(airportElement) {
+    // 必须先移除旧的网格线，再测量高度/宽度，否则上一轮网格线（绝对定位、可能贴边1px）
+    // 会被计入 scrollHeight/scrollWidth，导致每次刷新都基于"虚高"的尺寸重绘，越刷越往下偏移
+    airportElement.querySelectorAll('.grid-horizontal-line, .grid-vertical-line').forEach(line => line.remove());
+
     const airportHeight = airportElement.scrollHeight;
-    const horizontalWidth = calculateHorizontalWidth();
+    const horizontalWidth = calculateHorizontalWidth(airportElement);
     const timeSlots = currentTimeRange;
 
     // 创建横线
@@ -3612,7 +3635,11 @@ function updateAllAirportGrids() {
     const airportRows = document.querySelectorAll('.airport-row');
     airportRows.forEach(airportRow => {
         // 机场详情弹窗内的行使用弹窗专用网格逻辑（用自身容器宽度），避免自动更新时误用主页面宽度导致网格间距变短
-        const isInDetailModal = airportRow.closest('#airport-detail-main') !== null;
+        // 注意：必须用 class 选择器 .airport-detail-main，不能用 id 选择器 #airport-detail-main——
+        // 多机场搜索结果弹窗中的行容器 id 是 search-block-main-${code}，只共用了这个 class，
+        // 用 id 选择器会匹配失败，导致搜索结果弹窗被自动刷新定时器误判为主页行，
+        // 从而用浅色主题（#ddd/#666）重绘网格线，覆盖掉原本正确的深色主题（半透明白/纯白加粗线）
+        const isInDetailModal = airportRow.closest('.airport-detail-main') !== null;
         if (isInDetailModal) {
             updateAirportGridForModal(airportRow);
         } else {
@@ -3627,10 +3654,17 @@ function updateAllAirportGrids() {
 
 // 监听机场高度变化
 function observeAirportHeightChanges() {
+    // 每次 displayAirports 重建DOM后都会调用本函数，若不断开旧的 observer，
+    // 旧实例会持续堆积（虽然旧行已从DOM移除，但观察者对象本身未被回收）
+    if (window._airportRowResizeObserver) {
+        window._airportRowResizeObserver.disconnect();
+    }
+
     const observer = new ResizeObserver(entries => {
         entries.forEach(entry => {
             if (entry.target.classList.contains('airport-row')) {
-                const isInDetailPage = entry.target.closest('#airport-detail-main') !== null;
+                // 同上，使用 class 选择器以同时覆盖机场详情弹窗与多机场搜索结果弹窗
+                const isInDetailPage = entry.target.closest('.airport-detail-main') !== null;
                 if (!isInDetailPage) {
                     updateAirportGrid(entry.target);
                 }
@@ -3643,6 +3677,7 @@ function observeAirportHeightChanges() {
         observer.observe(airportRow);
     });
 
+    window._airportRowResizeObserver = observer;
     return observer;
 }
 
@@ -3717,6 +3752,10 @@ function displayAirportDetailData(airportData) {
 
 // 弹窗专用网格更新函数（考虑85%缩放）
 function updateAirportGridForModal(airportElement) {
+    // 必须先移除旧的网格线，再测量高度/宽度，原因同 updateAirportGrid：
+    // 避免把上一轮网格线的绝对定位偏移计入尺寸测量，形成越刷新越往下/往右偏移的累积误差
+    airportElement.querySelectorAll('.grid-vertical-line, .grid-horizontal-line').forEach(line => line.remove());
+
     const airportHeight = airportElement.scrollHeight;
 
     // 使用与主页相同的方法：获取原始宽度
@@ -3726,15 +3765,12 @@ function updateAirportGridForModal(airportElement) {
     if (forecastTimeline) {
         horizontalWidth = forecastTimeline.scrollWidth;
     } else {
-        horizontalWidth = calculateHorizontalWidth();
+        horizontalWidth = calculateHorizontalWidth(airportElement);
     }
 
     const timeSlots = currentTimeRange;
     const hasAirportInfo = airportElement.querySelector('.airport-info') !== null;
     const leftOffset = hasAirportInfo ? 280 : 200;
-
-    // 移除旧线
-    airportElement.querySelectorAll('.grid-vertical-line, .grid-horizontal-line').forEach(line => line.remove());
 
     // 创建竖线 - 使用原始宽度平分
     const positions = calculateVerticalLinePositions(horizontalWidth, timeSlots);
@@ -4287,8 +4323,7 @@ function setupAutoLogout() {
 // ========================================
 // 实况弹窗相关函数
 // ========================================
-// 注意：弹窗相关代码已迁移到 popup_new.js 和 popup_common.js
-// 以下仅保留必要的工具函数
+// 注意：弹窗相关代码位于 popup.js，以下仅保留必要的工具函数
 
 // 将毫秒级时间戳转换为UTC时间字符串 YYYY DDMM HHMMSS格式
 function formatTimestampToUTC(timestamp) {
@@ -4311,10 +4346,7 @@ function formatTimestampToUTC(timestamp) {
 }
 
 // ========================================
-// NWP 温度辅助功能已迁移至 NWP.js
-// ========================================
-// 旧弹窗代码已移除
-// 新代码位于 popup_new.js 和 popup_common.js
+// NWP 温度辅助功能位于 NWP.js
 // ========================================
 
 // 在页面加载完成后启动弹窗检查

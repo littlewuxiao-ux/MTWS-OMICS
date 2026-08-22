@@ -118,6 +118,14 @@ function renderAllNwpOverlays(nwpData) {
     if (typeof renderNwpOverlayForAirportDetail === 'function') {
         renderNwpOverlayForAirportDetail();
     }
+
+    // 多机场搜索结果弹窗（若已打开）同样使用独立的行结构，需单独渲染
+    if (typeof renderNwpOverlayForAirportSearch === 'function') {
+        document.querySelectorAll('.airport-search-block').forEach(block => {
+            const code = block.getAttribute('data-code');
+            if (code) renderNwpOverlayForAirportSearch(code);
+        });
+    }
 }
 
 /**
@@ -134,6 +142,10 @@ function renderAllNwpOverlays(nwpData) {
  * @param {Array}   temperatures      [{time: unix_sec, temperature: float}, ...]
  */
 function renderNwpOverlayForAirport(forecastTimeline, temperatures) {
+    // 深色背景（机场详情弹窗 / 搜索结果弹窗）文字用白色，主页浅色背景保持黑色
+    const isDarkTheme = forecastTimeline.closest('.airport-detail-main') !== null;
+    const textColor = isDarkTheme ? '#fff' : '#000';
+
     const overlay = document.createElement('div');
     overlay.className = 'nwp-temperature-overlay';
     overlay.style.cssText = [
@@ -172,7 +184,7 @@ function renderNwpOverlayForAirport(forecastTimeline, temperatures) {
             'transform: translateX(-50%)',
             'font-size: 10px',
             'font-weight: bold',
-            'color: #000',
+            `color: ${textColor}`,
             'white-space: nowrap',
             'line-height: 1',
             'background: transparent',

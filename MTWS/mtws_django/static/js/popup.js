@@ -1115,6 +1115,8 @@ async function handleBatchHandle(airport, sqcList) {
 
         if (response.ok) {
             // 先显示机场详情（在弹窗关闭之前）
+            // 标记本次打开需临时高于实况弹窗显示（唯一例外场景，见 showModal 中的层级规则说明）
+            window._openDetailAboveMetarPopup = true;
             showAirportDetail(airport);
 
             // 移除该机场的弹窗数据
