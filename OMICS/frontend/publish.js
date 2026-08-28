@@ -1089,15 +1089,29 @@ function setupGlobalToolbar() {
     const renderPublishHistory = () => {
         const bar = document.getElementById('publish-history-bar'); if (!bar) return;
         const history = JSON.parse(localStorage.getItem('sf_publish_history_v1') || '[]');
-        bar.innerHTML = history.slice(0, 4).map((h, i) => `<button class="mini-btn publish-history-item" data-index="${i}" style="background:#ede9fe;border:1px solid #a78bfa;color:#4c1d95;padding:4px 8px;">${new Date(h.timestamp).toLocaleString()} · ${h.hours}小时</button>`).join('') + (history.length > 4 ? '<button class="mini-btn" id="publish-history-more" style="background:#f3f4f6;border:1px solid #cbd5e1;padding:4px 8px;">…</button>' : '');
-        bar.querySelectorAll('.publish-history-item').forEach(btn => btn.onclick = () => { const h = history[Number(btn.dataset.index)]; if (h) { pbState.confirmedData = JSON.parse(JSON.stringify(h.data || {})); renderPublishTableTriRow(window.currentApAnalysis || []); } });
+        bar.innerHTML = history.slice(0, 4).map((h, i) => `<span class="publish-history-entry" style="position:relative;display:inline-flex;align-items:center;background:#ede9fe;border:1px solid #a78bfa;border-radius:4px;padding:0 2px 0 0;"><button class="mini-btn publish-history-item" data-index="${i}" style="background:transparent;border:0;color:#4c1d95;padding:4px 8px;cursor:pointer;">${new Date(h.timestamp).toLocaleString()} · ${h.hours}小时</button><button class="publish-history-delete" data-index="${i}" title="删除此历史记录" style="border:0;background:transparent;color:#b91c1c;font-size:16px;line-height:1;cursor:pointer;padding:2px 4px;">×</button></span>`).join('') + (history.length > 4 ? '<button class="mini-btn" id="publish-history-more" style="background:#f3f4f6;border:1px solid #cbd5e1;padding:4px 8px;">…</button>' : '');
+        bar.querySelectorAll('.publish-history-item').forEach(btn => btn.onclick = () => {
+            const h = history[Number(btn.dataset.index)];
+            if (!h || !confirm('恢复这份历史预报将覆盖当前已编发内容，是否继续？')) return;
+            pbState.confirmedData = JSON.parse(JSON.stringify(h.data || {}));
+            window.saveConfirmedDataToLocal?.();
+            renderPublishTableTriRow(window.currentApAnalysis || []);
+        });
+        bar.querySelectorAll('.publish-history-delete').forEach(btn => btn.onclick = event => {
+            event.stopPropagation();
+            const index = Number(btn.dataset.index);
+            if (!confirm('确定删除这份历史预报吗？删除后不可恢复。')) return;
+            history.splice(index, 1);
+            localStorage.setItem('sf_publish_history_v1', JSON.stringify(history));
+            renderPublishHistory();
+        });
         bar.querySelector('#publish-history-more')?.addEventListener('click', () => {
             const old = document.getElementById('publish-history-search-modal'); old?.remove();
             const modal = document.createElement('div'); modal.id = 'publish-history-search-modal'; modal.className = 'modal'; modal.style.cssText = 'display:flex;z-index:11000;';
             modal.innerHTML = `<div class="modal-content" style="width:560px;max-height:75vh;overflow:auto;padding:20px"><span class="close-button">&times;</span><h3>历史预报</h3><input id="publish-history-search" type="search" placeholder="搜索时间或预报时长" style="width:100%;box-sizing:border-box;padding:8px;margin-bottom:10px"><div id="publish-history-results"></div></div>`;
             document.body.appendChild(modal);
             const results = modal.querySelector('#publish-history-results');
-            const draw = q => { const key = q.toLowerCase(); results.innerHTML = history.map((h, i) => ({h, i})).filter(x => `${new Date(x.h.timestamp).toLocaleString()} ${x.h.hours}小时`.toLowerCase().includes(key)).map(x => `<button class="mini-btn" data-i="${x.i}" style="display:block;width:100%;text-align:left;margin:4px 0;padding:8px">${new Date(x.h.timestamp).toLocaleString()} · ${x.h.hours}小时</button>`).join('') || '<div>没有匹配记录</div>'; results.querySelectorAll('button').forEach(b => b.onclick = () => { pbState.confirmedData = JSON.parse(JSON.stringify(history[Number(b.dataset.i)].data || {})); renderPublishTableTriRow(window.currentApAnalysis || []); modal.remove(); }); };
+            const draw = q => { const key = q.toLowerCase(); results.innerHTML = history.map((h, i) => ({h, i})).filter(x => `${new Date(x.h.timestamp).toLocaleString()} ${x.h.hours}小时`.toLowerCase().includes(key)).map(x => `<div style="display:flex;gap:4px;margin:4px 0"><button class="mini-btn" data-i="${x.i}" style="flex:1;text-align:left;padding:8px">${new Date(x.h.timestamp).toLocaleString()} · ${x.h.hours}小时</button><button class="mini-btn history-search-delete" data-i="${x.i}" title="删除" style="color:#b91c1c">×</button></div>`).join('') || '<div>没有匹配记录</div>'; results.querySelectorAll('button[data-i]:not(.history-search-delete)').forEach(b => b.onclick = () => { if (!confirm('恢复这份历史预报将覆盖当前已编发内容，是否继续？')) return; pbState.confirmedData = JSON.parse(JSON.stringify(history[Number(b.dataset.i)].data || {})); window.saveConfirmedDataToLocal?.(); renderPublishTableTriRow(window.currentApAnalysis || []); modal.remove(); }); results.querySelectorAll('.history-search-delete').forEach(b => b.onclick = () => { if (!confirm('确定删除这份历史预报吗？')) return; history.splice(Number(b.dataset.i), 1); localStorage.setItem('sf_publish_history_v1', JSON.stringify(history)); draw(modal.querySelector('#publish-history-search').value); renderPublishHistory(); }); };
             draw(''); modal.querySelector('#publish-history-search').oninput = e => draw(e.target.value); modal.querySelector('.close-button').onclick = () => modal.remove();
         });
     };
