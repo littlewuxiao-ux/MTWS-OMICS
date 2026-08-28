@@ -797,6 +797,7 @@
         }
 
         const cells = [];
+        const phenomenonRows = {};
         for (let i = 0; i < numCells; i++) cells.push({ text: '', bg: 'transparent', fg: '#1e293b', ts: 'none' });
 
         // 🌟 只写机场名、不写任何天气/时段：仅把该机场加入表格，由系统拉取 TAF/EC 供编发。
@@ -879,12 +880,18 @@
             const lo = Math.max(0, Math.min(startOff, endOff));
             const hi = Math.min(numCells - 1, Math.max(startOff, endOff));
             const style = window.getMultiCellStyle ? window.getMultiCellStyle(phenomenon) : { bg: '#dc2626', fg: '#fff', ts: 'none' };
-            for (let i = lo; i <= hi; i++) cells[i] = { text: phenomenon, bg: style.bg, fg: style.fg, ts: style.ts || 'none' };
+            if (!phenomenonRows[phenomenon]) phenomenonRows[phenomenon] = cells.map(() => ({ text: '', bg: 'transparent', fg: '#1e293b', ts: 'none' }));
+            for (let i = lo; i <= hi; i++) {
+                const value = { text: phenomenon, bg: style.bg, fg: style.fg, ts: style.ts || 'none' };
+                cells[i] = value;
+                phenomenonRows[phenomenon][i] = value;
+            }
             applied++;
         });
 
         if (!applied) return { icao, cells, note: '适航', errors: [] };
-        return { icao, cells, note: '/', errors };
+        const rows = Object.values(phenomenonRows).filter(row => row.some(cell => cell.text));
+        return { icao, cells, rows: rows.length > 1 ? rows : null, note: '/', errors };
     }
 
     function renderValidationPanel(result) {
@@ -1000,7 +1007,8 @@
                 window.pbState.forceShowAirports.add(item.icao);
                 displayOnlyCount++;
             } else {
-                window.pbState.confirmedData[item.icao] = { rows: [item.cells], notes: [item.note || '/'], origin: 'text' };
+                const importedRows = item.rows || [item.cells];
+                window.pbState.confirmedData[item.icao] = { rows: importedRows, notes: importedRows.map(() => item.note || '/'), origin: 'text' };
                 window.pbState.forceShowAirports.add(item.icao);
             }
             importedIcaos.push(item.icao);

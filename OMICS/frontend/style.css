@@ -441,7 +441,7 @@ textarea:focus { border-color: var(--sf-red); outline: none; background: white; 
 .draft-note-cell .btn-confirm-edit { opacity: 0; pointer-events: none; transition: opacity 0.15s ease; }
 .draft-note-cell:hover .btn-confirm-edit, .draft-note-cell .btn-confirm-edit:focus { opacity: 1; pointer-events: auto; }
 .confirmed-note-cell { position: relative; padding: 4px; }
-.confirmed-note-cell .edit-note-input { width: 100%; min-height: 26px; box-sizing: border-box; padding: 4px 6px; }
+.confirmed-note-cell .edit-note-input { width: 100%; min-height: 26px; box-sizing: border-box; padding: 4px 6px; text-align: center; }
 .tr-edit-extra .edit-note-input { padding: 4px 6px; }
 
 .data-cell-editable { cursor: text; }

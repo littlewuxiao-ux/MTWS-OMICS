@@ -2284,6 +2284,8 @@ def sync_excel_api():
         data = request.json
         excel_root = data.get('excel_root')
         backup_path = data.get('backup_path')
+        filter_year = int(data.get('year')) if str(data.get('year') or '').isdigit() else None
+        filter_month = int(data.get('month')) if str(data.get('month') or '').isdigit() else None
         if not backup_path: backup_path = os.path.join(os.getcwd(), 'backup')
         
         if not excel_root or not os.path.exists(excel_root):
@@ -2312,6 +2314,7 @@ def sync_excel_api():
                         mark_skip('路径中没有“YYYY年”')
                         continue
                     year = int(year_match.group(1))
+                    if filter_year and year != filter_year: continue
                     
                     # 2. 从文件名提取月日 (例如 席位预报质量评价表-曹骏-0415.xlsx -> 0415)
                     md_match = re.search(r'-(\d{4})\.xlsx$', file)
@@ -2321,6 +2324,7 @@ def sync_excel_api():
                     mmdd = md_match.group(1)
                     month = int(mmdd[:2])
                     day = int(mmdd[2:])
+                    if filter_month and month != filter_month: continue
                     
                     base_date_str = f"{year}-{month:02d}-{day:02d}"
                     dt = datetime(year, month, day)

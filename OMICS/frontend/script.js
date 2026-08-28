@@ -1027,17 +1027,23 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (!roots.length) return alert("⚠️ 同步前请先配置【机场预报】或【席位预报】Excel 云盘路径!");
 
             syncExcelBtn.disabled = true; syncExcelBtn.textContent = "⏳ 正在逆向提取并同步数据,请耐心稍候...";
+            let progress = document.getElementById('sync-excel-progress');
+            if (!progress) { progress = document.createElement('div'); progress.id = 'sync-excel-progress'; progress.style.cssText = 'margin-top:8px;max-height:180px;overflow:auto;border:1px solid #fed7aa;background:#fff7ed;padding:8px;font-size:12px;white-space:pre-line;'; syncExcelBtn.parentElement?.appendChild(progress); }
+            progress.textContent = '开始同步...';
+            const syncYear = document.getElementById('sync-excel-year')?.value || '';
+            const syncMonth = document.getElementById('sync-excel-month')?.value || '';
             try {
                 const messages = [];
                 const errors = [];
                 for (const item of roots) {
+                    progress.textContent += `\n⏳ ${item.label}：正在扫描...`;
                     const res = await fetch('/api/sync_excel', {
                         method: 'POST', headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({ excel_root: item.path, backup_path: backupPath })
+                        body: JSON.stringify({ excel_root: item.path, backup_path: backupPath, year: syncYear, month: syncMonth })
                     });
                     const data = await res.json();
-                    if (data.success) messages.push(`【${item.label}】${data.message}`);
-                    else errors.push(`【${item.label}】${data.error}`);
+                    if (data.success) { messages.push(`【${item.label}】${data.message}`); progress.textContent += `\n✅ ${item.label}：${data.message}`; }
+                    else { errors.push(`【${item.label}】${data.error}`); progress.textContent += `\n❌ ${item.label}：${data.error}`; }
                 }
                 if (errors.length) alert(`部分同步失败:\n${errors.join('\n')}\n\n已完成:\n${messages.join('\n') || '无'}`);
                 else alert(messages.join('\n'));

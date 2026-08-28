@@ -133,6 +133,7 @@ const pbState = {
   allowOtherCarriers: false,
   defaultShowTaf: true, defaultShowEc: false,
   confirmedData: {},
+  manuallyRemovedAirports: new Set(),
   // 🌟 一键编发状态：记录本次批量采纳的机场，供撤回
   bulkAdopted: { taf: null, ec: null, all: null },
   bulkActionInProgress: false,
@@ -152,6 +153,7 @@ window.saveConfirmedDataToLocal = function() {
     const curUser = userEl ? userEl.textContent.trim() : 'UNKNOWN';
     const wrapper = { timestamp: Date.now(), user: curUser, data: pbState.confirmedData };
     localStorage.setItem('sf_confirmed_forecasts_v3', JSON.stringify(wrapper));
+    localStorage.setItem('sf_manually_removed_airports_v1', JSON.stringify(Array.from(pbState.manuallyRemovedAirports || [])));
 };
 
 function getActiveTextImportAirports() {
@@ -411,6 +413,8 @@ window.initPublishModule = async function() {
 
     // 🌟 需求B：确认数据24小时过期与切换用户重置机制
     try {
+        const removed = JSON.parse(localStorage.getItem('sf_manually_removed_airports_v1') || '[]');
+        pbState.manuallyRemovedAirports = new Set(Array.isArray(removed) ? removed : []);
         const savedWrapper = JSON.parse(localStorage.getItem('sf_confirmed_forecasts_v3'));
         if (savedWrapper && savedWrapper.timestamp && (Date.now() - savedWrapper.timestamp < 24 * 3600 * 1000)) {
             pbState.confirmedData = savedWrapper.data || {};
@@ -851,7 +855,9 @@ function buildPublishExportText(timezone = 'auto') {
             const withoutTemperature = String(cell?.text || '').trim().split(/\s+/)
                 .filter(token => parseForecastTemperature(token) === null)
                 .join(' ');
-            const windText = formatPublishWindText(withoutTemperature);
+            let windText = formatPublishWindText(withoutTemperature);
+            // 统一将纯数字能见度单元格导出为可读的中文单位。
+            windText = windText.replace(/(^|\s)(\d{2,4})(?=\s|$)/g, (m, p, v) => `能见度${v}米`);
             return addShortTermBeforeThunder(windText);
         };
         const getCellTemperature = cell => {
@@ -883,6 +889,43 @@ function buildPublishExportText(timezone = 'auto') {
                 }
             }
 
+            // 文字导出专用：连续时段均为风时，合并为“风向转风向+风速范围”。
+            // 不改变表格单元格和发布数据，只优化最终导出文本。
+            if (isWindDescription) {
+                const windInfo = value => {
+                    const m = String(value || '').match(/((?:偏?[东南西北]{1,3}|风向不定)风)\s*(\d+(?:\.\d+)?)(?:\s*[-至]\s*(\d+(?:\.\d+)?))?\s*米\/秒/);
+                    return m ? { dir: m[1], min: Number(m[2]), max: Number(m[3] || m[2]) } : null;
+                };
+                const windRuns = [];
+                let runStart = null, runValues = [];
+                const flushWindRun = endIndex => {
+                    if (runStart === null) return;
+                    const infos = runValues.map(windInfo);
+                    if (infos.length && infos.every(Boolean)) {
+                        const dirs = [];
+                        infos.forEach(info => { if (!dirs.includes(info.dir)) dirs.push(info.dir); });
+                        const min = Math.min(...infos.map(info => info.min));
+                        const max = Math.max(...infos.map(info => info.max));
+                        const speed = min === max ? `${min}` : `${min}-${max}`;
+                        windRuns.push(`${formatRange(runStart, endIndex)}${dirs.join('转')}${speed}米/秒`);
+                    }
+                    runStart = null; runValues = [];
+                };
+                for (let index = 0; index <= cells.length; index++) {
+                    const value = index < cells.length ? formatCellValue(cells[index]) : '';
+                    if (value && windInfo(value)) {
+                        if (runStart === null) runStart = index;
+                        runValues.push(value);
+                    } else {
+                        flushWindRun(index - 1);
+                    }
+                }
+                if (windRuns.length) {
+                    const nonWindRanges = ranges.filter(item => !windInfo(item));
+                    ranges.splice(0, ranges.length, ...windRuns, ...nonWindRanges);
+                }
+            }
+
             const temperatureRanges = [];
             let temperatureStart = null;
             let temperatures = [];
@@ -901,13 +944,16 @@ function buildPublishExportText(timezone = 'auto') {
                 }
             }
 
-            const weatherText = ranges.length ? `${isWindDescription ? `${effectiveNote}，` : ''}${ranges.join('，')}` : '';
+            // 仅有风要素时不输出系统附加的“本场/终端区”字样；人工风速备注仍保留。
+            const windNote = isWindDescription ? effectiveNote.replace(/(?:本场|终端区)/g, '').replace(/[，,、；;]+/g, ' ').trim() : effectiveNote;
+            const weatherText = ranges.length ? `${isWindDescription && windNote ? `${windNote}，` : ''}${ranges.join('，')}` : '';
             const combined = [weatherText, ...temperatureRanges].filter(Boolean);
             return combined.length ? combined.join('，') : (effectiveNote || '');
         }).filter(Boolean);
 
         const timeText = rowTexts.length ? rowTexts.join('；') : '预计天气适航';
-        const displayName = window.GLOBAL_AIRPORT_NAME_MAP[icao] || icao;
+        const nameMode = document.querySelector('input[name="export-text-name"]:checked')?.value || 'chinese';
+        const displayName = nameMode === 'icao' ? icao : (window.GLOBAL_AIRPORT_NAME_MAP[icao] || icao);
         return `${displayName}：${timeText}。`;
     }).join('\n');
 }
@@ -1040,9 +1086,35 @@ function setupGlobalToolbar() {
         const timezone = document.querySelector('input[name="export-text-timezone"]:checked')?.value || 'auto';
         textarea.value = buildPublishExportText(timezone);
     };
+    const renderPublishHistory = () => {
+        const bar = document.getElementById('publish-history-bar'); if (!bar) return;
+        const history = JSON.parse(localStorage.getItem('sf_publish_history_v1') || '[]');
+        bar.innerHTML = history.slice(0, 4).map((h, i) => `<button class="mini-btn publish-history-item" data-index="${i}" style="background:#ede9fe;border:1px solid #a78bfa;color:#4c1d95;padding:4px 8px;">${new Date(h.timestamp).toLocaleString()} · ${h.hours}小时</button>`).join('') + (history.length > 4 ? '<button class="mini-btn" id="publish-history-more" style="background:#f3f4f6;border:1px solid #cbd5e1;padding:4px 8px;">…</button>' : '');
+        bar.querySelectorAll('.publish-history-item').forEach(btn => btn.onclick = () => { const h = history[Number(btn.dataset.index)]; if (h) { pbState.confirmedData = JSON.parse(JSON.stringify(h.data || {})); renderPublishTableTriRow(window.currentApAnalysis || []); } });
+        bar.querySelector('#publish-history-more')?.addEventListener('click', () => {
+            const old = document.getElementById('publish-history-search-modal'); old?.remove();
+            const modal = document.createElement('div'); modal.id = 'publish-history-search-modal'; modal.className = 'modal'; modal.style.cssText = 'display:flex;z-index:11000;';
+            modal.innerHTML = `<div class="modal-content" style="width:560px;max-height:75vh;overflow:auto;padding:20px"><span class="close-button">&times;</span><h3>历史预报</h3><input id="publish-history-search" type="search" placeholder="搜索时间或预报时长" style="width:100%;box-sizing:border-box;padding:8px;margin-bottom:10px"><div id="publish-history-results"></div></div>`;
+            document.body.appendChild(modal);
+            const results = modal.querySelector('#publish-history-results');
+            const draw = q => { const key = q.toLowerCase(); results.innerHTML = history.map((h, i) => ({h, i})).filter(x => `${new Date(x.h.timestamp).toLocaleString()} ${x.h.hours}小时`.toLowerCase().includes(key)).map(x => `<button class="mini-btn" data-i="${x.i}" style="display:block;width:100%;text-align:left;margin:4px 0;padding:8px">${new Date(x.h.timestamp).toLocaleString()} · ${x.h.hours}小时</button>`).join('') || '<div>没有匹配记录</div>'; results.querySelectorAll('button').forEach(b => b.onclick = () => { pbState.confirmedData = JSON.parse(JSON.stringify(history[Number(b.dataset.i)].data || {})); renderPublishTableTriRow(window.currentApAnalysis || []); modal.remove(); }); };
+            draw(''); modal.querySelector('#publish-history-search').oninput = e => draw(e.target.value); modal.querySelector('.close-button').onclick = () => modal.remove();
+        });
+    };
+    document.getElementById('global-save-publish-btn')?.addEventListener('click', () => {
+        persistAllPublishDraftsFromDom();
+        window.saveConfirmedDataToLocal?.();
+        const history = JSON.parse(localStorage.getItem('sf_publish_history_v1') || '[]');
+        history.unshift({ timestamp: Date.now(), hours: pbState.validityHours || 24, data: JSON.parse(JSON.stringify(pbState.confirmedData)) });
+        localStorage.setItem('sf_publish_history_v1', JSON.stringify(history.slice(0, 50)));
+        renderPublishHistory();
+        alert('已保存已编发内容');
+    });
+    renderPublishHistory();
     document.querySelectorAll('input[name="export-text-timezone"]').forEach(option => {
         option.addEventListener('change', refreshExportText);
     });
+    document.querySelectorAll('input[name="export-text-name"]').forEach(option => option.addEventListener('change', refreshExportText));
     document.getElementById('global-export-text-btn')?.addEventListener('click', () => {
         const modal = document.getElementById('export-text-modal');
         if (!modal) return;
@@ -1984,13 +2056,14 @@ async function loadForecastData(retainOrder = false) {
             }
         });
         flightAps.forEach(ap => {
+            if (pbState.manuallyRemovedAirports?.has(ap)) return;
             if(!seen.has(ap)) { seen.add(ap); combinedAps.push(ap); }
             if (pbState.runningImportMode === 'all') {
                 pbState.forceShowAirports.add(ap);
             }
         });
         Object.keys(pbState.customCoords).forEach(ap => { if(!seen.has(ap)){ seen.add(ap); combinedAps.push(ap); } });
-        pbState.forceShowAirports.forEach(ap => { if(!seen.has(ap)){ seen.add(ap); combinedAps.push(ap); } });
+        pbState.forceShowAirports.forEach(ap => { if(!pbState.manuallyRemovedAirports?.has(ap) && !seen.has(ap)){ seen.add(ap); combinedAps.push(ap); } });
         getActiveTextImportAirports().forEach(ap => { if(!seen.has(ap)){ seen.add(ap); combinedAps.push(ap); } });
         Object.keys(pbState.confirmedData).forEach(ap => { if(!seen.has(ap)){ seen.add(ap); combinedAps.push(ap); } });
 
@@ -2592,6 +2665,7 @@ function removeAirportFromPublish(icao) {
         window.currentApAnalysis = window.currentApAnalysis.filter(a => a.icao !== icao);
     }
     pbState.forceShowAirports.delete(icao);
+    pbState.manuallyRemovedAirports.add(icao);
     delete pbState.draftData[icao];
     delete pbState.customCoords[icao];
     if (pbState.confirmedData[icao]) {
