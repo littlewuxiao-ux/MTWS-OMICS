@@ -2087,12 +2087,9 @@ def save_score_api():
         
         # === 🌟 修复关键：兼容性导入必须放在调用之前 ===
         try:
-            from logic.exporter import process_stats_and_save
+            from .logic.exporter import process_stats_and_save
         except ImportError:
-            try:
-                from .logic.exporter import process_stats_and_save
-            except:
-                from exporter import process_stats_and_save
+            from backend.logic.exporter import process_stats_and_save
 
         # 🌟 并且只调用一次，带有完整的 rater 参数
         process_stats_and_save(results, mode, backup_path, excel_root, eval_person, base_date_str, rater)
