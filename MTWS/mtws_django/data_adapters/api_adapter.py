@@ -12,6 +12,8 @@ import json
 
 from .base_adapter import BaseDataAdapter
 
+from utils.cas_api_log import log_cas_api_request
+
 logger = logging.getLogger('mtws.data_adapters')
 
 
@@ -72,7 +74,11 @@ class APIDataAdapter(BaseDataAdapter):
         """
         try:
             url = f"{self.base_url}{endpoint}"
-            
+            log_cas_api_request(
+                endpoint,
+                has_token=bool(self.token) if self.time_mode == 'current' else False,
+            )
+
             if params:
                 # 对于历史报文接口，参数在URL中
                 response = requests.post(

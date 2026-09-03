@@ -63,6 +63,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     const UNIFIED_AUTH_CLEAR_URL = '/auth/clear';
     const SETTINGS_CONFIG_URL = '/api/settings_config';
 
+    function isRealUserCode(userCode) {
+        const code = String(userCode || '').trim();
+        if (!code) return false;
+        return !['--', '-', 'OFFLINE', 'UNKNOWN', 'UNDEFINED', 'NULL', 'NONE'].includes(code.toUpperCase());
+    }
+
+    function isUsableAuthToken(token) {
+        const value = String(token || '').trim();
+        if (!value) return false;
+        return !['--', '-', 'UNDEFINED', 'NULL', 'NONE'].includes(value.toUpperCase());
+    }
+
     // 🌟 配置持久化根治(方案A):优先用 <script> 同步加载的 window.OMICS_CONFIG 作为唯一数据源,
     //   再用它回填 localStorage(仅作兼容缓存)。fetch 仅作极端兜底。
     //   这样浏览器清了 localStorage 也不会把空值 PATCH 回去覆盖磁盘配置。
@@ -176,7 +188,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     async function updateUnifiedAuth(token, userCode, displayName = null) {
-        if (!token) return;
+        if (!isUsableAuthToken(token) || !isRealUserCode(userCode)) return;
         try {
             await fetch(UNIFIED_AUTH_UPDATE_URL, {
                 method: 'POST',
@@ -217,7 +229,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                     // 控制台重启后状态丢失(非过期)-> 回灌本地 token,无需刷新页面
                     console.info('检测到控制台统一登录态为空(可能刚重启),回灌本地 token');
                     const uid = localStorage.getItem('sf_userId') || null;
-                    await updateUnifiedAuth(apiToken, uid, personnelDict[uid] || null);
+                    if (isUsableAuthToken(apiToken) && isRealUserCode(uid)) {
+                        await updateUnifiedAuth(apiToken, uid, personnelDict[uid] || null);
+                    }
                 }
             }
         }, 5000);
@@ -684,23 +698,28 @@ document.addEventListener('DOMContentLoaded', async () => {
     async function initSession() {
         try {
             const unified = await fetchUnifiedAuthStatus();
+            if (unified && unified.logged_in && (!isUsableAuthToken(unified.token) || !isRealUserCode(unified.userCode))) {
+                console.warn('统一登录态工号或 token 无效，已清空');
+                await clearUnifiedAuth();
+            }
             let data = null;
-            if (unified && unified.logged_in && unified.token) {
-                data = unified;
+            const freshUnified = await fetchUnifiedAuthStatus();
+            if (freshUnified && freshUnified.logged_in && isUsableAuthToken(freshUnified.token) && isRealUserCode(freshUnified.userCode)) {
+                data = freshUnified;
             } else {
                 const res = await fetch('/api/auth/status');
                 data = await res.json();
                 // Nginx 统一态为空时,允许 OMICS 前端继续使用自己保存的登录信息。
                 const localToken = localStorage.getItem('sf_weather_token') || localStorage.getItem('mtws_token');
                 const localUserCode = localStorage.getItem('sf_userId') || localStorage.getItem('mtws_userCode');
-                if ((!data || !data.logged_in) && localToken && localUserCode) {
+                if ((!data || !data.logged_in) && isUsableAuthToken(localToken) && isRealUserCode(localUserCode)) {
                     data = { logged_in: true, token: localToken, userCode: localUserCode, displayName: personnelDict[localUserCode], isOffline: false, source: '浏览器缓存' };
                     // 浏览器缓存里仍有可用 token 时,主动回灌到 Nginx 统一登录态,让启动器信息框和 MTWS 立即识别真实登录状态。
                     await updateUnifiedAuth(localToken, localUserCode, personnelDict[localUserCode]);
                 }
             }
 
-            if (data && data.logged_in) {
+            if (data && data.logged_in && isUsableAuthToken(data.token) && isRealUserCode(data.userCode)) {
                 if (data.token) {
                     saveTokenForBothApps(data.token, data.userCode);
                     await updateUnifiedAuth(data.token, data.userCode, data.displayName || personnelDict[data.userCode]);
@@ -960,7 +979,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                     const statusRes = await fetch('/api/auth/status');
                     const statusData = await statusRes.json();
-                    if(statusData.userCode) {
+                    if(isRealUserCode(statusData.userCode)) {
                         saveTokenForBothApps(apiToken, statusData.userCode);
                         await updateUnifiedAuth(apiToken, statusData.userCode, statusData.displayName);
                         updateDisplayUserName(statusData.userCode, statusData.isOffline, statusData.displayName);

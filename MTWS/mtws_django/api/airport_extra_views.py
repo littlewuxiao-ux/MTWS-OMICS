@@ -8,8 +8,13 @@ from datetime import datetime, timedelta
 import logging
 import requests
 from suntime import Sun
+from utils.cas_api_log import cas_user_context
 
 logger = logging.getLogger('mtws.api')
+
+
+def _cas_user_from_request(request):
+    return request.headers.get('X-User-Code')
 
 
 @require_http_methods(["GET"])
@@ -31,9 +36,10 @@ def airport_metar_history(request, airport_code, time_mode='current'):
                 )
 
         from parsers.metar_history import fetch_and_parse_metar_history
-        chart_data = fetch_and_parse_metar_history(
-            airport_code, time_mode=time_mode, token=token
-        )
+        with cas_user_context(_cas_user_from_request(request)):
+            chart_data = fetch_and_parse_metar_history(
+                airport_code, time_mode=time_mode, token=token
+            )
         return JsonResponse({'success': True, 'data': chart_data})
 
     except Exception as exc:
@@ -62,9 +68,10 @@ def airport_popup_metar_text(request, airport_code, time_mode='current'):
                 )
 
         from parsers.report_text_highlight import build_popup_metar_reports
-        reports = build_popup_metar_reports(
-            airport_code, time_mode=time_mode, token=token
-        )
+        with cas_user_context(_cas_user_from_request(request)):
+            reports = build_popup_metar_reports(
+                airport_code, time_mode=time_mode, token=token
+            )
         return JsonResponse({'success': True, 'data': reports})
     except Exception as exc:
         logger.error(f'获取弹窗实况原文失败 [{airport_code}]: {exc}')
@@ -91,9 +98,10 @@ def airport_report_text(request, airport_code, time_mode='current'):
                 )
 
         from parsers.report_text_highlight import build_airport_detail_reports
-        data = build_airport_detail_reports(
-            airport_code, time_mode=time_mode, token=token
-        )
+        with cas_user_context(_cas_user_from_request(request)):
+            data = build_airport_detail_reports(
+                airport_code, time_mode=time_mode, token=token
+            )
         return JsonResponse({'success': True, 'data': data})
     except Exception as exc:
         logger.error(f'获取机场详情报文原文失败 [{airport_code}]: {exc}')

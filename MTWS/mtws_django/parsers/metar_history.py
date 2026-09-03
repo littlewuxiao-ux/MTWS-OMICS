@@ -230,6 +230,11 @@ def _fetch_history_obj(airport_code: str, time_mode: str, token: Optional[str], 
     headers = _build_headers(time_mode, token)
 
     try:
+        from utils.cas_api_log import log_cas_api_request
+        log_cas_api_request(
+            '/met/dispatchMetTelSummary/airportMetList',
+            has_token=bool(token) if time_mode == 'current' else False,
+        )
         response = requests.post(
             _HISTORY_API_URL,
             headers=headers,

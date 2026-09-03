@@ -79,6 +79,19 @@ NGINX_CONF_DIR = NGINX_RUNTIME_DIR / "conf"
 NGINX_LOG_DIR = NGINX_RUNTIME_DIR / "logs"
 # 旧版可能写过 token 缓存；现在仅写无 token 占位，避免中控台脱离前端默认登录。
 AUTH_STATE_FILE = NGINX_RUNTIME_DIR / "auth_state.json"
+_PLACEHOLDER_AUTH_VALUES = {"", "--", "-", "OFFLINE", "UNKNOWN", "UNDEFINED", "NULL", "NONE"}
+
+
+def is_real_user_code(user_code):
+    """真实工号才算登录身份；`--` / OFFLINE 等占位符不能当成已登录。"""
+    code = str(user_code or "").strip()
+    return bool(code) and code.upper() not in _PLACEHOLDER_AUTH_VALUES
+
+
+def is_usable_auth_token(token):
+    value = str(token or "").strip()
+    return bool(value) and value.upper() not in _PLACEHOLDER_AUTH_VALUES
+
 
 # ── macOS 深色系统配色（沿用 server_gui.py 同款）────────────────────────────────
 BG_PRIMARY        = "#1c1c1e"
@@ -772,11 +785,13 @@ class AuthBrokerServer:
                     data = {}
                 if path == "/auth/update":
                     token = data.get("token")
-                    user_code = data.get("userCode") or data.get("user_code") or data.get("user") or "--"
+                    user_code = data.get("userCode") or data.get("user_code") or data.get("user")
                     display_name = data.get("displayName") or data.get("display_name")
                     source = data.get("source") or "unknown"
-                    if not token:
+                    if not is_usable_auth_token(token):
                         self._send_json({"success": False, "error": "missing token"}, 400); return
+                    if not is_real_user_code(user_code):
+                        self._send_json({"success": False, "error": "missing userCode"}, 400); return
                     broker.app.set_auth_state(token, user_code, display_name, source=source)
                     self._send_json({"success": True, **broker.app.get_auth_state(include_token=False)}); return
                 if path == "/auth/clear":
@@ -1067,16 +1082,27 @@ class LauncherApp(ctk.CTk):
                 with open(AUTH_STATE_FILE, "r", encoding="utf-8") as f:
                     saved = json.load(f)
                 if isinstance(saved, dict) and set(saved.keys()) >= set(self.auth_state.keys()):
-                    self.auth_state = saved
+                    if is_usable_auth_token(saved.get("token")) and is_real_user_code(saved.get("userCode")):
+                        self.auth_state = saved
+                    else:
+                        self.auth_state = {
+                            "logged_in": False, "token": None, "userCode": None,
+                            "displayName": None, "login_time": None, "source": "invalid_saved_state",
+                            "expired": False,
+                        }
+                        self._save_auth_state()
+                        self._refresh_auth_info_label()
         except Exception:
             pass
 
     def set_auth_state(self, token, user_code=None, display_name=None, source=None):
+        if not is_usable_auth_token(token) or not is_real_user_code(user_code):
+            return
         name = display_name or self.resolve_display_name(user_code)
         self.auth_state = {
-            "logged_in": bool(token),
+            "logged_in": True,
             "token": token,
-            "userCode": user_code or "--",
+            "userCode": str(user_code).strip(),
             "displayName": name,
             "login_time": datetime.now().isoformat(timespec="seconds"),
             "source": source or "unknown",

@@ -40,8 +40,9 @@ def get_token_from_broker(
         try:
             resp = requests.get(f"{AUTH_BROKER_BASE_URL}/auth/status", timeout=3)
             data = resp.json()
-            if data.get("logged_in") and data.get("token"):
-                return data.get("token"), data.get("userCode"), True
+            user_code = data.get("userCode")
+            if data.get("logged_in") and data.get("token") and user_code and str(user_code).strip() not in ("--", "-"):
+                return data.get("token"), user_code, True
             return None, None, True
         except Exception as e:
             last_error = e
@@ -63,9 +64,10 @@ def get_auth_status_from_broker(timeout: float = 1.5) -> dict:
     try:
         resp = requests.get(f"{AUTH_BROKER_BASE_URL}/auth/status", timeout=timeout)
         data = resp.json() if resp.ok else {}
+        user_code = str(data.get("userCode") or "").strip()
         return {
             "reachable": True,
-            "logged_in": bool(data.get("logged_in") and data.get("token")),
+            "logged_in": bool(data.get("logged_in") and data.get("token") and user_code not in ("", "--", "-")),
             "expired": bool(data.get("expired")),
         }
     except Exception as e:

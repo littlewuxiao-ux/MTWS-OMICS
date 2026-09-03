@@ -20,6 +20,7 @@ from utils.time_manager import TimeManager
 from utils.alert_calculator import AlertCalculator
 from utils.popup_utils import PopupManager
 from data_adapters.adapter_factory import AdapterFactory
+from utils.cas_api_log import cas_user_context, log_cas_api_request
 
 logger = logging.getLogger('mtws.api')
 
@@ -375,28 +376,30 @@ def airport_history_reports(request, airport_code, time_mode='current'):
                 }, status=401)
         
         # 获取API适配器
-        adapter = AdapterFactory.create_adapter(time_mode=time_mode, token=token)
-        
-        # 调用历史报文接口，增加重试机制
-        history_data = None
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                history_data = adapter.get_history_reports(airport_code)
-                if history_data and (history_data.get('metar_reports') or history_data.get('taf_reports')):
-                    break  # 成功获取到数据，退出重试
-                elif attempt < max_retries - 1:
-                    logger.warning(f"第{attempt + 1}次尝试获取历史报文数据为空，将重试")
-                    import time
-                    time.sleep(0.5)  # 等待0.5秒后重试
-            except Exception as e:
-                logger.error(f"第{attempt + 1}次尝试获取历史报文失败: {e}")
-                if attempt < max_retries - 1:
-                    import time
-                    time.sleep(0.5)  # 等待0.5秒后重试
-                else:
-                    history_data = {'metar_reports': [], 'taf_reports': []}
-        
+        user_code = request.headers.get('X-User-Code')
+        with cas_user_context(user_code):
+            adapter = AdapterFactory.create_adapter(time_mode=time_mode, token=token)
+
+            # 调用历史报文接口，增加重试机制
+            history_data = None
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    history_data = adapter.get_history_reports(airport_code)
+                    if history_data and (history_data.get('metar_reports') or history_data.get('taf_reports')):
+                        break  # 成功获取到数据，退出重试
+                    elif attempt < max_retries - 1:
+                        logger.warning(f"第{attempt + 1}次尝试获取历史报文数据为空，将重试")
+                        import time
+                        time.sleep(0.5)  # 等待0.5秒后重试
+                except Exception as e:
+                    logger.error(f"第{attempt + 1}次尝试获取历史报文失败: {e}")
+                    if attempt < max_retries - 1:
+                        import time
+                        time.sleep(0.5)  # 等待0.5秒后重试
+                    else:
+                        history_data = {'metar_reports': [], 'taf_reports': []}
+
         if not history_data:
             history_data = {'metar_reports': [], 'taf_reports': []}
         
@@ -788,6 +791,7 @@ def validate_token_status(request, time_mode='current'):
         }, status=401)
     
     token = auth_header[7:]
+    user_code = request.headers.get('X-User-Code')
     
     try:
         # 使用一个轻量的API调用验证token
@@ -807,6 +811,11 @@ def validate_token_status(request, time_mode='current'):
             "excludeHaveAta": True
         }
         
+        log_cas_api_request(
+            '/flight/flightSchedule/getByFlightDate',
+            user_id=user_code,
+            has_token=True,
+        )
         response = requests.post(
             'http://sfa-wgw-inn.sf-airlines.com:1080/flight/flightSchedule/getByFlightDate',
             headers=headers,
@@ -1877,21 +1886,23 @@ def airport_search(request, time_mode='current'):
             if auth_header.startswith('Bearer '):
                 token = auth_header[7:]
 
+        user_code = request.headers.get('X-User-Code')
         result = []
-        for code in codes:
-            try:
-                is_system = Flight.objects.filter(airport_4code=code, has_flight=True).exists()
-                if is_system:
-                    data = _get_system_airport_search_data(code)
-                else:
-                    data = _get_external_airport_search_data(code, time_mode, token)
-                result.append(data)
-            except Exception as e:
-                logger.error(f"[搜索] 机场 {code} 数据获取失败: {e}")
-                result.append({
-                    'airport_4code': code,
-                    'airport_name': code,
-                    'is_system_airport': False,
+        with cas_user_context(user_code):
+            for code in codes:
+                try:
+                    is_system = Flight.objects.filter(airport_4code=code, has_flight=True).exists()
+                    if is_system:
+                        data = _get_system_airport_search_data(code)
+                    else:
+                        data = _get_external_airport_search_data(code, time_mode, token)
+                    result.append(data)
+                except Exception as e:
+                    logger.error(f"[搜索] 机场 {code} 数据获取失败: {e}")
+                    result.append({
+                        'airport_4code': code,
+                        'airport_name': code,
+                        'is_system_airport': False,
                     'area': '', 'area_code': '', 'classification': '',
                     'forecast_phone': '', 'observation_phone': '', 'other_phone': '',
                     'flight_data': {'has_flight': False, 'time_slots': [False] * 48},

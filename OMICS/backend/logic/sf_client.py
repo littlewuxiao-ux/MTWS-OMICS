@@ -115,11 +115,13 @@ class SFClient:
     # --- 获取当前会话状态 ---
     def get_session_status(self):
         if self.cached_token:
-            return {
+            status = {
                 "logged_in": True,
                 "token": self.cached_token,
-                "userCode": self.cached_user_code or "--"
             }
+            if self.cached_user_code:
+                status["userCode"] = self.cached_user_code
+            return status
         return {"logged_in": False}
 
     # --- 注销 ---

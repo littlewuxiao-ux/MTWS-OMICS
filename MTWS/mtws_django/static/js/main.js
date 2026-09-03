@@ -3902,6 +3902,18 @@ const UNIFIED_AUTH_STATUS_URL = '/auth/status';
 const UNIFIED_AUTH_UPDATE_URL = '/auth/update';
 const UNIFIED_AUTH_CLEAR_URL = '/auth/clear';
 
+function isRealUserCode(userCode) {
+    const code = String(userCode || '').trim();
+    if (!code) return false;
+    return !['--', '-', 'OFFLINE', 'UNKNOWN', 'UNDEFINED', 'NULL', 'NONE'].includes(code.toUpperCase());
+}
+
+function isUsableAuthToken(token) {
+    const value = String(token || '').trim();
+    if (!value) return false;
+    return !['--', '-', 'UNDEFINED', 'NULL', 'NONE'].includes(value.toUpperCase());
+}
+
 async function fetchUnifiedAuthStatus() {
     try {
         const response = await fetch(UNIFIED_AUTH_STATUS_URL, { cache: 'no-store' });
@@ -3914,7 +3926,7 @@ async function fetchUnifiedAuthStatus() {
 }
 
 async function updateUnifiedAuth(token, userCode) {
-    if (!token) return;
+    if (!isUsableAuthToken(token) || !isRealUserCode(userCode)) return;
     try {
         await fetch(UNIFIED_AUTH_UPDATE_URL, {
             method: 'POST',
@@ -3950,7 +3962,7 @@ function startUnifiedAuthWatch() {
         if (!unified.logged_in) {
             if (unified.expired) {
                 handleSessionExpired('统一登录态 expired');
-            } else {
+            } else if (isUsableAuthToken(currentToken) && isRealUserCode(currentUserCode)) {
                 // 控制台重启后状态丢失（非过期）-> 把本地 token 回灌统一态，无需刷新页面
                 console.info('检测到控制台统一登录态为空（可能刚重启），回灌本地 token');
                 await updateUnifiedAuth(currentToken, currentUserCode);
@@ -4003,7 +4015,14 @@ async function initCurrentModeAuth() {
         return;
     }
 
-    if (savedToken && savedUserCode) {
+    if (unified && unified.logged_in && (!isUsableAuthToken(unified.token) || !isRealUserCode(unified.userCode))) {
+        console.warn('统一登录态工号或 token 无效，忽略并要求重新扫码');
+        clearAuthState();
+        showLoginModal();
+        return;
+    }
+
+    if (savedToken && isUsableAuthToken(savedToken) && isRealUserCode(savedUserCode)) {
         const stillValid = await checkTokenStillValid(savedToken, savedUserCode);
         if (!stillValid) {
             clearAuthState();

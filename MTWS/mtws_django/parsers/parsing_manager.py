@@ -13,6 +13,7 @@ from parsers.flight_parser import FlightParser
 from parsers.metar_parser import MetarParser
 from parsers.taf_parser import TafParser  # 已实现
 from parsers.aircraft_parking_parser import AircraftParkingParser
+from utils.cas_api_log import cas_user_context
 
 logger = logging.getLogger('mtws.parsers')
 
@@ -38,8 +39,12 @@ class ParsingManager:
         self.aircraft_parking_parser = AircraftParkingParser(time_mode, token)
         
         logger.info(f"解析管理器初始化完成，时间模式: {time_mode}")
-    
+
     def run_all_parsers(self, time_mode=None) -> Dict[str, Any]:
+        with cas_user_context(self.user_code):
+            return self._run_all_parsers_impl(time_mode)
+
+    def _run_all_parsers_impl(self, time_mode=None) -> Dict[str, Any]:
         """
         运行所有解析器 - 保留原有接口兼容性
         
@@ -135,6 +140,10 @@ class ParsingManager:
         return results
     
     def run_sequential_parsing(self, time_mode=None) -> Dict[str, Any]:
+        with cas_user_context(self.user_code):
+            return self._run_sequential_parsing_impl(time_mode)
+
+    def _run_sequential_parsing_impl(self, time_mode=None) -> Dict[str, Any]:
         """
         按照新需求的顺序执行解析器：
         1. 先执行航班解析器
@@ -351,6 +360,10 @@ class ParsingManager:
         return results
     
     def run_single_parser(self, parser_type: str) -> Dict[str, Any]:
+        with cas_user_context(self.user_code):
+            return self._run_single_parser_impl(parser_type)
+
+    def _run_single_parser_impl(self, parser_type: str) -> Dict[str, Any]:
         """
         运行单个解析器
         
@@ -452,6 +465,10 @@ class ParsingManager:
             }
     
     def run_selective_parsing(self, update_types: list, time_mode=None) -> Dict[str, Any]:
+        with cas_user_context(self.user_code):
+            return self._run_selective_parsing_impl(update_types, time_mode)
+
+    def _run_selective_parsing_impl(self, update_types: list, time_mode=None) -> Dict[str, Any]:
         """
         根据指定的数据类型执行选择性解析
         
