@@ -134,6 +134,15 @@ def _run_parsing_job(update_types: list, time_mode: str) -> None:
             logger.warning(
                 f"调度任务跳过 {update_types}：AuthBroker 确认当前无有效 token，请重新扫码登录"
             )
+            from utils.auth_broker_client import report_token_invalid
+            report_token_invalid(source="MTWS调度任务")
+            _scheduler_token = None
+            for data_type in update_types:
+                update_parsing_status(
+                    data_type,
+                    success=False,
+                    message="无有效 token，请重新扫码登录",
+                )
             return
 
     try:

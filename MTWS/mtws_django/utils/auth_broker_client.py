@@ -52,6 +52,27 @@ def get_token_from_broker(
     return None, None, False
 
 
+def get_auth_status_from_broker(timeout: float = 1.5) -> dict:
+    """
+    查询 AuthBroker 当前登录态摘要，供 overview 等接口转发给前端。
+
+    无法连接时 reachable=False，且不把 expired 标为 True，避免误弹扫码。
+    """
+    import requests
+
+    try:
+        resp = requests.get(f"{AUTH_BROKER_BASE_URL}/auth/status", timeout=timeout)
+        data = resp.json() if resp.ok else {}
+        return {
+            "reachable": True,
+            "logged_in": bool(data.get("logged_in") and data.get("token")),
+            "expired": bool(data.get("expired")),
+        }
+    except Exception as e:
+        logger.debug(f"查询 AuthBroker 登录态摘要失败：{e}")
+        return {"reachable": False, "logged_in": False, "expired": False}
+
+
 def report_token_invalid(source: str) -> None:
     """确认 token 已失效时上报给 AuthBroker，使统一服务启动器立即显示过期提示"""
     import requests

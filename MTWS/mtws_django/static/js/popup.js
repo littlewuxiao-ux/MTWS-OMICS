@@ -1182,7 +1182,8 @@ async function handleBatchHandle(airport, sqcList) {
             // 先显示机场详情（在弹窗关闭之前）
             // 标记本次打开需临时高于实况弹窗显示（唯一例外场景，见 showModal 中的层级规则说明）
             window._openDetailAboveMetarPopup = true;
-            showAirportDetail(airport);
+            // 主页无该机场时 showAirportDetail 会走搜索外网接口，需等详情打开再拆弹窗
+            await showAirportDetail(airport);
 
             // 移除该机场的弹窗数据
             delete popupAirports[airport];
@@ -1440,6 +1441,11 @@ function stopPopupCheck() {
         clearInterval(popupCheckInterval);
         popupCheckInterval = null;
     }
+}
+
+// 移除已显示的实况弹窗及其确认框，避免挡住扫码登录层
+function hideMetarPopupOverlay() {
+    document.querySelectorAll('.metar-popup-overlay, .popup-confirm-overlay').forEach((el) => el.remove());
 }
 
 // ==================================

@@ -46,6 +46,17 @@ def check_token_invalid_response(result, time_mode):
     return None
 
 
+def get_overview_auth_status(time_mode):
+    """overview 附带的统一登录态摘要；AuthBroker 不可达时 expired 为 False。"""
+    if time_mode != 'current':
+        return {'reachable': False, 'logged_in': False, 'expired': False}
+    try:
+        from utils.auth_broker_client import get_auth_status_from_broker
+        return get_auth_status_from_broker()
+    except Exception:
+        return {'reachable': False, 'logged_in': False, 'expired': False}
+
+
 def get_cached_area_options():
     """获取区域选项数据"""
     try:
@@ -86,7 +97,8 @@ def airports_overview(request, time_mode='current'):
                 'data': {
                     'airports': [],
                     'carriers': list(Carrier.objects.filter(is_active=True).values_list('carrier_code', flat=True)),
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': datetime.now().isoformat(),
+                    'auth_status': get_overview_auth_status(time_mode),
                 }
             })
         
@@ -326,6 +338,7 @@ def airports_overview(request, time_mode='current'):
                     'last_attempt_time': flight_status.get('last_attempt_time').isoformat() if flight_status.get('last_attempt_time') else None
                 },
                 'parsing_status': backend_parsing_status,
+                'auth_status': get_overview_auth_status(time_mode),
             }
         }
         
@@ -1846,6 +1859,8 @@ def airport_search(request, time_mode='current'):
     机场搜索 API。
     GET 参数: codes=ZBAA,ZSSS  （逗号分隔的四字代码，已由前端校验并去重）
     对系统内机场（has_flight=True）直接读库；对系统外机场实时调 METAR/TAF API，不写库。
+    停场实况弹窗「查看详情」在机场不在主页时也走本接口（无航班仅停场，场景很少，
+    不另做读库详情；has_flight=False 会落到外部 API，与搜索系统外机场相同）。
     """
     try:
         codes_param = request.GET.get('codes', '').strip()

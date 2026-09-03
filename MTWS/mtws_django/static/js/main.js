@@ -812,6 +812,9 @@ function triggerParsingAndLoadData() {
                 updateCarrierDisplay();
                 applyFilters();
                 updateStatusFromPollResult(data.data.parsing_status || {}, true);
+                if (maybeHandleAuthExpired(data)) {
+                    return;
+                }
 
                 // 如果 NWP 温度辅助已开启，触发 NWP 解析并渲染
                 if (nwpEnabled) {
@@ -834,8 +837,7 @@ function triggerParsingAndLoadData() {
         .catch(error => {
             console.error('❌ 数据加载过程失败:', error);
             if (error.message === 'TOKEN_INVALID') {
-                showTokenInvalidError();
-                stopAllAutoRefresh();
+                handleSessionExpired('initial load 401');
             } else {
                 handleApiError(error);
             }
@@ -921,16 +923,62 @@ function hideServerOfflineBanner() {
     if (banner) banner.classList.remove('visible');
 }
 
+function hideMetarPopupsForLogin() {
+    if (typeof stopPopupCheck === 'function') {
+        stopPopupCheck();
+    }
+    if (typeof hideMetarPopupOverlay === 'function') {
+        hideMetarPopupOverlay();
+    }
+}
+
+function ensureLoginModalOnTop() {
+    const loginModal = document.getElementById('login-modal');
+    if (!loginModal) return;
+    hideMetarPopupsForLogin();
+    document.body.appendChild(loginModal);
+    loginModal.style.zIndex = '40000';
+}
+
+function handleSessionExpired(reason) {
+    if (window.tokenInvalidDetected) {
+        ensureLoginModalOnTop();
+        const loginModal = document.getElementById('login-modal');
+        if (loginModal && loginModal.style.display !== 'block') {
+            showLoginModal();
+        }
+        return;
+    }
+    if (reason) {
+        console.warn('登录已过期：', reason);
+    }
+    stopUnifiedAuthWatch();
+    clearAuthState();
+    stopAllAutoRefresh();
+    showTokenInvalidError();
+}
+
+function maybeHandleAuthExpired(data) {
+    const authStatus = data && data.data && data.data.auth_status;
+    if (authStatus && authStatus.expired) {
+        handleSessionExpired('AuthBroker expired');
+        return true;
+    }
+    return false;
+}
+
 // 显示token失效错误信息
 function showTokenInvalidError() {
     const contentMain = document.getElementById('content-main');
-    contentMain.innerHTML = `
-        <div class="empty-state">
-            <div class="empty-state-icon">⚠️</div>
-            <div class="empty-state-message">登录过期或异地登录，数据加载失败</div>
-            <button onclick="handleRelogin()" class="relogin-btn">重新登录</button>
-        </div>
-    `;
+    if (contentMain) {
+        contentMain.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-state-icon">⚠️</div>
+                <div class="empty-state-message">登录过期或异地登录，数据加载失败</div>
+                <button onclick="handleRelogin()" class="relogin-btn">重新登录</button>
+            </div>
+        `;
+    }
 
     // 重置所有数据时间为--:--:--
     dataUpdateTimes.metar = '--:--:--';
@@ -942,6 +990,8 @@ function showTokenInvalidError() {
 
     // 隐藏用户信息
     hideUserInfo();
+    hideMetarPopupsForLogin();
+    showLoginModal();
 }
 
 // 处理重新登录
@@ -972,9 +1022,7 @@ function validateTokenAndShowError() {
     })
         .then(response => {
             if (response.status === 401) {
-                // Token失效：显示专门提示 + 停止自动刷新 + 隐藏用户信息
-                showTokenInvalidError();
-                stopAllAutoRefresh();
+                handleSessionExpired('validate-token 401');
             } else {
                 // 其他错误：显示通用提示 + 继续自动刷新
                 showGeneralError();
@@ -2616,7 +2664,7 @@ function handleFetchResponse(response) {
 function handleFetchError(error, dataType, retryCallback) {
     console.error(`${dataType}数据更新失败:`, error);
     if (error.message === 'TOKEN_INVALID') {
-        showTokenInvalidError();
+        handleSessionExpired('fetch 401');
     } else if (retryCallback) {
         retryCallback();
     } else {
@@ -2776,6 +2824,9 @@ function loadParameterizedData(updateTypes) {
 
                 applyFilters();
                 updateStatusFromPollResult(data.data.parsing_status || {}, true);
+                if (maybeHandleAuthExpired(data)) {
+                    return;
+                }
 
                 // 如果 NWP 温度辅助已开启，获取并渲染最新 NWP 数据
                 if (nwpEnabled) {
@@ -2798,8 +2849,7 @@ function loadParameterizedData(updateTypes) {
         .catch(error => {
             console.error('❌ 参数化数据加载过程失败:', error);
             if (error.message === 'TOKEN_INVALID') {
-                showTokenInvalidError();
-                stopAllAutoRefresh();
+                handleSessionExpired('parameterized 401');
             } else {
                 handleApiError(error);
                 // 网络错误时也更新状态为失败
@@ -2883,6 +2933,9 @@ function loadPartialData(dataType) {
 
                 applyFilters();
                 updateStatusFromPollResult(data.data.parsing_status || {}, true);
+                if (maybeHandleAuthExpired(data)) {
+                    return;
+                }
 
                 updateAllAirportGrids();
             } else {
@@ -2895,8 +2948,7 @@ function loadPartialData(dataType) {
         })
         .catch(error => {
             if (error.message === 'TOKEN_INVALID') {
-                showTokenInvalidError();
-                stopAllAutoRefresh();
+                handleSessionExpired(`${dataType} 401`);
             } else {
                 handleApiError(error);
                 // 网络错误时也更新状态为失败
@@ -2989,6 +3041,9 @@ function loadPartialDataWithRetry(dataType, retryCount) {
 
                 applyFilters();
                 updateStatusFromPollResult(data.data.parsing_status || {}, true);
+                if (maybeHandleAuthExpired(data)) {
+                    return;
+                }
 
                 updateAllAirportGrids();
             } else {
@@ -2997,8 +3052,7 @@ function loadPartialDataWithRetry(dataType, retryCount) {
         })
         .catch(error => {
             if (error.message === 'TOKEN_INVALID') {
-                showTokenInvalidError();
-                stopAllAutoRefresh();
+                handleSessionExpired(`${dataType} retry 401`);
             } else {
                 handleApiError(error);
                 // 网络错误时也更新状态为失败
@@ -3127,6 +3181,12 @@ function startAutoRefresh() {
             return response.json();
         })
         .then(data => {
+            if (data.success && data.data) {
+                updateStatusFromPollResult(data.data.parsing_status || {}, true);
+                if (maybeHandleAuthExpired(data)) {
+                    return;
+                }
+            }
             if (data.success && data.data && data.data.airports) {
                 // 轮询成功：重置断连计数，隐藏横幅
                 if (window.pollFailureCount > 0) {
@@ -3149,14 +3209,11 @@ function startAutoRefresh() {
                 generateTimeline();
                 applyFilters();
                 updateAllAirportGrids();
-                // 用后端解析状态 + 本次轮询成功 联合更新左上角状态指示器
-                updateStatusFromPollResult(data.data.parsing_status || {}, true);
             }
         })
         .catch(error => {
             if (error.message === 'TOKEN_INVALID') {
-                showTokenInvalidError();
-                stopAllAutoRefresh();
+                handleSessionExpired('overview poll 401');
             } else {
                 // 网络错误 / 服务器关闭：累计失败次数
                 window.pollFailureCount = (window.pollFailureCount || 0) + 1;
@@ -3892,13 +3949,7 @@ function startUnifiedAuthWatch() {
         if (!unified) return; // 接口异常不误判
         if (!unified.logged_in) {
             if (unified.expired) {
-                // 控制台判定登录过期/异地登录 -> 本页面自动登出
-                console.warn('统一登录态已失效（控制台校验），自动登出');
-                stopUnifiedAuthWatch();
-                clearAuthState();
-                window.tokenInvalidDetected = true;
-                if (typeof stopAllAutoRefresh === 'function') stopAllAutoRefresh();
-                showTokenInvalidError();
+                handleSessionExpired('统一登录态 expired');
             } else {
                 // 控制台重启后状态丢失（非过期）-> 把本地 token 回灌统一态，无需刷新页面
                 console.info('检测到控制台统一登录态为空（可能刚重启），回灌本地 token');
@@ -3985,6 +4036,8 @@ async function initCurrentModeAuth() {
 // 显示登录模态框
 function showLoginModal() {
     const loginModal = document.getElementById('login-modal');
+    if (!loginModal) return;
+    ensureLoginModalOnTop();
     loginModal.style.display = 'block';
     getQRCode();
 }

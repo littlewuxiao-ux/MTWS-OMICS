@@ -21,15 +21,42 @@ const airportDetailChart = {
 };
 
 // 显示机场详细信息
-function showAirportDetail(airportCode) {
-  // 直接从主页已加载的数据中查找机场信息
+async function showAirportDetail(airportCode) {
+  // 主页机场：详情直接用已经拉到前端的 airportData，不再请求。
   const airport = airportData.find(a => a.airport_4code === airportCode);
-
   if (airport) {
-    // 直接使用主页数据显示弹窗
     showAirportDetailModal(airport);
-  } else {
-    showError('未找到机场信息：' + airportCode);
+    return;
+  }
+
+  // 不在主页的机场（典型：无航班、仅停场，但停场实况弹窗仍可能出现）。
+  // 该场景很少，不单独做读库详情接口，与搜索「系统外机场」相同：走 airport-search，
+  // 后端因 has_flight=False 会调外部 METAR/TAF，结果交给同一套详情页。
+  // 注意：此处看到的是实时外网报文，不一定等于弹窗里那份已入库报文。
+  await fetchNonHomepageAirportDetail(airportCode);
+}
+
+/**
+ * 主页无此机场时，复用搜索 API 拉详情（见 showAirportDetail 注释）。
+ */
+async function fetchNonHomepageAirportDetail(airportCode) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (typeof currentToken !== 'undefined' && currentToken) {
+    headers['Authorization'] = `Bearer ${currentToken}`;
+  }
+
+  const url = `/${currentTimeMode}/api/airport-search/?codes=${encodeURIComponent(airportCode)}`;
+  try {
+    const response = await fetch(url, { headers });
+    const payload = await response.json();
+    if (!payload.success || !payload.data || !payload.data.length) {
+      showError('未找到机场信息：' + airportCode);
+      return;
+    }
+    showAirportSearchSingle(payload.data[0]);
+  } catch (err) {
+    console.error('非主页机场详情请求失败:', err);
+    showError('获取机场详情失败：' + airportCode);
   }
 }
 

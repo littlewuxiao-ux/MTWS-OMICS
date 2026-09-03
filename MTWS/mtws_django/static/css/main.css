@@ -2276,9 +2276,12 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
   }
 }
 
-/* 登录模态框样式 */
+/* 登录模态框样式
+   必须高于实况弹窗(.metar-popup-overlay 30000)及其确认框(30001)，
+   否则 token 失效时二维码会被未关闭的实况弹窗挡住。 */
 .login-modal {
   background-color: rgba(0, 0, 0, 0.8);
+  z-index: 40000;
 }
 
 .login-content {
