@@ -149,7 +149,7 @@ def airports_overview(request, time_mode='current'):
                 'other_phone': airport.other_phone,
                 'flight_data': {
                     'has_flight': flight_data.has_flight,
-                    'time_slots': [getattr(flight_data, f'time_{i}_flight') for i in range(48)],
+                    'time_slots': flight_data.as_time_slots(),
                     'last_updated': flight_data.created_at.isoformat()
                 },
                 'metar_data': [
@@ -1690,7 +1690,7 @@ def _get_system_airport_search_data(code):
         'other_phone': airport.other_phone if airport else '',
         'flight_data': {
             'has_flight': flight_data.has_flight if flight_data else False,
-            'time_slots': [getattr(flight_data, f'time_{i}_flight') for i in range(48)] if flight_data else [False] * 48,
+            'time_slots': flight_data.as_time_slots() if flight_data else [False] * 48,
         },
         'metar_data': [_serialize_metar(m) for m in metar_qs],
         'taf_data': [_serialize_taf(taf_record)] if taf_record else [],

@@ -305,26 +305,21 @@ class DataProcessor:
         合并航班时间段数据
         
         Args:
-            time_slots: 36个时间段的数据
+            time_slots: 48个时间段的数据
             
         Returns:
             Dict: 合并后的数据
         """
-        if not time_slots or len(time_slots) != 36:
-            return {'has_flight': False}
+        if not time_slots or len(time_slots) != 48:
+            return {'has_flight': False, 'flight_detail': [''] * 48}
         
-        # 检查是否有航班
-        has_flight = any(slot and slot.strip() and slot.strip() != 'None' 
+        has_flight = any(slot and str(slot).strip() and str(slot).strip() != 'None'
                         for slot in time_slots)
         
-        # 构建字段字典
-        flight_data = {'has_flight': has_flight}
-        
-        for i in range(36):
-            field_name = f'time_{i}_flight'
-            flight_data[field_name] = time_slots[i] if i < len(time_slots) else None
-        
-        return flight_data
+        return {
+            'has_flight': has_flight,
+            'flight_detail': list(time_slots),
+        }
     
     @staticmethod
     def validate_numeric_range(value: Any, min_val: float = None, 

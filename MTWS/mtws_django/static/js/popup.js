@@ -643,9 +643,11 @@ function createPopupContentHTML(airport) {
                     <div class="metar-date">${timeObj.date}</div>
                 </div>
                 <div class="popup-header-divider"></div>
-                <div class="popup-metar-type">
-                    <div class="metar-type">${metarTypeHTML}</div>
-                    ${metarTypeLabel ? `<div class="metar-type-label">${metarTypeLabel}</div>` : ''}
+                <div class="popup-metar-type-wrap">
+                    <div class="popup-metar-type">
+                        <div class="metar-type">${metarTypeHTML}</div>
+                        ${metarTypeLabel ? `<div class="metar-type-label">${metarTypeLabel}</div>` : ''}
+                    </div>
                     <span class="popup-section-info-icon" title="本部分告警徽章为过去6小时内所有对应机场未处理报文的告警徽章，其中仅带背景色的徽章为当前最新实况报文，其他为历史未处理报文徽章。">ⓘ</span>
                 </div>
             </div>

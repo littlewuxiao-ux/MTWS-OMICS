@@ -15,56 +15,9 @@ class Flight(models.Model):
     
     # 是否有航班
     has_flight = models.BooleanField(default=False, verbose_name='是否有航班')
-    
-    # 48个时间段的航班数据字段 - time_[0]_flight 至 time_[47]_flight
-    time_0_flight = models.TextField(blank=True, null=True, verbose_name='时间段0航班')
-    time_1_flight = models.TextField(blank=True, null=True, verbose_name='时间段1航班')
-    time_2_flight = models.TextField(blank=True, null=True, verbose_name='时间段2航班')
-    time_3_flight = models.TextField(blank=True, null=True, verbose_name='时间段3航班')
-    time_4_flight = models.TextField(blank=True, null=True, verbose_name='时间段4航班')
-    time_5_flight = models.TextField(blank=True, null=True, verbose_name='时间段5航班')
-    time_6_flight = models.TextField(blank=True, null=True, verbose_name='时间段6航班')
-    time_7_flight = models.TextField(blank=True, null=True, verbose_name='时间段7航班')
-    time_8_flight = models.TextField(blank=True, null=True, verbose_name='时间段8航班')
-    time_9_flight = models.TextField(blank=True, null=True, verbose_name='时间段9航班')
-    time_10_flight = models.TextField(blank=True, null=True, verbose_name='时间段10航班')
-    time_11_flight = models.TextField(blank=True, null=True, verbose_name='时间段11航班')
-    time_12_flight = models.TextField(blank=True, null=True, verbose_name='时间段12航班')
-    time_13_flight = models.TextField(blank=True, null=True, verbose_name='时间段13航班')
-    time_14_flight = models.TextField(blank=True, null=True, verbose_name='时间段14航班')
-    time_15_flight = models.TextField(blank=True, null=True, verbose_name='时间段15航班')
-    time_16_flight = models.TextField(blank=True, null=True, verbose_name='时间段16航班')
-    time_17_flight = models.TextField(blank=True, null=True, verbose_name='时间段17航班')
-    time_18_flight = models.TextField(blank=True, null=True, verbose_name='时间段18航班')
-    time_19_flight = models.TextField(blank=True, null=True, verbose_name='时间段19航班')
-    time_20_flight = models.TextField(blank=True, null=True, verbose_name='时间段20航班')
-    time_21_flight = models.TextField(blank=True, null=True, verbose_name='时间段21航班')
-    time_22_flight = models.TextField(blank=True, null=True, verbose_name='时间段22航班')
-    time_23_flight = models.TextField(blank=True, null=True, verbose_name='时间段23航班')
-    time_24_flight = models.TextField(blank=True, null=True, verbose_name='时间段24航班')
-    time_25_flight = models.TextField(blank=True, null=True, verbose_name='时间段25航班')
-    time_26_flight = models.TextField(blank=True, null=True, verbose_name='时间段26航班')
-    time_27_flight = models.TextField(blank=True, null=True, verbose_name='时间段27航班')
-    time_28_flight = models.TextField(blank=True, null=True, verbose_name='时间段28航班')
-    time_29_flight = models.TextField(blank=True, null=True, verbose_name='时间段29航班')
-    time_30_flight = models.TextField(blank=True, null=True, verbose_name='时间段30航班')
-    time_31_flight = models.TextField(blank=True, null=True, verbose_name='时间段31航班')
-    time_32_flight = models.TextField(blank=True, null=True, verbose_name='时间段32航班')
-    time_33_flight = models.TextField(blank=True, null=True, verbose_name='时间段33航班')
-    time_34_flight = models.TextField(blank=True, null=True, verbose_name='时间段34航班')
-    time_35_flight = models.TextField(blank=True, null=True, verbose_name='时间段35航班')
-    time_36_flight = models.TextField(blank=True, null=True, verbose_name='时间段36航班')
-    time_37_flight = models.TextField(blank=True, null=True, verbose_name='时间段37航班')
-    time_38_flight = models.TextField(blank=True, null=True, verbose_name='时间段38航班')
-    time_39_flight = models.TextField(blank=True, null=True, verbose_name='时间段39航班')
-    time_40_flight = models.TextField(blank=True, null=True, verbose_name='时间段40航班')
-    time_41_flight = models.TextField(blank=True, null=True, verbose_name='时间段41航班')
-    time_42_flight = models.TextField(blank=True, null=True, verbose_name='时间段42航班')
-    time_43_flight = models.TextField(blank=True, null=True, verbose_name='时间段43航班')
-    time_44_flight = models.TextField(blank=True, null=True, verbose_name='时间段44航班')
-    time_45_flight = models.TextField(blank=True, null=True, verbose_name='时间段45航班')
-    time_46_flight = models.TextField(blank=True, null=True, verbose_name='时间段46航班')
-    time_47_flight = models.TextField(blank=True, null=True, verbose_name='时间段47航班')
+
+    # 前端使用的 48 时段数组，原样读写，不再分列存储
+    flight_detail = models.JSONField(blank=True, null=True, verbose_name='航班时段明细')
     
     # 新增字段
     en_route = models.IntegerField(blank=True, null=True, verbose_name='是否在航线上')
@@ -89,15 +42,14 @@ class Flight(models.Model):
         
     def __str__(self):
         return f"Flight {self.airport_4code} - Has: {self.has_flight}"
-    
-    def get_flight_fields(self):
-        """获取所有航班时间段字段的值"""
-        fields = []
-        for i in range(48):
-            field_name = f'time_{i}_flight'
-            value = getattr(self, field_name, None)
-            fields.append(value)
-        return fields
+
+    def as_time_slots(self):
+        """返回前端使用的 time_slots 数组（flight_detail 原样，不做时段重算）。"""
+        detail = self.flight_detail
+        if isinstance(detail, list):
+            return detail
+        return [''] * 48
+
 
 
 class Metar(models.Model):

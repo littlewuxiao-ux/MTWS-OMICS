@@ -1488,12 +1488,12 @@ class TafParser:
         }
         
         try:
-            # 1. 获取有航班的机场列表
-            from parsers.models import Flight
-            active_airports = list(Flight.objects.filter(has_flight=True).values_list('airport_4code', flat=True))
+            # 1. 获取有航班或停场的机场列表
+            from utils.airport_scope import get_monitored_airport_codes
+            active_airports = get_monitored_airport_codes()
             
             if not active_airports:
-                result['errors'].append("未找到有航班的机场，跳过TAF数据解析")
+                result['errors'].append("未找到有航班或停场的机场，跳过TAF数据解析")
                 return result
             
             # 2. 获取数据适配器并读取数据
@@ -1806,24 +1806,22 @@ class TafParser:
         """
         清理滞留的TAF入库告警：
         若某机场的 import_alert=Y 且 import_alert_handle_time 为空，
-        但该机场已无航班（has_flight=False），则视为滞留告警，自动结案。
+        且既无航班也无停场飞机，则视为滞留告警，自动结案。
         """
         try:
-            from parsers.models import Flight
-            active_airports = set(
-                Flight.objects.filter(has_flight=True).values_list('airport_4code', flat=True)
-            )
+            from utils.airport_scope import get_import_alert_keep_airport_codes
+            keep_airports = get_import_alert_keep_airport_codes()
             updated = Taf.objects.filter(
                 import_alert='Y',
                 import_alert_handle_time__isnull=True,
             ).exclude(
-                airport_4code__in=active_airports
+                airport_4code__in=keep_airports
             ).update(
                 import_alert_handle_time=now_ms,
-                handle_status='航班运行结束',
+                handle_status='航班运行结束且无停场飞机',
             )
             if updated:
-                logger.info(f"[TAF入库告警] 清理滞留告警 {updated} 条（航班运行结束）")
+                logger.info(f"[TAF入库告警] 清理滞留告警 {updated} 条（航班运行结束且无停场飞机）")
         except Exception as e:
             logger.error(f"[TAF入库告警] 清理滞留告警失败: {e}")
 

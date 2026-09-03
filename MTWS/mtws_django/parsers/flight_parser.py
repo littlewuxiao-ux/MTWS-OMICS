@@ -442,6 +442,19 @@ class FlightParser:
                 'closest_departing_time': None,
                 'closest_landing_time': None
             }
+
+    def _build_time_slots(self, stats: Dict[str, List[int]]) -> list:
+        """生成前端 time_slots 数组，写入 flight_detail 时不再改结构。"""
+        time_slots = []
+        for i in range(48):
+            inflight = stats['landing_inflight'][i]
+            landing = stats['landing_all'][i]
+            takeoff = stats['takeoff_all'][i]
+            if inflight == 0 and landing == 0 and takeoff == 0:
+                time_slots.append('')
+            else:
+                time_slots.append(f'{inflight}-{landing}-{takeoff}')
+        return time_slots
     
     def _save_airport_data(self, airport: str, stats: Dict[str, List[int]]) -> bool:
         """
@@ -455,32 +468,19 @@ class FlightParser:
             bool: 是否保存成功
         """
         try:
-            # 生成48个时间段的航班数据
-            flight_data = {}
-            for i in range(48):
-                inflight = stats['landing_inflight'][i]
-                landing = stats['landing_all'][i]
-                takeoff = stats['takeoff_all'][i]
-                
-                # 构建flight字段（三组数据用-拼接，全为0则为空）- 与原始程序完全一致
-                if inflight == 0 and landing == 0 and takeoff == 0:
-                    flight_data[f'time_{i}_flight'] = ""
-                else:
-                    flight_data[f'time_{i}_flight'] = f"{inflight}-{landing}-{takeoff}"
-            
-            # 计算has_flight字段 - 与原始程序完全一致
             has_flight = any(stats['landing_inflight'][i] > 0 or 
                            stats['landing_all'][i] > 0 or 
                            stats['takeoff_all'][i] > 0 
-                           for i in range(0, 48))  # time_0到time_47
-            
-            # 直接插入新数据 (与原始程序逻辑一致)
-            flight_data.update({
-                'airport_4code': airport,
-                'has_flight': has_flight,
-            })
-            
-            Flight.objects.create(**flight_data)
+                           for i in range(0, 48))
+            Flight.objects.create(
+                airport_4code=airport,
+                has_flight=has_flight,
+                flight_detail=self._build_time_slots(stats),
+                en_route=1 if any(stats['landing_inflight'][i] > 0 for i in range(48)) else 0,
+                closest_departure_time_of_arriving_flight=stats.get('closest_arriving_time'),
+                closest_departure_time_at_this_airport=stats.get('closest_departing_time'),
+                closest_landing_time_of_arriving_flight=stats.get('closest_landing_time'),
+            )
             logger.info(f"成功保存机场 {airport} 的数据，has_flight: {has_flight}")
             return True
             
@@ -501,38 +501,16 @@ class FlightParser:
             bool: 是否保存成功
         """
         try:
-            # 生成48个时间段的航班数据
-            flight_data = {}
-            for i in range(48):
-                inflight = stats['landing_inflight'][i]
-                landing = stats['landing_all'][i]
-                takeoff = stats['takeoff_all'][i]
-                
-                # 构建flight字段（三组数据用-拼接，全为0则为空）
-                if inflight == 0 and landing == 0 and takeoff == 0:
-                    flight_data[f'time_{i}_flight'] = ""
-                else:
-                    flight_data[f'time_{i}_flight'] = f"{inflight}-{landing}-{takeoff}"
-            
-            # 计算en_route字段：如果任意一个landing_inflight > 0，则为1，否则为0
             en_route = 1 if any(stats['landing_inflight'][i] > 0 for i in range(48)) else 0
-            
-            # 获取已计算好的最早时间（优化后直接使用结果）
-            closest_arriving_time = stats.get('closest_arriving_time')
-            closest_departing_time = stats.get('closest_departing_time')
-            closest_landing_time = stats.get('closest_landing_time')
-            
-            # 直接插入新数据
-            flight_data.update({
-                'airport_4code': airport,
-                'has_flight': has_flight,
-                'en_route': en_route,
-                'closest_departure_time_of_arriving_flight': closest_arriving_time,
-                'closest_departure_time_at_this_airport': closest_departing_time,
-                'closest_landing_time_of_arriving_flight': closest_landing_time,
-            })
-            
-            Flight.objects.create(**flight_data)
+            Flight.objects.create(
+                airport_4code=airport,
+                has_flight=has_flight,
+                flight_detail=self._build_time_slots(stats),
+                en_route=en_route,
+                closest_departure_time_of_arriving_flight=stats.get('closest_arriving_time'),
+                closest_departure_time_at_this_airport=stats.get('closest_departing_time'),
+                closest_landing_time_of_arriving_flight=stats.get('closest_landing_time'),
+            )
             return True
             
         except Exception as e:

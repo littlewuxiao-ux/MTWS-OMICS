@@ -245,30 +245,26 @@ class ParsingManager:
                 except Exception:
                     pass
         
-        # 第三步：获取有航班的机场代码
+        # 第三步：获取有航班或停场的机场代码（首页仍只展示有航班机场）
         try:
-            from parsers.models import Flight
-            active_airport_codes = list(
-                Flight.objects.filter(has_flight=True)
-                .values_list('airport_4code', flat=True)
-                .distinct()
-            )
+            from utils.airport_scope import get_monitored_airport_codes
+            active_airport_codes = get_monitored_airport_codes()
             
             if not active_airport_codes:
-                logger.warning("未找到有航班的机场，跳过气象数据解析")
-                results['message'] = '未找到有航班的机场，仅完成航班解析'
+                logger.warning("未找到有航班或停场的机场，跳过气象数据解析")
+                results['message'] = '未找到有航班或停场的机场，仅完成航班解析'
                 return self._finalize_results(results, start_time)
                 
-            logger.info(f"找到 {len(active_airport_codes)} 个有航班的机场: {active_airport_codes}")
+            logger.info(f"找到 {len(active_airport_codes)} 个有航班或停场的机场: {active_airport_codes}")
             results['active_airports'] = active_airport_codes
             
         except Exception as e:
-            logger.error(f"获取有航班机场代码失败: {str(e)}")
+            logger.error(f"获取有航班或停场机场代码失败: {str(e)}")
             results['success'] = False
             results['message'] = f'获取机场代码失败: {str(e)}'
             return self._finalize_results(results, start_time)
         
-        # 第四步：顺序执行METAR和TAF解析器（仅解析有航班的机场）
+        # 第四步：顺序执行METAR和TAF解析器（有航班 ∪ 停场）
         # 运行METAR解析器
         try:
             from parsers.scheduler import set_parser_exec_status as _s
@@ -506,15 +502,15 @@ class ParsingManager:
             if not results['success']:
                 return self._finalize_results(results, start_time)
         
-        # 获取有航班的机场（如果需要执行实况或预报解析）
+        # 获取有航班或停场的机场（如果需要执行实况或预报解析）
         active_airport_codes = []
         if 'metar' in update_types or 'taf' in update_types:
             active_airport_codes = self._get_active_airports()
             if not active_airport_codes:
-                logger.warning("未找到有航班的机场，跳过气象数据解析")
+                logger.warning("未找到有航班或停场的机场，跳过气象数据解析")
                 if 'flight' not in update_types:
                     results['success'] = False
-                    results['message'] = '未找到有航班的机场'
+                    results['message'] = '未找到有航班或停场的机场'
                 return self._finalize_results(results, start_time)
             
             results['active_airports'] = active_airport_codes
@@ -697,20 +693,16 @@ class ParsingManager:
         return results
     
     def _get_active_airports(self):
-        """获取有航班的机场代码"""
+        """获取 METAR/TAF 解析覆盖的机场：有航班 ∪ 停场名单。"""
         try:
-            from parsers.models import Flight
-            active_airport_codes = list(
-                Flight.objects.filter(has_flight=True)
-                .values_list('airport_4code', flat=True)
-                .distinct()
-            )
+            from utils.airport_scope import get_monitored_airport_codes
+            active_airport_codes = get_monitored_airport_codes()
             
             if active_airport_codes:
-                logger.info(f"找到 {len(active_airport_codes)} 个有航班的机场: {active_airport_codes}")
+                logger.info(f"找到 {len(active_airport_codes)} 个有航班或停场的机场: {active_airport_codes}")
             
             return active_airport_codes
             
         except Exception as e:
-            logger.error(f"获取有航班机场代码失败: {str(e)}")
+            logger.error(f"获取有航班或停场机场代码失败: {str(e)}")
             return [] 

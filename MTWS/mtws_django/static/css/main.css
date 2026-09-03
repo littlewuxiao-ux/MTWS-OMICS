@@ -2614,7 +2614,13 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
+}
+
+.popup-metar-type-wrap {
   position: relative;
+  flex-shrink: 0;
+  align-self: stretch;
+  display: flex;
 }
 
 .popup-metar-type .metar-type {
@@ -2885,9 +2891,10 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
   user-select: none;
 }
 
-.popup-metar-type .popup-section-info-icon {
+.popup-metar-type-wrap .popup-section-info-icon {
   right: 0;
   bottom: 0;
+  transform: translateX(100%);
 }
 
 .popup-label {

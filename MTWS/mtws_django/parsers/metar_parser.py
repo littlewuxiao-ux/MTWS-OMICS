@@ -62,14 +62,14 @@ class MetarParser:
         start_time = datetime.now()
         
         try:
-            from parsers.models import Flight
-            active_airports = list(Flight.objects.filter(has_flight=True).values_list('airport_4code', flat=True))
+            from utils.airport_scope import get_monitored_airport_codes
+            active_airports = get_monitored_airport_codes()
             
             if not active_airports:
-                logger.warning("未找到有航班的机场，跳过METAR数据解析")
-                return {'success': False, 'message': '未找到有航班的机场', 'record_count': 0}
+                logger.warning("未找到有航班或停场的机场，跳过METAR数据解析")
+                return {'success': False, 'message': '未找到有航班或停场的机场', 'record_count': 0}
             
-            logger.info(f"获取到有航班的机场: {active_airports}")
+            logger.info(f"获取到有航班或停场的机场: {active_airports}")
             
             adapter = AdapterFactory.create_adapter(time_mode=self.time_mode, token=self.token)
             df = adapter.get_metar_data(active_airports)
@@ -256,24 +256,22 @@ class MetarParser:
         """
         清理滞留的METAR入库告警：
         若某机场的 import_alert=Y 且 import_alert_handle_time 为空，
-        但该机场已无航班（has_flight=False），则视为滞留告警，自动结案。
+        且既无航班也无停场飞机，则视为滞留告警，自动结案。
         """
         try:
-            from parsers.models import Flight
-            active_airports = set(
-                Flight.objects.filter(has_flight=True).values_list('airport_4code', flat=True)
-            )
+            from utils.airport_scope import get_import_alert_keep_airport_codes
+            keep_airports = get_import_alert_keep_airport_codes()
             updated = Metar.objects.filter(
                 import_alert='Y',
                 import_alert_handle_time__isnull=True,
             ).exclude(
-                airport_4code__in=active_airports
+                airport_4code__in=keep_airports
             ).update(
                 import_alert_handle_time=now_ms,
-                handle_status='航班运行结束',
+                handle_status='航班运行结束且无停场飞机',
             )
             if updated:
-                logger.info(f"[METAR入库告警] 清理滞留告警 {updated} 条（航班运行结束）")
+                logger.info(f"[METAR入库告警] 清理滞留告警 {updated} 条（航班运行结束且无停场飞机）")
         except Exception as e:
             logger.error(f"[METAR入库告警] 清理滞留告警失败: {e}")
 

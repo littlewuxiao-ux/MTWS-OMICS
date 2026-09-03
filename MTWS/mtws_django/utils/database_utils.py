@@ -229,26 +229,23 @@ class DatabaseManager:
             bool: 是否发生变化
         """
         try:
-            # 获取最新的航班记录
-            latest_flight = Flight.objects.order_by('-parsed_time').first()
+            airport_code = new_flight_data.get('airport_4code')
+            qs = Flight.objects.all()
+            if airport_code:
+                qs = qs.filter(airport_4code=airport_code)
+            latest_flight = qs.order_by('-created_at').first()
             
             if not latest_flight:
                 return True  # 没有历史记录，认为有变化
             
-            # 比较has_flight字段
             if latest_flight.has_flight != new_flight_data.get('has_flight'):
                 return True
             
-            # 比较36个时间段的航班字段
-            for i in range(36):
-                field_name = f'time_{i}_flight'
-                old_value = getattr(latest_flight, field_name, None)
-                new_value = new_flight_data.get(field_name, None)
-                
-                if old_value != new_value:
-                    return True
-            
-            return False
+            old_slots = latest_flight.as_time_slots()
+            new_slots = new_flight_data.get('flight_detail')
+            if new_slots is None:
+                new_slots = new_flight_data.get('time_slots')
+            return old_slots != (new_slots if new_slots is not None else [])
             
         except Exception as e:
             logger.error(f"检查航班数据变化失败: {e}")
