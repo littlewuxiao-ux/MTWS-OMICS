@@ -218,6 +218,77 @@ function getLatestPopup(airportPopups) {
     return airportPopups[0]; // 已经排序过，第一个就是最新的
 }
 
+function metarObservationTime(metar) {
+    if (!metar || metar.metar_observation_time == null || metar.metar_observation_time === '') return -Infinity;
+    const t = Number(metar.metar_observation_time);
+    return Number.isFinite(t) ? t : -Infinity;
+}
+
+// 主页天气类型为 {代码: 等级} 或 JSON 字符串；弹窗为 {代码: {alert_level, cn_name}}
+function normalizeWeatherTypeForBadges(weather, nameLookupPopups) {
+    if (!weather) return {};
+    let raw = weather;
+    if (typeof raw === 'string') {
+        try {
+            raw = JSON.parse(raw) || {};
+        } catch (e) {
+            return {};
+        }
+    }
+    const result = {};
+    Object.entries(raw).forEach(([code, value]) => {
+        if (value && typeof value === 'object' && !Array.isArray(value)) {
+            result[code] = {
+                alert_level: value.alert_level,
+                cn_name: value.cn_name || code
+            };
+            return;
+        }
+        let cnName = code;
+        (nameLookupPopups || []).some(p => {
+            const info = p.metar_weather_type && p.metar_weather_type[code];
+            if (info && info.cn_name) {
+                cnName = info.cn_name;
+                return true;
+            }
+            return false;
+        });
+        result[code] = { alert_level: value, cn_name: cnName };
+    });
+    return result;
+}
+
+// 实心：主页最新实况与未处理弹窗中观测时间最大的一份；空心：观测时间更早的未处理弹窗
+function resolveBadgeSources(popupData, airportPopups) {
+    let homepageLatest = null;
+    const airportCode = popupData && popupData.airport_4code;
+    if (airportCode && typeof airportData !== 'undefined' && airportData) {
+        const airport = airportData.find(a => a.airport_4code === airportCode);
+        if (airport && airport.metar_data && airport.metar_data.length > 0) {
+            homepageLatest = airport.metar_data[0];
+        }
+    }
+
+    const popups = airportPopups || [];
+    const candidates = homepageLatest ? [homepageLatest].concat(popups) : popups.slice();
+    if (popupData && candidates.indexOf(popupData) === -1) {
+        candidates.push(popupData);
+    }
+
+    let solidSource = null;
+    let solidTime = -Infinity;
+    candidates.forEach(m => {
+        const t = metarObservationTime(m);
+        if (t > solidTime) {
+            solidTime = t;
+            solidSource = m;
+        }
+    });
+
+    const historyPopups = popups.filter(p => metarObservationTime(p) < solidTime);
+    return { solidSource, historyPopups };
+}
+
 // ==================================
 // HTML生成函数
 // ==================================
@@ -235,9 +306,10 @@ function warningMaxLevel(levels) {
     return r === 3 ? 'R' : r === 2 ? 'Y' : r === 1 ? 'G' : null;
 }
 
-// 生成告警徽章HTML（当前报文 + 同机场其他未处理报文的历史最高等级）
+// 生成告警徽章HTML（实心=最新实况，空心=其他未处理弹窗的历史最高等级）
 function generateWarningBadgesHTML(popupData, airportPopups) {
-    const historyPopups = (airportPopups && airportPopups.length > 1) ? airportPopups.slice(1) : [];
+    const { solidSource, historyPopups } = resolveBadgeSources(popupData, airportPopups);
+    if (!solidSource) return '';
 
     const warningItems = [
         { label: '风速', field: 'metar_wind_warning' },
@@ -252,7 +324,7 @@ function generateWarningBadgesHTML(popupData, airportPopups) {
     const row1Left = [];
     const row1Rest = [];
     warningItems.forEach(item => {
-        const currentLevel = popupData[item.field];
+        const currentLevel = solidSource[item.field];
         const historyLevels = historyPopups.map(p => p[item.field]).filter(Boolean);
         const historyMax = warningMaxLevel(historyLevels);
         const currentRank = warningLevelRank(currentLevel);
@@ -273,7 +345,7 @@ function generateWarningBadgesHTML(popupData, airportPopups) {
     const row1 = row1Left.concat(row1Rest);
 
     const row2 = [];
-    const currentWeather = popupData.metar_weather_type || {};
+    const currentWeather = normalizeWeatherTypeForBadges(solidSource.metar_weather_type, airportPopups);
     const currentWeatherEntries = Object.entries(currentWeather);
     const historyWeatherCodes = new Set();
     historyPopups.forEach(p => {
@@ -305,7 +377,7 @@ function generateWarningBadgesHTML(popupData, airportPopups) {
         }
     });
 
-    const badgeTip = '本部分告警徽章为过去6小时内所有对应机场未处理报文的告警徽章，其中仅带背景色的徽章为最新弹窗报文，其他为历史未处理报文徽章。';
+    const badgeTip = '本部分告警徽章为过去6小时内所有对应机场未处理报文的告警徽章，其中仅带背景色的徽章为当前最新实况报文，其他为历史未处理报文徽章。';
     let html = '<div class="popup-warning-badges">';
     if (row1.length > 0) {
         html += '<div class="popup-warning-row">' + row1.join('') + '</div>';
@@ -407,7 +479,7 @@ function generateFlightInfoCardsHTML(popupData) {
     `;
 }
 
-// 生成报文内容HTML（显示最新3条历史报文）
+// 生成报文内容HTML（同源原始历史实况，最新3条，告警着色后填入）
 function generateMetarContentHTML(airportCode) {
     // 返回一个占位符，将在异步获取历史报文后更新
     return `<span class="popup-value" id="metar-content-${airportCode}">
@@ -436,21 +508,16 @@ function loadAndDisplayHistoryMetarContent(airportCode) {
         headers['X-User-Code'] = 'test';
     }
 
-    // 请求历史报文
-    fetch(`/${timeMode}/api/airport/${airportCode}/history-reports/`, {
+    fetch(`/${timeMode}/api/airport/${airportCode}/popup-metar-text/`, {
         headers: headers
     })
         .then(response => response.json())
         .then(data => {
-            if (data.success && data.data.metar_reports && data.data.metar_reports.length > 0) {
-                // 取最新3条报文
-                const reports = data.data.metar_reports.slice(0, 3);
-
-                if (reports.length === 1) {
-                    contentElement.innerHTML = reports[0].content || '';
-                } else {
-                    contentElement.innerHTML = reports.map(report => report.content || '').join('<br/><br/>');
-                }
+            if (data.success && Array.isArray(data.data) && data.data.length > 0) {
+                contentElement.innerHTML = data.data.map(report => {
+                    const html = report.html || report.content || '';
+                    return `<span class="metar-content-item">${html}</span>`;
+                }).join('');
             } else {
                 contentElement.innerHTML = '<span style="color: #999;">暂无历史报文</span>';
             }
@@ -550,7 +617,7 @@ function createPopupContentHTML(airport) {
     // 格式化时间：分离时分秒和年月日
     const timeObj = formatTimestampToBeijingParts(latestPopup.metar_observation_time);
 
-    // 生成告警徽章（当前 + 同机场其他未处理报文的历史最高等级）
+    // 生成告警徽章（实心=观测时间最新的实况，空心=更早的未处理弹窗）
     const warningBadgesHTML = generateWarningBadgesHTML(latestPopup, airportPopups);
 
     // 生成航班信息卡片
@@ -1283,9 +1350,15 @@ async function checkAndShowPopups() {
                     return;
                 }
 
+                const prevSqc = new Set();
+                Object.keys(popupAirports).forEach(airport => {
+                    popupAirports[airport].forEach(p => prevSqc.add(p.sqc));
+                });
+
                 // 按机场分组
                 const newGrouped = groupPopupsByAirport(result.data);
 
+                let hasNewPopup = false;
                 // 合并到现有数据
                 Object.keys(newGrouped).forEach(airport => {
                     if (!popupAirports[airport]) {
@@ -1297,12 +1370,19 @@ async function checkAndShowPopups() {
                     newGrouped[airport].forEach(popup => {
                         if (!existingSqc.has(popup.sqc)) {
                             popupAirports[airport].push(popup);
+                            if (!prevSqc.has(popup.sqc)) {
+                                hasNewPopup = true;
+                            }
                         }
                     });
 
                     // 重新排序
                     popupAirports[airport].sort((a, b) => b.popup_time - a.popup_time);
                 });
+
+                if (hasNewPopup) {
+                    restoreDetailBelowMetarPopup();
+                }
 
                 // 如果没有选中的机场，选择最新的
                 if (!currentActiveAirport || !popupAirports[currentActiveAirport]) {

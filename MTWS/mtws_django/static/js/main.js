@@ -2489,8 +2489,8 @@ function showModal(modalId) {
         // 不设置 body.overflow：hidden/auto 都会让 body 成为滚动容器，sticky 吸顶失效。
 
         // 层级规则：实况弹窗（.metar-popup-overlay，z-index 30000）默认应始终显示在
-        // 机场详情/搜索结果弹窗之上；唯一例外是从实况弹窗内点击"查看详情"打开机场详情弹窗时，
-        // 该次打开的详情弹窗需临时高于实况弹窗。此标记由 handleBatchHandle 在调用前设置。
+        // 机场详情/搜索结果弹窗之上；从实况弹窗内点击"查看详情"时详情临时高于实况弹窗，
+        // 一旦有新的未处理实况弹窗进入，详情回落到实况弹窗之下（见 restoreDetailBelowMetarPopup）。
         if (modalId === 'airport-detail-modal') {
             if (window._openDetailAboveMetarPopup) {
                 modal.style.zIndex = '30010';
@@ -2518,6 +2518,13 @@ function hideModal(modalId) {
         if (modalId === 'airport-detail-modal') {
             modal.style.zIndex = '';
         }
+    }
+}
+
+function restoreDetailBelowMetarPopup() {
+    const modal = document.getElementById('airport-detail-modal');
+    if (modal) {
+        modal.style.zIndex = '';
     }
 }
 

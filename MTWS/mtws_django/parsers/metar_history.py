@@ -207,29 +207,19 @@ def _parse_single_metar(content: str, airport_code: str, now_ms: int) -> Optiona
     }
 
 
-# ------------------------------------------------------------------
-# 公开接口
-# ------------------------------------------------------------------
-
-def fetch_and_parse_metar_history(
-    airport_code: str,
-    time_mode: str = 'current',
-    token: Optional[str] = None,
-) -> list:
+def _fetch_history_obj(airport_code: str, time_mode: str, token: Optional[str], ws_types=None):
     """
-    获取并解析指定机场最近 72 小时的历史 METAR/SPECI 数据。
-
-    Returns:
-        按观测时间升序排列的图表数据点列表，每项包含：
-        metar_observation_time, metar_wind_speed_val, metar_gust_val,
-        metar_visibility_val, rvr_min_val, metar_min_cloud_height, metar_temp_val
+    调用与趋势图相同的原始历史报文接口（airportMetList），返回 (obj列表, now_ms)。
+    失败时 obj 为空列表。
     """
     now_ms = int(datetime.now(tz=timezone.utc).timestamp() * 1000)
     start_ms = now_ms - 72 * 3_600_000
+    if not ws_types:
+        ws_types = ['SA', 'SP']
 
     payload = {
         'code4s': airport_code,
-        'wsTypes': ['SA', 'SP'],
+        'wsTypes': list(ws_types),
         'historyFlag': 'Y',
         'searchStartDate': start_ms,
         'searchEndDate': now_ms,
@@ -247,28 +237,122 @@ def fetch_and_parse_metar_history(
             timeout=30,
         )
         logger.info(
-            f'历史 METAR 请求 [{airport_code}]: HTTP {response.status_code}'
+            f'历史报文请求 [{airport_code}] {ws_types}: HTTP {response.status_code}'
         )
         if response.status_code != 200:
             logger.error(
-                f'历史 METAR 请求失败 [{airport_code}]: HTTP {response.status_code}'
+                f'历史报文请求失败 [{airport_code}]: HTTP {response.status_code}'
             )
-            return []
+            return [], now_ms
         resp_data = response.json()
     except Exception as exc:
-        logger.error(f'历史 METAR 请求异常 [{airport_code}]: {exc}')
-        return []
+        logger.error(f'历史报文请求异常 [{airport_code}]: {exc}')
+        return [], now_ms
 
     if not resp_data.get('success'):
         logger.error(
-            f'历史 METAR 接口返回失败 [{airport_code}]: '
+            f'历史报文接口返回失败 [{airport_code}]: '
             f'{resp_data.get("errorMessage", "未知错误")}'
         )
-        return []
+        return [], now_ms
 
     obj = resp_data.get('obj') or []
     if not obj:
-        logger.info(f'历史 METAR 无数据 [{airport_code}]')
+        logger.info(f'历史报文无数据 [{airport_code}] {ws_types}')
+        return [], now_ms
+    return obj, now_ms
+
+
+def _item_wtype(item: dict, content: str) -> str:
+    wtype = str(item.get('wtype') or item.get('wsType') or item.get('type') or '').upper().strip()
+    if wtype in ('SA', 'SP', 'FC', 'FT'):
+        return wtype
+    head = content[:40].upper()
+    if head.startswith('TAF') or ' TAF' in head:
+        match = re.search(r'\b(\d{2})(\d{2})/(\d{2})(\d{2})\b', content)
+        if match:
+            d1, h1, d2, h2 = (int(g) for g in match.groups())
+            hours = ((d2 - d1) % 31) * 24 + (h2 - h1)
+            return 'FC' if 0 < hours <= 12 else 'FT'
+        return 'FT'
+    if 'SPECI' in head or head.startswith('SP'):
+        return 'SP'
+    return 'SA'
+
+
+def fetch_raw_met_list(
+    airport_code: str,
+    time_mode: str = 'current',
+    token: Optional[str] = None,
+    ws_types=None,
+) -> list:
+    """
+    从同源原始接口取报文列表。
+    每项: {content, wtype, sort_time}
+    """
+    obj, now_ms = _fetch_history_obj(airport_code, time_mode, token, ws_types=ws_types)
+    items = []
+    for item in obj:
+        content = (item.get('content') or '').strip()
+        if not content:
+            continue
+        obs_ts = _extract_obs_timestamp_ms(content, now_ms)
+        receive = item.get('receiveTime') or item.get('observationTime') or 0
+        try:
+            receive = int(receive)
+        except (TypeError, ValueError):
+            receive = 0
+        sort_time = obs_ts if obs_ts is not None else receive
+        items.append({
+            'content': content,
+            'wtype': _item_wtype(item, content),
+            'sort_time': sort_time if sort_time is not None else -1,
+        })
+    items.sort(key=lambda x: x['sort_time'], reverse=True)
+    return items
+
+
+def fetch_latest_raw_metars(
+    airport_code: str,
+    time_mode: str = 'current',
+    token: Optional[str] = None,
+    limit: int = 3,
+) -> list:
+    """
+    从趋势图同源原始接口取报文，按观测时间从新到旧返回最多 limit 条原文。
+    每项: {content, metar_observation_time}
+    """
+    items = fetch_raw_met_list(
+        airport_code, time_mode=time_mode, token=token, ws_types=['SA', 'SP']
+    )
+    result = []
+    for item in items[:limit]:
+        result.append({
+            'content': item['content'],
+            'metar_observation_time': item['sort_time'],
+        })
+    return result
+
+
+# ------------------------------------------------------------------
+# 公开接口
+# ------------------------------------------------------------------
+
+def fetch_and_parse_metar_history(
+    airport_code: str,
+    time_mode: str = 'current',
+    token: Optional[str] = None,
+) -> list:
+    """
+    获取并解析指定机场最近 72 小时的历史 METAR/SPECI 数据。
+
+    Returns:
+        按观测时间升序排列的图表数据点列表，每项包含：
+        metar_observation_time, metar_wind_speed_val, metar_gust_val,
+        metar_visibility_val, rvr_min_val, metar_min_cloud_height, metar_temp_val
+    """
+    obj, now_ms = _fetch_history_obj(airport_code, time_mode, token)
+    if not obj:
         return []
 
     results = []

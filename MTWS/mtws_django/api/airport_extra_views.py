@@ -44,6 +44,65 @@ def airport_metar_history(request, airport_code, time_mode='current'):
 
 
 @require_http_methods(["GET"])
+def airport_popup_metar_text(request, airport_code, time_mode='current'):
+    """
+    实况弹窗报文原文：同源原始历史实况接口取最新 3 份，avwx 解析后按告警着色。
+    不复用图表数值，也不改详情报文原文接口。
+    """
+    try:
+        token = None
+        if time_mode == 'current':
+            auth_header = request.headers.get('Authorization', '')
+            if auth_header.startswith('Bearer '):
+                token = auth_header[7:]
+            else:
+                return JsonResponse(
+                    {'success': False, 'error': '未找到认证 token，请先登录'},
+                    status=401,
+                )
+
+        from parsers.report_text_highlight import build_popup_metar_reports
+        reports = build_popup_metar_reports(
+            airport_code, time_mode=time_mode, token=token
+        )
+        return JsonResponse({'success': True, 'data': reports})
+    except Exception as exc:
+        logger.error(f'获取弹窗实况原文失败 [{airport_code}]: {exc}')
+        return JsonResponse(
+            {'success': False, 'error': str(exc)}, status=500
+        )
+
+
+@require_http_methods(["GET"])
+def airport_report_text(request, airport_code, time_mode='current'):
+    """
+    机场详情报文原文：一次拉取 SA/SP/FC/FT，实况最新 5 份，预报按 FC/FT 规则筛选并着色。
+    """
+    try:
+        token = None
+        if time_mode == 'current':
+            auth_header = request.headers.get('Authorization', '')
+            if auth_header.startswith('Bearer '):
+                token = auth_header[7:]
+            else:
+                return JsonResponse(
+                    {'success': False, 'error': '未找到认证 token，请先登录'},
+                    status=401,
+                )
+
+        from parsers.report_text_highlight import build_airport_detail_reports
+        data = build_airport_detail_reports(
+            airport_code, time_mode=time_mode, token=token
+        )
+        return JsonResponse({'success': True, 'data': data})
+    except Exception as exc:
+        logger.error(f'获取机场详情报文原文失败 [{airport_code}]: {exc}')
+        return JsonResponse(
+            {'success': False, 'error': str(exc)}, status=500
+        )
+
+
+@require_http_methods(["GET"])
 def airport_coords(request, time_mode=None):
     """
     按机场代码列表返回经纬度坐标（来自 airport_location 表）。

@@ -5,7 +5,10 @@ API应用URL配置
 
 from django.urls import path
 from . import views
-from .airport_extra_views import airport_extra_info, airport_coords, airport_metar_history
+from .airport_extra_views import (
+    airport_extra_info, airport_coords, airport_metar_history,
+    airport_popup_metar_text, airport_report_text,
+)
 from .settings_views import (
     settings_airport_info, settings_airport_info_detail,
     settings_area_options, settings_area_options_detail,
@@ -28,6 +31,8 @@ urlpatterns = [
     path('airport/<str:airport_code>/history-reports/', views.airport_history_reports, name='airport_history_reports'),
     path('airport/<str:airport_code>/extra-info/', airport_extra_info, name='airport_extra_info'),
     path('airport/<str:airport_code>/metar-history/', airport_metar_history, name='airport_metar_history'),
+    path('airport/<str:airport_code>/popup-metar-text/', airport_popup_metar_text, name='airport_popup_metar_text'),
+    path('airport/<str:airport_code>/report-text/', airport_report_text, name='airport_report_text'),
     
     # 解析控制API
     path('trigger-parsing/', views.trigger_parsing, name='trigger_parsing'),

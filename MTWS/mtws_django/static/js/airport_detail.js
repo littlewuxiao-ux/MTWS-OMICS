@@ -166,7 +166,7 @@ function loadHistoryReports(airportCode) {
     headers['X-User-Code'] = 'test';
   }
 
-  fetch(`/${currentTimeMode}/api/airport/${airportCode}/history-reports/`, {
+  fetch(`/${currentTimeMode}/api/airport/${airportCode}/report-text/`, {
     headers: headers
   })
     .then(response => response.json())
@@ -193,13 +193,15 @@ function displayHistoryReports(data) {
     
     if (data.metar_reports && data.metar_reports.length > 0) {
       data.metar_reports.forEach(report => {
-        html += `<div class="report-line metar-line"><span class="report-content">${report.content}</span></div>`;
+        const body = report.html || report.content || '';
+        html += `<div class="report-line metar-line"><span class="report-content">${body}</span></div>`;
       });
     }
-    
+
     if (data.taf_reports && data.taf_reports.length > 0) {
       data.taf_reports.forEach(report => {
-        html += `<div class="report-line taf-line"><span class="report-content">${report.content}</span></div>`;
+        const body = report.html || report.content || '';
+        html += `<div class="report-line taf-line"><span class="report-content">${body}</span></div>`;
       });
     }
     

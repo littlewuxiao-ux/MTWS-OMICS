@@ -1594,6 +1594,23 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
 .report-line .report-content {
   flex: 1;
   min-width: 0;
+  word-break: keep-all;
+  overflow-wrap: normal;
+}
+
+.report-line .report-content .taf-report-grid {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  column-gap: 0.5em;
+  align-items: baseline;
+}
+
+.report-line .report-content .taf-period-line {
+  display: contents;
+}
+
+.report-line .report-content .taf-period-prefix {
+  white-space: nowrap;
 }
 
 /* ============================================================
@@ -2793,6 +2810,8 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
   min-width: 0;
   padding-right: 22px;
   padding-bottom: 18px;
+  word-break: normal;
+  overflow-wrap: normal;
 }
 
 .popup-section-info-icon {
@@ -2839,11 +2858,35 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
   margin-bottom: 4px;
   padding: 4px 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  word-break: keep-all;
+  overflow-wrap: normal;
 }
 
 .popup-value .metar-content-item:last-child {
   border-bottom: none;
   margin-bottom: 0;
+}
+
+.report-alert,
+.popup-metar-alert {
+  display: inline-block;
+  padding: 0 3px;
+  border-radius: 2px;
+}
+
+.report-alert-R,
+.popup-metar-alert-R {
+  background-color: rgba(231, 76, 60, 0.5);
+}
+
+.report-alert-Y,
+.popup-metar-alert-Y {
+  background-color: rgba(243, 156, 18, 0.5);
+}
+
+.report-alert-G,
+.popup-metar-alert-G {
+  background-color: rgba(39, 174, 96, 0.5);
 }
 
 /* 弹窗底部按钮区 */
