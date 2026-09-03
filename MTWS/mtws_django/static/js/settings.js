@@ -54,6 +54,8 @@
     function setVal(val) {
       trackEl.dataset.value = val;
       const i = idx[val] ?? 1;
+      const colors = window.MTWS_ALERT_COLORS || {};
+      thumb.style.background = (colors[val] && colors[val].hex) || '';
       thumb.style.transform = `translateX(${i * 100}%)`;
     }
 

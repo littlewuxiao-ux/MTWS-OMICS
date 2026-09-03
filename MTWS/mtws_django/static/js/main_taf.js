@@ -333,7 +333,7 @@ function calculateTimeOffset(timeStr, currentTime) {
 // 获取默认背景色（无告警时统一使用浅灰色，0.8透明度）
 function getDefaultBackgroundColor(type) {
     // 按照4色规则，无告警统一使用浅灰色，0.8透明度
-    return 'rgba(149, 165, 166, 0.8)'; // 浅灰色 - 无告警
+    return `rgba(${getAlertColorSpec('N').rgb}, 0.8)`;
 }
 
 // 创建温度指示器

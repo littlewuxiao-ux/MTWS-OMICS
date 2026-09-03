@@ -736,30 +736,8 @@ function triggerParsingAndLoadData() {
                     });
                 }
 
-                // 保存解析结果并更新页面上的解析状态显示
+                // 保存解析结果
                 console.log('💾 保存解析结果:', parsingResult.data);
-                window.lastParsingResult = parsingResult.data;
-                console.log('🔄 开始更新解析状态显示...');
-
-                // 使用统一的状态更新逻辑
-                const parsers = parsingResult.data.parsers || {};
-                if (Object.keys(parsers).length > 0) {
-                    Object.keys(parsers).forEach(dataType => {
-                        const parseResult = parsers[dataType];
-                        if (parseResult) {
-                            // 先更新时间，再更新状态
-                            updateDataTime(dataType, parseResult.success);
-                            updateSingleParsingStatus(dataType, parseResult.success);
-                        }
-                    });
-                } else {
-                    console.warn('⚠️ 解析结果中没有parsers数据');
-                    // 设置默认状态
-                    ['flight', 'metar', 'taf'].forEach(dataType => {
-                        updateDataTime(dataType, false);
-                        updateSingleParsingStatus(dataType, false);
-                    });
-                }
 
                 console.log('📡 开始获取最新数据...');
                 // 第二步：获取最新数据
@@ -833,6 +811,7 @@ function triggerParsingAndLoadData() {
 
                 updateCarrierDisplay();
                 applyFilters();
+                updateStatusFromPollResult(data.data.parsing_status || {}, true);
 
                 // 如果 NWP 温度辅助已开启，触发 NWP 解析并渲染
                 if (nwpEnabled) {
@@ -1618,6 +1597,8 @@ function generateRegionButtons() {
         allButton.setAttribute('data-group', 'domestic');
         allButton.setAttribute('data-value', 'all');
         allButton.textContent = '全部';
+        allButton.appendChild(document.createElement('span'));
+        allButton.lastElementChild.className = 'region-alert-dot';
         domesticContainer.appendChild(allButton);
 
         // 添加各个区域按钮
@@ -1627,6 +1608,8 @@ function generateRegionButtons() {
             button.setAttribute('data-group', 'domestic');
             button.setAttribute('data-value', region.area);
             button.textContent = region.area;
+            button.appendChild(document.createElement('span'));
+            button.lastElementChild.className = 'region-alert-dot';
             domesticContainer.appendChild(button);
         });
     }
@@ -1642,6 +1625,8 @@ function generateRegionButtons() {
         allButton.setAttribute('data-group', 'international');
         allButton.setAttribute('data-value', 'all');
         allButton.textContent = '全部';
+        allButton.appendChild(document.createElement('span'));
+        allButton.lastElementChild.className = 'region-alert-dot';
         internationalContainer.appendChild(allButton);
 
         // 添加各个区域按钮
@@ -1651,9 +1636,59 @@ function generateRegionButtons() {
             button.setAttribute('data-group', 'international');
             button.setAttribute('data-value', region.area);
             button.textContent = region.area;
+            button.appendChild(document.createElement('span'));
+            button.lastElementChild.className = 'region-alert-dot';
             internationalContainer.appendChild(button);
         });
     }
+
+    updateRegionAlertDots();
+}
+
+function setRegionAlertDot(button, level) {
+    if (!button) return;
+    const dot = button.querySelector('.region-alert-dot');
+    if (!dot) return;
+    if (level === 'R' || level === 'Y' || level === 'G') {
+        dot.className = `region-alert-dot visible region-alert-dot-${level}`;
+    } else {
+        dot.className = 'region-alert-dot';
+    }
+}
+
+function getMaxAlertLevelForAirports(airports) {
+    const rank = { R: 3, Y: 2, G: 1, N: 0 };
+    let maxLevel = 'N';
+    let maxRank = 0;
+    (airports || []).forEach(airport => {
+        const level = getHighestAlertLevel(airport);
+        const current = rank[level] || 0;
+        if (current > maxRank) {
+            maxRank = current;
+            maxLevel = level;
+        }
+    });
+    return maxLevel;
+}
+
+function updateRegionAlertDots() {
+    const sources = airportData || [];
+    ['domestic', 'international'].forEach(group => {
+        const regions = currentAreaOptions[group] || [];
+        const regionNames = regions.map(region => region.area);
+        const groupAirports = sources.filter(airport => regionNames.includes(airport.area || ''));
+        setRegionAlertDot(
+            document.querySelector(`[data-group="${group}"][data-value="all"]`),
+            getMaxAlertLevelForAirports(groupAirports)
+        );
+        regions.forEach(region => {
+            const areaAirports = sources.filter(airport => (airport.area || '') === region.area);
+            setRegionAlertDot(
+                document.querySelector(`[data-group="${group}"][data-value="${region.area}"]`),
+                getMaxAlertLevelForAirports(areaAirports)
+            );
+        });
+    });
 }
 
 // 更新区域按钮状态
@@ -1796,6 +1831,8 @@ function applyFilters() {
     applySorting();
 
     if (window._viewMode !== 'map') displayAirports(filteredAirportData);
+
+    updateRegionAlertDots();
 
     // 地图模式同步更新地图散点
     if (typeof updateMapAlert === 'function') updateMapAlert();
@@ -2068,57 +2105,6 @@ function displayAirports(airports) {
             renderAllNwpOverlays(_nwpCache);
         }
     }, 100);
-
-    // 更新时间戳和解析状态容器
-    // 移除现有的状态信息容器
-    const existingContainer = document.querySelector('.status-info-container');
-    if (existingContainer) {
-        existingContainer.remove();
-    }
-
-    // 创建统一的状态信息容器
-    const statusContainer = document.createElement('div');
-    statusContainer.className = 'status-info-container';
-
-    // 创建解析状态显示
-    const parsingStatusDiv = document.createElement('div');
-    parsingStatusDiv.className = 'parsing-status-display';
-    parsingStatusDiv.innerHTML = `
-        <div class="parsing-status-item" id="flight-status">
-            <span class="status-label">航班</span>
-            <span class="status-indicator" id="flight-indicator">等待中...</span>
-            <span class="status-time" id="flight-time">--:--:--</span>
-        </div>
-        <div class="parsing-status-item" id="metar-status">
-            <span class="status-label">实况</span>
-            <span class="status-indicator" id="metar-indicator">等待中...</span>
-            <span class="status-time" id="metar-time">--:--:--</span>
-        </div>
-        <div class="parsing-status-item" id="taf-status">
-            <span class="status-label">预报</span>
-            <span class="status-indicator" id="taf-indicator">等待中...</span>
-            <span class="status-time" id="taf-time">--:--:--</span>
-        </div>
-    `;
-
-    // 将解析状态添加到容器中
-    statusContainer.appendChild(parsingStatusDiv);
-
-    // 将容器添加到页面
-    document.querySelector('.header-section').appendChild(statusContainer);
-
-    // 检查是否有保存的解析状态需要恢复
-    if (window.lastParsingResult && window.lastParsingResult.parsers) {
-        // 恢复之前的解析状态，使用统一的状态更新逻辑
-        const parsers = window.lastParsingResult.parsers;
-        Object.keys(parsers).forEach(dataType => {
-            const parseResult = parsers[dataType];
-            updateSingleParsingStatus(dataType, parseResult.success);
-        });
-    } else {
-        // 设置初始状态为等待中
-        updateParsingStatus('pending');
-    }
 }
 
 // 置顶功能相关函数
@@ -2259,10 +2245,8 @@ function createAirportRow(airport) {
     // 获取机场最高告警等级
     const airportAlertLevel = getHighestAlertLevel(airport);
     const alertColor = getAlertColor(airportAlertLevel);
-
-    // 根据告警等级设置机场代码的字体阴影
-    const airportCodeStyle = airportAlertLevel !== 'N' ?
-        `text-shadow: 0 0 3px ${alertColor}, 0 0 6px ${alertColor};` : '';
+    const airportCodeContainerStyle = airportAlertLevel !== 'N' ?
+        `background-color: ${alertColor};` : '';
 
     const noTafData = (!tafData || tafData.length === 0) || (tafData[0].data_status === 'C');
     const tafAlertClass = (tafData && tafData.length > 0 && tafData[0].import_alert === 'Y') ? ' taf-import-alerted' : '';
@@ -2271,8 +2255,8 @@ function createAirportRow(airport) {
         <div class="airport-row">
             <div class="airport-info" style="position: relative;" oncontextmenu="handleAirportRightClick(event, '${airport.airport_4code}')">
                 ${createPinIcon(airport.airport_4code)}
-                <div class="airport-code-container">
-                    <div class="airport-code" style="${airportCodeStyle}">${airport.airport_4code}</div>
+                <div class="airport-code-container" style="${airportCodeContainerStyle}">
+                    <div class="airport-code">${airport.airport_4code}</div>
                 </div>
                 <div class="airport-name">${airport.airport_name || ''}</div>
             </div>
@@ -2557,14 +2541,27 @@ function getAlertLevelName(level) {
 }
 
 // 获取告警颜色（0.8透明度）
-function getAlertColor(level) {
-    const colors = {
-        'R': 'rgba(231, 76, 60, 0.8)',   // 红色告警，0.8透明度
-        'Y': 'rgba(243, 156, 18, 0.8)',  // 黄色告警，0.8透明度
-        'G': 'rgba(39, 174, 96, 0.8)',   // 绿色告警，0.8透明度
-        'N': 'rgba(149, 165, 166, 0.8)'  // 无告警 - 浅灰色，0.8透明度
+function getAlertColorSpec(level) {
+    const fallback = {
+        R: { hex: '#e74c3c', rgb: '231, 76, 60' },
+        Y: { hex: '#f39c12', rgb: '243, 156, 18' },
+        G: { hex: '#27ae60', rgb: '39, 174, 96' },
+        N: { hex: '#95a5a6', rgb: '149, 165, 166' }
     };
-    return colors[level] || 'rgba(149, 165, 166, 0.8)';
+    const all = window.MTWS_ALERT_COLORS;
+    const spec = (all && all[level]) || fallback[level] || fallback.N;
+    if (!spec || !spec.rgb || !spec.hex) {
+        return fallback[level] || fallback.N;
+    }
+    return spec;
+}
+
+function getAlertColor(level) {
+    return `rgba(${getAlertColorSpec(level).rgb}, 0.8)`;
+}
+
+function getAlertColorHex(level) {
+    return getAlertColorSpec(level).hex;
 }
 
 // 获取当前选中的告警裕度值
@@ -2683,21 +2680,13 @@ function loadParameterizedData(updateTypes) {
                 // 获取解析结果
                 const parsers = data.data.parsers || {};
 
-                // 更新每个数据类型的状态和时间
                 updateTypes.forEach(dataType => {
                     const parseResult = parsers[dataType];
-                    let parsingSuccess = false; // 默认为失败
-
                     if (parseResult) {
-                        parsingSuccess = parseResult.success;
                         console.log(`${dataType}解析器结果:`, parseResult);
                     } else {
                         console.warn(`⚠️ 参数化更新中未找到${dataType}的解析结果`);
                     }
-
-                    // 更新数据时间和状态
-                    updateDataTime(dataType, parsingSuccess);
-                    updateSingleParsingStatus(dataType, parsingSuccess);
                 });
 
                 // 获取最新数据
@@ -2786,6 +2775,7 @@ function loadParameterizedData(updateTypes) {
                 }
 
                 applyFilters();
+                updateStatusFromPollResult(data.data.parsing_status || {}, true);
 
                 // 如果 NWP 温度辅助已开启，获取并渲染最新 NWP 数据
                 if (nwpEnabled) {
@@ -2853,18 +2843,11 @@ function loadPartialData(dataType) {
                 const parseResult = parsers[dataType];
                 console.log(`${dataType}的解析结果:`, parseResult);
 
-                let parsingSuccess = false; // 默认为失败
-
                 if (parseResult) {
-                    parsingSuccess = parseResult.success;
                     console.log(`${dataType}解析器结果:`, parseResult);
                 } else {
                     console.warn(`⚠️ 未找到${dataType}的解析结果`);
                 }
-
-                // 更新数据时间和状态
-                updateDataTime(dataType, parsingSuccess);
-                updateSingleParsingStatus(dataType, parsingSuccess);
 
                 // 获取最新数据
                 return fetch(`/${currentTimeMode}/api/airports/overview/`, {
@@ -2898,13 +2881,8 @@ function loadPartialData(dataType) {
                 // 更新航班状态警告
                 updateFlightStatusWarning(data.data.flight_status);
 
-                // 如果包含航班数据更新，需要重新显示
-                if (dataType === 'flight') {
-                    updateAirportDisplay();
-                } else {
-                    // 只更新告警数据
-                    applyFilters();
-                }
+                applyFilters();
+                updateStatusFromPollResult(data.data.parsing_status || {}, true);
 
                 updateAllAirportGrids();
             } else {
@@ -2966,18 +2944,11 @@ function loadPartialDataWithRetry(dataType, retryCount) {
                 const parseResult = parsers[dataType];
                 console.log(`${dataType}的重试解析结果:`, parseResult);
 
-                let parsingSuccess = false; // 默认为失败
-
                 if (parseResult) {
-                    parsingSuccess = parseResult.success;
                     console.log(`${dataType}解析器重试结果:`, parseResult);
                 } else {
                     console.warn(`⚠️ 重试时未找到${dataType}的解析结果`);
                 }
-
-                // 更新数据时间和状态
-                updateDataTime(dataType, parsingSuccess);
-                updateSingleParsingStatus(dataType, parsingSuccess);
 
                 // 获取最新数据
                 return fetch(`/${currentTimeMode}/api/airports/overview/`, {
@@ -3016,13 +2987,8 @@ function loadPartialDataWithRetry(dataType, retryCount) {
                 // 更新航班状态警告
                 updateFlightStatusWarning(data.data.flight_status);
 
-                // 如果包含航班数据更新，需要重新显示
-                if (dataType === 'flight') {
-                    updateAirportDisplay();
-                } else {
-                    // 只更新告警数据
-                    applyFilters();
-                }
+                applyFilters();
+                updateStatusFromPollResult(data.data.parsing_status || {}, true);
 
                 updateAllAirportGrids();
             } else {
@@ -3057,7 +3023,7 @@ function updateFrontendData(data, dataType) {
         // 更新航班状态警告
         updateFlightStatusWarning(data.flight_status);
 
-        updateAirportDisplay();
+        applyFilters();
         updateAllAirportGrids();
     } else {
         // 实况或预报数据更新：只更新告警颜色，保持基础信息不变
@@ -3323,30 +3289,42 @@ function updateStatusFromPollResult(parsingStatus, pollSuccess) {
             if (backendTime) {
                 try {
                     const t = new Date(backendTime);
-                    const pad = n => String(n).padStart(2, '0');
-                    // 遵从页面时区设置
-                    let displayStr;
-                    if (window.displayTimezone === 'UTC') {
-                        displayStr = `${pad(t.getUTCHours())}:${pad(t.getUTCMinutes())}:${pad(t.getUTCSeconds())}`;
+                    if (isNaN(t.getTime())) {
+                        dataUpdateTimestamps[dataType] = null;
+                        updateStatusTimeDisplay(dataType, '--:--:--');
                     } else {
-                        displayStr = `${pad(t.getHours())}:${pad(t.getMinutes())}:${pad(t.getSeconds())}`;
+                        dataUpdateTimestamps[dataType] = t.getTime();
+                        const pad = n => String(n).padStart(2, '0');
+                        let displayStr;
+                        if (window.displayTimezone === 'UTC') {
+                            displayStr = `${pad(t.getUTCHours())}:${pad(t.getUTCMinutes())}:${pad(t.getUTCSeconds())}`;
+                        } else {
+                            displayStr = `${pad(t.getHours())}:${pad(t.getMinutes())}:${pad(t.getSeconds())}`;
+                        }
+                        dataUpdateTimes[dataType] = displayStr;
+                        updateStatusTimeDisplay(dataType, displayStr);
                     }
-                    updateStatusTimeDisplay(dataType, displayStr);
                 } catch (_) {
+                    dataUpdateTimestamps[dataType] = null;
                     updateStatusTimeDisplay(dataType, '--:--:--');
                 }
             } else {
+                dataUpdateTimestamps[dataType] = null;
                 updateStatusTimeDisplay(dataType, '--:--:--');
             }
         } else if (backendFailed) {
             // 后端解析失败 → 红色
             indicatorEl.textContent = '解析失败';
             indicatorEl.classList.add('status-error');
+            dataUpdateTimestamps[dataType] = null;
+            dataUpdateTimes[dataType] = '--:--:--';
             updateStatusTimeDisplay(dataType, '--:--:--');
         } else {
             // 尚未运行（null）→ 灰色等待
             indicatorEl.textContent = '等待解析';
             indicatorEl.classList.add('status-pending');
+            dataUpdateTimestamps[dataType] = null;
+            dataUpdateTimes[dataType] = '--:--:--';
             updateStatusTimeDisplay(dataType, '--:--:--');
         }
     });

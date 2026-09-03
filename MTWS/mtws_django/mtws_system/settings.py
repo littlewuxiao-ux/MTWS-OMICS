@@ -130,6 +130,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'web.context_processors.alert_colors',
             ],
         },
     },
@@ -223,6 +224,14 @@ LOGGING = {
             'propagate': True,
         },
     },
+}
+
+# 告警等级配色（与主页甘特条带同色相）。各处自行叠加透明度/字体，勿在此写 alpha。
+ALERT_COLORS = {
+    'R': {'hex': '#e74c3c', 'rgb': '231, 76, 60'},
+    'Y': {'hex': '#f39c12', 'rgb': '243, 156, 18'},
+    'G': {'hex': '#27ae60', 'rgb': '39, 174, 96'},
+    'N': {'hex': '#95a5a6', 'rgb': '149, 165, 166'},
 }
 
 # MTWS 项目特定配置

@@ -11,6 +11,23 @@
 </head>
 
 <body>
+  <script>
+    (function () {
+      var raw = '{{ alert_colors_json|default:""|escapejs }}';
+      var colors = null;
+      try { colors = raw ? JSON.parse(raw) : null; } catch (e) { colors = null; }
+      window.MTWS_ALERT_COLORS = colors;
+      if (!colors) return;
+      var root = document.documentElement;
+      ['R', 'Y', 'G', 'N'].forEach(function (k) {
+        var c = colors[k];
+        if (!c) return;
+        var key = k.toLowerCase();
+        if (c.hex) root.style.setProperty('--alert-' + key, c.hex);
+        if (c.rgb) root.style.setProperty('--alert-' + key + '-rgb', c.rgb);
+      });
+    })();
+  </script>
   {% block content %}{% endblock %}
 
   <script src="{% static 'js/echarts.min.js' %}"></script>

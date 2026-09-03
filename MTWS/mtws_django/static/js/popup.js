@@ -37,7 +37,7 @@ function generateNewPopupFavicon() {
     canvas.height = 32;
     const ctx = canvas.getContext('2d');
 
-    ctx.fillStyle = '#FF0000';
+    ctx.fillStyle = (typeof getAlertColorHex === 'function') ? getAlertColorHex('R') : '#e74c3c';
     ctx.fillRect(0, 0, 32, 32);
 
     ctx.fillStyle = '#FFFFFF';
@@ -377,15 +377,10 @@ function generateWarningBadgesHTML(popupData, airportPopups) {
         }
     });
 
-    const badgeTip = '本部分告警徽章为过去6小时内所有对应机场未处理报文的告警徽章，其中仅带背景色的徽章为当前最新实况报文，其他为历史未处理报文徽章。';
     let html = '<div class="popup-warning-badges">';
-    if (row1.length > 0) {
-        html += '<div class="popup-warning-row">' + row1.join('') + '</div>';
-    }
-    if (row2.length > 0) {
-        html += '<div class="popup-warning-row">' + row2.join('') + '</div>';
-    }
-    html += `<span class="popup-section-info-icon" title="${badgeTip}">ⓘ</span></div>`;
+    html += '<div class="popup-warning-row">' + row1.join('') + '</div>';
+    html += '<div class="popup-warning-row">' + row2.join('') + '</div>';
+    html += '</div>';
 
     return html;
 }
@@ -641,27 +636,28 @@ function createPopupContentHTML(airport) {
                     <div class="airport-name">${latestPopup.airport_name || ''}</div>
                 </div>
                 <div class="popup-header-divider"></div>
-                <div class="popup-metar-type">
-                    <div class="metar-type">${metarTypeHTML}</div>
-                    ${metarTypeLabel ? `<div class="metar-type-label">${metarTypeLabel}</div>` : ''}
-                </div>
-                <div class="popup-header-divider"></div>
+                ${warningBadgesHTML}
+                ${warningBadgesHTML ? '<div class="popup-header-divider"></div>' : ''}
                 <div class="popup-header-info">
                     <div class="metar-time">${timeObj.time}</div>
                     <div class="metar-date">${timeObj.date}</div>
                 </div>
                 <div class="popup-header-divider"></div>
-                ${warningBadgesHTML}
+                <div class="popup-metar-type">
+                    <div class="metar-type">${metarTypeHTML}</div>
+                    ${metarTypeLabel ? `<div class="metar-type-label">${metarTypeLabel}</div>` : ''}
+                    <span class="popup-section-info-icon" title="本部分告警徽章为过去6小时内所有对应机场未处理报文的告警徽章，其中仅带背景色的徽章为当前最新实况报文，其他为历史未处理报文徽章。">ⓘ</span>
+                </div>
             </div>
             <div class="metar-popup-body">
-                <div class="metar-popup-flight-section">
-                    ${flightInfoCardsHTML}
-                </div>
                 <div class="metar-popup-lower">
                     <div class="popup-info-item">
                         ${metarContentHTML}
                         <span class="popup-section-info-icon" title="本部分报文为对应机场最新的3份实况报文，不一定是告警徽章区域的徽章对应的报文。">ⓘ</span>
                     </div>
+                </div>
+                <div class="metar-popup-flight-section">
+                    ${flightInfoCardsHTML}
                 </div>
             </div>
             <div class="metar-popup-footer">

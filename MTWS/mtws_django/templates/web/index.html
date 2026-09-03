@@ -18,6 +18,25 @@
     <span class="user-code" id="user-code"></span>
     <button class="logout-btn" id="logout-btn">登出</button>
   </div>
+  <div class="status-info-container">
+    <div class="parsing-status-display">
+      <div class="parsing-status-item" id="flight-status">
+        <span class="status-label">航班</span>
+        <span class="status-indicator" id="flight-indicator">等待中...</span>
+        <span class="status-time" id="flight-time">--:--:--</span>
+      </div>
+      <div class="parsing-status-item" id="metar-status">
+        <span class="status-label">实况</span>
+        <span class="status-indicator" id="metar-indicator">等待中...</span>
+        <span class="status-time" id="metar-time">--:--:--</span>
+      </div>
+      <div class="parsing-status-item" id="taf-status">
+        <span class="status-label">预报</span>
+        <span class="status-indicator" id="taf-indicator">等待中...</span>
+        <span class="status-time" id="taf-time">--:--:--</span>
+      </div>
+    </div>
+  </div>
 </header>
 
 
@@ -817,7 +836,12 @@
       <div class="airport-reports-section">
         <h3>实况/预报报文</h3>
         <div class="reports-content">
-          <!-- 报文内容 -->
+          <div class="report-group report-group-metar">
+            <div class="report-group-body" id="airport-metar-reports"></div>
+          </div>
+          <div class="report-group report-group-taf">
+            <div class="report-group-body" id="airport-taf-reports"></div>
+          </div>
         </div>
       </div>
 

@@ -11,6 +11,14 @@
    改挂 html 可保持 body overflow: visible，sticky 正常工作。 */
 html {
   overflow-x: auto;
+  --alert-r: #e74c3c;
+  --alert-y: #f39c12;
+  --alert-g: #27ae60;
+  --alert-n: #95a5a6;
+  --alert-r-rgb: 231, 76, 60;
+  --alert-y-rgb: 243, 156, 18;
+  --alert-g-rgb: 39, 174, 96;
+  --alert-n-rgb: 149, 165, 166;
 }
 
 body {
@@ -153,6 +161,25 @@ body {
   flex-wrap: wrap;
 }
 
+.region-alert-dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  pointer-events: none;
+  display: none;
+}
+
+.region-alert-dot.visible {
+  display: block;
+}
+
+.region-alert-dot-R { background-color: var(--alert-r); }
+.region-alert-dot-Y { background-color: var(--alert-y); }
+.region-alert-dot-G { background-color: var(--alert-g); }
+
 /* 按钮基础样式 - 未选中状态 */
 .filter-btn,
 .action-btn {
@@ -167,6 +194,7 @@ body {
   font-family: inherit;
   min-width: 50px;
   text-align: center;
+  position: relative;
 }
 
 /* 告警裕度按钮特定样式 */
@@ -221,17 +249,17 @@ body {
 
 /* 特殊颜色边框的按钮 */
 .alert-red {
-  border-color: #e74c3c;
+  border-color: var(--alert-r);
   min-width: 25px;
 }
 
 .alert-yellow {
-  border-color: #f39c12;
+  border-color: var(--alert-y);
   min-width: 25px;
 }
 
 .alert-green {
-  border-color: #27ae60;
+  border-color: var(--alert-g);
   min-width: 25px;
 }
 
@@ -267,27 +295,27 @@ body {
 }
 
 .alert-red.selected {
-  background-color: #e74c3c;
+  background-color: var(--alert-r);
   color: white;
-  border-color: #e74c3c;
+  border-color: var(--alert-r);
 }
 
 .alert-yellow.selected {
-  background-color: #f39c12;
+  background-color: var(--alert-y);
   color: white;
-  border-color: #f39c12;
+  border-color: var(--alert-y);
 }
 
 .alert-green.selected {
-  background-color: #27ae60;
+  background-color: var(--alert-g);
   color: white;
-  border-color: #27ae60;
+  border-color: var(--alert-g);
 }
 
 .alert-none.selected {
-  background-color: #95a5a6;
+  background-color: var(--alert-n);
   color: white;
-  border-color: #95a5a6;
+  border-color: var(--alert-n);
 }
 
 /* 承运人区域 */
@@ -315,7 +343,7 @@ body {
   display: flex;
   align-items: center;
   min-width: 75px;
-  max-width: 100px; /* 新增：限制最大宽度 */
+  max-width: 130px;
   text-align: center;
   word-spacing: 8px;
   overflow: hidden; /* 新增：隐藏溢出内容 */
@@ -418,7 +446,7 @@ body {
   position: absolute;
   width: 50%;
   height: 100%;
-  background: #27ae60;
+  background: var(--alert-g);
   border-radius: 4px;
   transition: transform 0.3s ease;
   transform: translateX(0);   /* 默认：左侧(CST)选中 */
@@ -491,7 +519,7 @@ body {
   position: absolute;
   width: 20%;
   height: 100%;
-  background: #27ae60;
+  background: var(--alert-g);
   border-radius: 4px;
   transition: transform 0.2s ease;
   transform: translateX(0);
@@ -561,7 +589,7 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
   transform: translateY(-50%);
   background: none;
   border: none;
-  color: #e74c3c;
+  color: var(--alert-r);
   font-size: 14px;
   line-height: 1;
   cursor: pointer;
@@ -826,6 +854,8 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
 .airport-code-container {
   position: relative;
   display: inline-block;
+  padding: 2px 6px;
+  border-radius: 3px;
 }
 
 .airport-code {
@@ -917,19 +947,19 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
 }
 
 /* 告警颜色强化 */
-.weather-value[style*="color: #e74c3c"] {
+.weather-value[style*="color: var(--alert-r)"] {
   font-weight: bold;
-  text-shadow: 0 0 2px rgba(231, 76, 60, 0.3);
+  text-shadow: 0 0 2px rgba(var(--alert-r-rgb), 0.3);
 }
 
-.weather-value[style*="color: #f39c12"] {
+.weather-value[style*="color: var(--alert-y)"] {
   font-weight: bold;
-  text-shadow: 0 0 2px rgba(243, 156, 18, 0.3);
+  text-shadow: 0 0 2px rgba(var(--alert-y-rgb), 0.3);
 }
 
-.weather-value[style*="color: #27ae60"] {
+.weather-value[style*="color: var(--alert-g)"] {
   font-weight: bold;
-  text-shadow: 0 0 2px rgba(39, 174, 96, 0.3);
+  text-shadow: 0 0 2px rgba(var(--alert-g-rgb), 0.3);
 }
 
 /* 航班预测时间轴 */
@@ -968,17 +998,17 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
 
 /* 告警等级颜色 */
 .alert-level-R {
-  background-color: #e74c3c;
+  background-color: var(--alert-r);
   color: white;
 }
 
 .alert-level-Y {
-  background-color: #f39c12;
+  background-color: var(--alert-y);
   color: white;
 }
 
 .alert-level-G {
-  background-color: #27ae60;
+  background-color: var(--alert-g);
   color: white;
 }
 
@@ -1555,15 +1585,43 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
   overflow-x: hidden;
   color: #ffffff;
   font-style: normal;
-  padding: 10px;
-  background-color: #2c3e50;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  border-radius: 4px;
+  padding: 0;
+  background-color: transparent;
+  border: none;
+  border-radius: 0;
   transform: scale(0.85);
   transform-origin: left top;
   width: 117.6%;
   margin-bottom: 0;
   scrollbar-gutter: stable;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.report-group {
+  padding: 8px 10px;
+  border-radius: 4px;
+}
+
+.report-group-metar,
+.report-group-taf {
+  background-color: rgba(52, 152, 219, 0.1);
+}
+
+.report-group-metar {
+  border: 1px solid rgba(52, 152, 219, 0.55);
+}
+
+.report-group-taf {
+  border: 1px solid rgba(22, 160, 133, 0.55);
+}
+
+.report-group-empty {
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 12px;
+  font-style: italic;
+  padding: 4px 0;
 }
 
 /* 报文行样式：左侧色条按报文类型区分（实况/预报） */
@@ -1896,15 +1954,15 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
 }
 
 .status-online {
-  background-color: #27ae60;
+  background-color: var(--alert-g);
 }
 
 .status-offline {
-  background-color: #e74c3c;
+  background-color: var(--alert-r);
 }
 
 .status-warning {
-  background-color: #f39c12;
+  background-color: var(--alert-y);
 }
 
 /* 统一的状态信息容器 */
@@ -1958,15 +2016,15 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
 
 /* 解析状态指示器样式 */
 .status-success {
-  color: #27ae60;
+  color: var(--alert-g);
 }
 
 .status-error {
-  color: #e74c3c;
+  color: var(--alert-r);
 }
 
 .status-loading {
-  color: #f39c12;
+  color: var(--alert-y);
 }
 
 .status-pending {
@@ -2433,19 +2491,19 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
 
 /* 标签页告警颜色 - 字体颜色 */
 .popup-tab.warning-R {
-  color: #e74c3c;
+  color: var(--alert-r);
 }
 
 .popup-tab.warning-Y {
-  color: #f39c12;
+  color: var(--alert-y);
 }
 
 .popup-tab.warning-G {
-  color: #27ae60;
+  color: var(--alert-g);
 }
 
 .popup-tab.warning-N {
-  color: #95a5a6;
+  color: var(--alert-n);
 }
 
 /* 标签页未处理数量徽章 */
@@ -2556,6 +2614,7 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
+  position: relative;
 }
 
 .popup-metar-type .metar-type {
@@ -2567,7 +2626,7 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
 }
 
 .popup-metar-type .metar-type .popup-value-highlight {
-  color: #e74c3c;
+  color: var(--alert-r);
   font-size: inherit;
   font-weight: inherit;
   line-height: inherit;
@@ -2610,15 +2669,16 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
   letter-spacing: 0.5px;
 }
 
-/* 告警徽章区 */
+/* 告警徽章区：随徽章内容自适应宽度，不占满剩余空间 */
 .popup-warning-badges {
-  flex: 1;
+  flex: 0 1 auto;
+  width: auto;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 6px;
   justify-content: center;
-  align-items: center;
-  position: relative;
+  align-items: stretch;
 }
 
 .popup-warning-row {
@@ -2626,6 +2686,7 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
   gap: 6px;
   flex-wrap: wrap;
   justify-content: center;
+  width: 100%;
 }
 
 .warning-badge {
@@ -2638,30 +2699,30 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
 }
 
 .warning-badge.warning-R {
-  background-color: #e74c3c;
+  background-color: var(--alert-r);
 }
 
 .warning-badge.warning-Y {
-  background-color: #f39c12;
+  background-color: var(--alert-y);
 }
 
 .warning-badge.warning-G {
-  background-color: #27ae60;
+  background-color: var(--alert-g);
 }
 
 .warning-badge.warning-border-R {
   background-color: transparent;
-  border: 2px solid #e74c3c;
+  border: 2px solid var(--alert-r);
 }
 
 .warning-badge.warning-border-Y {
   background-color: transparent;
-  border: 2px solid #f39c12;
+  border: 2px solid var(--alert-y);
 }
 
 .warning-badge.warning-border-G {
   background-color: transparent;
-  border: 2px solid #27ae60;
+  border: 2px solid var(--alert-g);
 }
 
 /* 弹窗主体内容 */
@@ -2754,13 +2815,13 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
 
 .flight-info-time.soon,
 .flight-info-date.soon {
-  color: #e74c3c;
+  color: var(--alert-r);
   font-weight: bold;
 }
 
 .flight-info-time.past,
 .flight-info-date.past {
-  color: #e74c3c;
+  color: var(--alert-r);
   font-weight: bold;
 }
 
@@ -2778,7 +2839,7 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
 }
 
 .flight-info-status.yes {
-  color: #e74c3c;
+  color: var(--alert-r);
   font-weight: bold;
 }
 
@@ -2824,9 +2885,9 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
   user-select: none;
 }
 
-.popup-warning-badges .popup-section-info-icon {
-  right: 4px;
-  bottom: 4px;
+.popup-metar-type .popup-section-info-icon {
+  right: 0;
+  bottom: 0;
 }
 
 .popup-label {
@@ -2847,7 +2908,7 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
 }
 
 .popup-value-highlight {
-  color: #e74c3c;
+  color: var(--alert-r);
   font-size: 16px;
   font-weight: bold;
 }
@@ -2876,17 +2937,17 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
 
 .report-alert-R,
 .popup-metar-alert-R {
-  background-color: rgba(231, 76, 60, 0.5);
+  background-color: rgba(var(--alert-r-rgb), 0.5);
 }
 
 .report-alert-Y,
 .popup-metar-alert-Y {
-  background-color: rgba(243, 156, 18, 0.5);
+  background-color: rgba(var(--alert-y-rgb), 0.5);
 }
 
 .report-alert-G,
 .popup-metar-alert-G {
-  background-color: rgba(39, 174, 96, 0.5);
+  background-color: rgba(var(--alert-g-rgb), 0.5);
 }
 
 /* 弹窗底部按钮区 */
@@ -2951,7 +3012,7 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
 }
 
 .popup-btn-received {
-  background-color: #27ae60;
+  background-color: var(--alert-g);
   color: #ffffff;
 }
 
@@ -3020,7 +3081,7 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
 }
 
 .popup-confirm-btn-ok {
-  background-color: #e74c3c;
+  background-color: var(--alert-r);
   color: #ffffff;
 }
 
@@ -3097,7 +3158,7 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
   position: absolute;
   width: 50%;
   height: 100%;
-  background: #27ae60;
+  background: var(--alert-g);
   border-radius: 4px;
   transition: transform 0.3s ease;
   transform: translateX(0);   /* 默认：左侧(中国)选中 */
@@ -3215,8 +3276,8 @@ body.map-mode #international-button-group .filter-btn {
 }
 .settings-tab:hover { color: #2c3e50; }
 .settings-tab.active {
-  color: #27ae60;
-  border-bottom-color: #27ae60;
+  color: var(--alert-g);
+  border-bottom-color: var(--alert-g);
   font-weight: bold;
 }
 
@@ -3313,7 +3374,7 @@ body.map-mode #international-button-group .filter-btn {
   margin-bottom: 4px;
   font-weight: 500;
 }
-.settings-required { color: #e74c3c; }
+.settings-required { color: var(--alert-r); }
 .settings-hint {
   font-size: 11px;
   color: #888;
@@ -3332,7 +3393,7 @@ body.map-mode #international-button-group .filter-btn {
   outline: none;
   transition: border-color 0.2s;
 }
-.settings-input:focus { border-color: #27ae60; }
+.settings-input:focus { border-color: var(--alert-g); }
 .settings-input-sm { width: 90px; }
 .settings-select { cursor: pointer; }
 
@@ -3365,7 +3426,7 @@ body.map-mode #international-button-group .filter-btn {
   position: absolute;
   width: 50%;
   height: 100%;
-  background: #27ae60;
+  background: var(--alert-g);
   border-radius: 4px;
   transition: transform 0.25s ease;
   transform: translateX(0);
@@ -3405,7 +3466,7 @@ body.map-mode #international-button-group .filter-btn {
   position: absolute;
   width: 33.33%;
   height: 100%;
-  background: #27ae60;
+  background: var(--alert-g);
   border-radius: 4px;
   transition: transform 0.2s ease;
   z-index: 1;
@@ -3414,7 +3475,7 @@ body.map-mode #international-button-group .filter-btn {
 /* Action buttons in toolbar / table */
 .settings-add-btn {
   padding: 6px 14px;
-  background: #27ae60;
+  background: var(--alert-g);
   color: white;
   border: none;
   border-radius: 4px;
@@ -3432,9 +3493,9 @@ body.map-mode #international-button-group .filter-btn {
 }
 .settings-edit-btn { background: #3498db; color: white; }
 .settings-edit-btn:hover { background: #2980b9; }
-.settings-del-btn { background: #e74c3c; color: white; }
+.settings-del-btn { background: var(--alert-r); color: white; }
 .settings-del-btn:hover { background: #c0392b; }
-.settings-save-inline-btn { background: #27ae60; color: white; }
+.settings-save-inline-btn { background: var(--alert-g); color: white; }
 .settings-save-inline-btn:hover { background: #219d55; }
 .settings-cancel-inline-btn { background: #95a5a6; color: white; }
 .settings-cancel-inline-btn:hover { background: #7f8c8d; }
@@ -3448,7 +3509,7 @@ body.map-mode #international-button-group .filter-btn {
 }
 .settings-btn-save {
   padding: 7px 20px;
-  background: #27ae60;
+  background: var(--alert-g);
   color: white;
   border: none;
   border-radius: 4px;
@@ -3488,7 +3549,7 @@ body.map-mode #international-button-group .filter-btn {
   font-size: 12px;
   text-align: center;
 }
-.settings-timer-input:focus { border-color: #27ae60; outline: none; }
+.settings-timer-input:focus { border-color: var(--alert-g); outline: none; }
 
 /* Table auto-width: content-driven column widths, no wrapping */
 .settings-table-auto {
@@ -3570,7 +3631,7 @@ body.map-mode #international-button-group .filter-btn {
   font-size: 12px;
   text-align: center;
 }
-.settings-threshold-input:focus { border-color: #27ae60; outline: none; }
+.settings-threshold-input:focus { border-color: var(--alert-g); outline: none; }
 
 /* 机场坐标搜索布局 */
 .loc-search-wrap {
@@ -3629,5 +3690,5 @@ body.map-mode #international-button-group .filter-btn {
   min-height: 24px;
   flex-shrink: 0;
 }
-.settings-msg.success { color: #27ae60; }
-.settings-msg.error { color: #e74c3c; }
+.settings-msg.success { color: var(--alert-g); }
+.settings-msg.error { color: var(--alert-r); }

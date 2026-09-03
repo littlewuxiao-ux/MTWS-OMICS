@@ -9,9 +9,13 @@
 function updateCarrierDisplay() {
     const carrierDisplay = document.getElementById('carrier-display');
     if (currentCarriers && currentCarriers.length > 0) {
-        const text = currentCarriers.join(' ');
+        const shown = currentCarriers.slice(0, 2);
+        const extra = currentCarriers.length - 2;
+        const text = extra > 0
+            ? `${shown.join(' ')} +${extra}`
+            : shown.join(' ');
         carrierDisplay.textContent = text;
-        carrierDisplay.title = text; // 新增：鼠标悬停显示完整内容
+        carrierDisplay.title = currentCarriers.join(' ');
     } else {
         carrierDisplay.textContent = '暂无承运人数据';
         carrierDisplay.title = '暂无承运人数据'; // 新增

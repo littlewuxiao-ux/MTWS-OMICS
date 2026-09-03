@@ -108,7 +108,11 @@ function _syncPanelPosition() {
 // ─────────────────────────────────────────────────────────────────
 
 function _mapColor(level) {
-    const c = { R: '#e74c3c', Y: '#f39c12', G: '#27ae60', N: '#7f8c8d' };
+    if (level === 'N' || !level) return '#7f8c8d';
+    if (typeof getAlertColorHex === 'function') {
+        return getAlertColorHex(level);
+    }
+    const c = { R: '#e74c3c', Y: '#f39c12', G: '#27ae60' };
     return c[level] || '#7f8c8d';
 }
 
@@ -287,8 +291,8 @@ function _makeTooltip() {
                 ['上一站最近起飞', fmtTs(_fv ? _fv.closest_departure_time_of_arriving_flight : null)],
                 ['本场最近着陆',   fmtTs(_fv ? _fv.closest_landing_time_of_arriving_flight   : null)],
                 ['本场最近起飞',   fmtTs(_fv ? _fv.closest_departure_time_at_this_airport     : null)],
-                ['已有航班前往本场', fmtBool(_fv != null ? _fv.en_route    : null, '#f39c12', '#7f8c8d')],
-                ['是否有飞机停场',  fmtBool(_fv != null ? _fv.has_parking : null, '#e74c3c', '#7f8c8d')],
+                ['已有航班前往本场', fmtBool(_fv != null ? _fv.en_route    : null, getAlertColorHex('Y'), '#7f8c8d')],
+                ['是否有飞机停场',  fmtBool(_fv != null ? _fv.has_parking : null, getAlertColorHex('R'), '#7f8c8d')],
             ];
 
             rows.forEach(([label, value]) => {

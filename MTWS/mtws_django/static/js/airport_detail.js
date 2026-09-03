@@ -150,10 +150,30 @@ function loadAirportExtraInfo(airportCode) {
 }
 
 // 加载历史报文
-function loadHistoryReports(airportCode) {
+function compensateReportsContentScale() {
   const reportsContent = document.querySelector('.airport-reports-section .reports-content');
+  if (!reportsContent) return;
+  const contentHeight = reportsContent.offsetHeight;
+  reportsContent.style.marginBottom = `${-(contentHeight * 0.15)}px`;
+}
 
-  if (reportsContent) reportsContent.innerHTML = '<div class="loading">加载中...</div>';
+function fillReportGroup(elementId, reports, lineClass, emptyText) {
+  const el = document.getElementById(elementId);
+  if (!el) return;
+  if (reports && reports.length > 0) {
+    el.innerHTML = reports.map(report => {
+      const body = report.html || report.content || '';
+      return `<div class="report-line ${lineClass}"><span class="report-content">${body}</span></div>`;
+    }).join('');
+    return;
+  }
+  el.innerHTML = `<div class="report-group-empty">${emptyText}</div>`;
+}
+
+function loadHistoryReports(airportCode) {
+  fillReportGroup('airport-metar-reports', null, 'metar-line', '加载中...');
+  fillReportGroup('airport-taf-reports', null, 'taf-line', '加载中...');
+  compensateReportsContentScale();
 
   const headers = {};
   if (currentTimeMode === 'current' && currentToken) {
@@ -175,47 +195,20 @@ function loadHistoryReports(airportCode) {
         displayHistoryReports(data.data);
       } else {
         console.error('加载历史报文失败:', data.error);
-        if (reportsContent) reportsContent.innerHTML = '<div class="error">加载失败</div>';
+        displayHistoryReports({});
       }
     })
     .catch(error => {
       console.error('请求历史报文失败:', error);
-      if (reportsContent) reportsContent.innerHTML = '<div class="error">请求失败</div>';
+      displayHistoryReports({});
     });
 }
 
-// 显示历史报文
 function displayHistoryReports(data) {
-  const reportsContent = document.querySelector('.airport-reports-section .reports-content');
-
-  if (reportsContent) {
-    let html = '';
-    
-    if (data.metar_reports && data.metar_reports.length > 0) {
-      data.metar_reports.forEach(report => {
-        const body = report.html || report.content || '';
-        html += `<div class="report-line metar-line"><span class="report-content">${body}</span></div>`;
-      });
-    }
-
-    if (data.taf_reports && data.taf_reports.length > 0) {
-      data.taf_reports.forEach(report => {
-        const body = report.html || report.content || '';
-        html += `<div class="report-line taf-line"><span class="report-content">${body}</span></div>`;
-      });
-    }
-    
-    if (html === '') {
-      html = '<div class="no-data">暂无报文</div>';
-    }
-    
-    reportsContent.innerHTML = html;
-
-    // .reports-content 使用 transform: scale(0.85) 缩小显示，但布局仍按缩放前的高度占位，
-    // 导致容器底部出现空隙；根据实际内容高度动态补偿负 margin-bottom 以消除该空隙。
-    const contentHeight = reportsContent.offsetHeight;
-    reportsContent.style.marginBottom = `${-(contentHeight * 0.15)}px`;
-  }
+  const payload = data || {};
+  fillReportGroup('airport-metar-reports', payload.metar_reports, 'metar-line', '获取历史实况数据失败');
+  fillReportGroup('airport-taf-reports', payload.taf_reports, 'taf-line', '获取历史预报数据失败');
+  compensateReportsContentScale();
 }
 
 // ==================================

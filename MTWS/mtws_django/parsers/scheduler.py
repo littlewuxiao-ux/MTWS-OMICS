@@ -54,7 +54,7 @@ def update_parsing_status(data_type: str, success: bool, message: str = '') -> N
     _parsing_status[data_type]['success'] = success
     _parsing_status[data_type]['message'] = message
     if success:
-        _parsing_status[data_type]['time'] = datetime.now().isoformat()
+        _parsing_status[data_type]['time'] = datetime.now().astimezone().isoformat()
 
 
 def get_parsing_status() -> dict:
