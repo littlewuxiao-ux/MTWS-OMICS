@@ -261,25 +261,71 @@ def find_node_exe():
 
 def _iwbp_has_proxy(root):
     try:
-        return root.is_dir() and (root / "tools" / "dev-server-proxy.cjs").is_file()
+        if not root:
+            return False
+        tools = Path(root) / "tools"
+        direct = tools / "dev-server-proxy.cjs"
+        if direct.is_file() or os.path.isfile(str(direct)):
+            return True
+        if tools.is_dir():
+            for item in tools.iterdir():
+                if item.is_file() and item.name.lower() == "dev-server-proxy.cjs":
+                    return True
     except Exception:
         return False
+    return False
+
+
+def _iwbp_search_nearby(root):
+    """在配置目录及其一层子目录中查找完整 IWBP（跳过 node_modules/.git）。"""
+    if _iwbp_has_proxy(root):
+        return root
+    if not root or not root.is_dir():
+        return None
+    skip = {".git", "node_modules", "__pycache__", ".venv", "venv"}
+    try:
+        children = list(root.iterdir())
+    except Exception:
+        return None
+    preferred = ("拷贝", "copy", "workbench", "V2", "v2")
+    ordered = []
+    for name in preferred:
+        p = root / name
+        if p.is_dir():
+            ordered.append(p)
+    for child in children:
+        if child.is_dir() and child.name not in skip and child not in ordered:
+            ordered.append(child)
+    for child in ordered:
+        if _iwbp_has_proxy(child):
+            return child
+        nested = child / "IWBP"
+        if _iwbp_has_proxy(nested):
+            return nested
+    return None
 
 
 def resolve_iwbp_root(path):
     """定位 IWBP 根目录（含 tools/dev-server-proxy.cjs）。
 
-    兼容：填仓库根、IWBP 根、tools 目录、或代理脚本文件路径。
+    优先用启动器所在工程里的 IWBP（例如 D:\\Projects\\MTWS-OMICS\\IWBP），
+    避免路径配置仍指向另一块盘上缺少脚本的旧副本（例如 E:\\MTWS-OMICS\\IWBP）。
     """
     raw = str(path or "").strip().strip('"')
-    candidates = []
+    seeds = []
 
     def add(item):
         if item is None:
             return
         p = item if isinstance(item, Path) else Path(str(item))
-        candidates.append(p)
+        seeds.append(p)
 
+    # 1) 启动器旁边的完整工程（Cursor 里打开的那份）
+    add(SCRIPT_DIR / "IWBP")
+    add(SCRIPT_DIR)
+    add(Path(r"D:\Projects\MTWS-OMICS") / "IWBP")
+    add(Path(r"D:\Projects\MTWS-OMICS"))
+    # 2) 用户在路径配置里填的目录
     if raw:
         given = Path(raw)
         add(given)
@@ -293,10 +339,9 @@ def resolve_iwbp_root(path):
             add(given.parent.parent)
             add(given.parent)
     add(DEFAULT_IWBP_DIR)
-    add(SCRIPT_DIR / "IWBP")
 
     seen = set()
-    for p in candidates:
+    for p in seeds:
         try:
             p = p.expanduser().resolve()
         except Exception:
@@ -310,11 +355,13 @@ def resolve_iwbp_root(path):
         seen.add(key)
         if p.is_file() and p.name.lower() == "dev-server-proxy.cjs":
             p = p.parent.parent
-        if _iwbp_has_proxy(p):
-            return p
+        found = _iwbp_search_nearby(p)
+        if found:
+            return found
         nested = p / "IWBP"
-        if _iwbp_has_proxy(nested):
-            return nested
+        found = _iwbp_search_nearby(nested)
+        if found:
+            return found
     return None
 
 
@@ -613,9 +660,14 @@ class ServicePanel:
                     self.log("未找到 node.exe。请安装 Node.js LTS，或把 node 加入系统 PATH 后重启启动器。", "error")
                 else:
                     checked = path or str(DEFAULT_IWBP_DIR)
+                    missing = Path(checked) / "tools" / "dev-server-proxy.cjs"
                     self.log(
-                        f"未找到 IWBP 启动脚本。当前配置：{checked}。"
-                        f"请选择含 tools\\dev-server-proxy.cjs 的 IWBP 根目录（也可选仓库根目录）。",
+                        f"IWBP 目录「{checked}」下没有启动脚本：{missing}",
+                        "error",
+                    )
+                    self.log(
+                        "该目录多半是不完整副本。请把完整 IWBP（含 tools\\dev-server-proxy.cjs）同步过来，"
+                        "或在路径配置中改选含该文件的目录（例如 IWBP\\拷贝）。",
                         "error",
                     )
             else:
@@ -648,7 +700,17 @@ class ServicePanel:
             root = resolve_iwbp_root(path)
             if not root:
                 raise FileNotFoundError(f"未找到 IWBP 启动入口: {path}")
-            return [str(node), "tools/dev-server-proxy.cjs"], str(root)
+            configured = str(Path(path).expanduser().resolve()) if path else ""
+            actual = str(root)
+            if configured and configured.lower().rstrip("\\/") != actual.lower().rstrip("\\/"):
+                self.log(
+                    f"配置目录「{path}」中没有 tools\\dev-server-proxy.cjs，已改用启动器旁的完整 IWBP：{actual}",
+                    "warn",
+                )
+                self.cfg["work_dir"] = actual
+            else:
+                self.log(f"IWBP 工作目录：{actual}", "info")
+            return [str(node), "tools/dev-server-proxy.cjs"], actual
         # OMICS: 内联启动 Flask+Waitress，不再依赖 run_server.py
         wd = str(Path(path))
         return ([sys.executable, "-u", "-c", OMICS_INLINE_CODE, "--host", self.host,
@@ -1244,6 +1306,8 @@ class LauncherApp(ctk.CTk):
                     svc.log("未找到 nginx.exe。后端会启动，但 8000 统一入口需安装/放置 Nginx 后才能工作。", "warn")
                 elif svc.key == "iwbp" and not find_node_exe():
                     svc.log("未找到 node.exe，IWBP 无法启动。请安装 Node.js LTS。", "warn")
+                elif svc.key == "iwbp":
+                    svc.log("IWBP 启动脚本未就绪，将在启动时再检查 tools\\dev-server-proxy.cjs。", "warn")
                 else:
                     svc.log(f"未配置启动路径，请点右上「路径配置」。", "warn")
         self._start_all()
