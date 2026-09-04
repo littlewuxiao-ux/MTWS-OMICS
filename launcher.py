@@ -1228,8 +1228,13 @@ class LauncherApp(ctk.CTk):
     def _on_close(self):
         if TRAY_AVAILABLE and self.tray_icon:
             self.withdraw()
-        else:
-            self._quit_app()
+            return
+        # pystray/Pillow 未安装时无法挂托盘，关闭窗口会真正退出服务。
+        try:
+            self.mtws.log("未安装 pystray/Pillow，关闭窗口将退出服务。请执行: python -m pip install pystray pillow", "warn")
+        except Exception:
+            pass
+        self._quit_app()
 
     def _show_window(self):
         self.after(0, self._do_show_window)

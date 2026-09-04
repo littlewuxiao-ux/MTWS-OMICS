@@ -79,6 +79,7 @@ call :install Pillow==12.2.0
 
 echo [10/13] 安装服务端 GUI 包 ...
 call :install customtkinter
+call :install pystray
 
 echo [11/13] 安装可选增强包 ^(地图生成 / 机场搜索，缺失不影响主系统启动^) ...
 call :install shapely
@@ -86,7 +87,7 @@ call :install scipy
 call :install rapidfuzz
 
 echo [12/13] 安装完成，正在核对关键模块 ...
-python -c "import django, rest_framework, pandas, numpy, requests, PIL, suntime, apscheduler, customtkinter, httpx, geopy, xmltodict; print('关键模块导入成功')"
+python -c "import django, rest_framework, pandas, numpy, requests, PIL, suntime, apscheduler, customtkinter, pystray, httpx, geopy, xmltodict; print('关键模块导入成功')"
 if errorlevel 1 (
     echo 核对失败：部分关键模块无法导入。
     set FAILED=1
