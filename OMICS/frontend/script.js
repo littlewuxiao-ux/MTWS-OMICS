@@ -75,6 +75,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         return !['--', '-', 'UNDEFINED', 'NULL', 'NONE'].includes(value.toUpperCase());
     }
 
+    function isLocalBrowserHost() {
+        const h = String(location.hostname || '').toLowerCase();
+        return h === '127.0.0.1' || h === 'localhost' || h === '::1';
+    }
+
     // 🌟 配置持久化根治(方案A):优先用 <script> 同步加载的 window.OMICS_CONFIG 作为唯一数据源,
     //   再用它回填 localStorage(仅作兼容缓存)。fetch 仅作极端兜底。
     //   这样浏览器清了 localStorage 也不会把空值 PATCH 回去覆盖磁盘配置。
@@ -438,7 +443,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             const providedName = normalizedDisplayName && normalizedDisplayName !== String(currentUserId)
                 ? normalizedDisplayName
                 : '';
-            const chineseName = mappedName || providedName || (isOffline ? "离线模式" : String(currentUserId));
+            const chineseName = (typeof isLocalBrowserHost === "function" && !isLocalBrowserHost())
+                ? "共享用户"
+                : (mappedName || providedName || (isOffline ? "离线模式" : String(currentUserId)));
             userIdDisplay.textContent = `当前账号: ${chineseName}`;
 
             localStorage.setItem('sf_userId', currentUserId);

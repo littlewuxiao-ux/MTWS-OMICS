@@ -1,7 +1,7 @@
 @echo off
 rem ============================================================
 rem  Unified Server Launcher (no console window)
-rem  MTWS + OMICS -> launcher.py via pythonw
+rem  MTWS + OMICS + IWBP -> launcher.py via pythonw
 rem  Use PowerShell Start-Process to avoid cmd/start path parsing issues.
 rem ============================================================
 set "ROOT=%~dp0"
