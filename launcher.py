@@ -237,27 +237,72 @@ def find_nginx_exe(configured_path=""):
 
 
 def find_node_exe():
+    candidates = []
     try:
         import shutil
         found = shutil.which("node.exe") or shutil.which("node")
         if found:
-            return Path(found)
+            candidates.append(Path(found))
     except Exception:
         pass
+    pf = os.environ.get("ProgramFiles", r"C:\Program Files")
+    pf86 = os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")
+    local = os.environ.get("LOCALAPPDATA", "")
+    candidates.extend([
+        Path(pf) / "nodejs" / "node.exe",
+        Path(pf86) / "nodejs" / "node.exe",
+        Path(local) / "Programs" / "nodejs" / "node.exe" if local else None,
+    ])
+    for c in candidates:
+        if c and c.exists() and c.is_file():
+            return c
     return None
 
 
+def _iwbp_has_proxy(root):
+    try:
+        return root.is_dir() and (root / "tools" / "dev-server-proxy.cjs").is_file()
+    except Exception:
+        return False
+
+
 def resolve_iwbp_root(path):
-    """IWBP 根目录需包含 tools/dev-server-proxy.cjs。"""
-    raw = (path or "").strip()
+    """定位 IWBP 根目录（含 tools/dev-server-proxy.cjs）。
+
+    兼容：填仓库根、IWBP 根、tools 目录、或代理脚本文件路径。
+    """
+    raw = str(path or "").strip().strip('"')
     candidates = []
+
+    def add(item):
+        if item is None:
+            return
+        p = item if isinstance(item, Path) else Path(str(item))
+        candidates.append(p)
+
     if raw:
-        candidates.append(Path(raw))
-    candidates.append(DEFAULT_IWBP_DIR)
+        given = Path(raw)
+        add(given)
+        if not given.is_absolute():
+            add(SCRIPT_DIR / given)
+        add(given / "IWBP")
+        add(given.parent)
+        if given.name.lower() == "tools":
+            add(given.parent)
+        if given.name.lower() == "dev-server-proxy.cjs":
+            add(given.parent.parent)
+            add(given.parent)
+    add(DEFAULT_IWBP_DIR)
+    add(SCRIPT_DIR / "IWBP")
+
     seen = set()
     for p in candidates:
         try:
-            key = str(p.resolve())
+            p = p.expanduser().resolve()
+        except Exception:
+            pass
+        try:
+            key = str(p).lower()
         except Exception:
             key = str(p)
         if key in seen:
@@ -265,8 +310,11 @@ def resolve_iwbp_root(path):
         seen.add(key)
         if p.is_file() and p.name.lower() == "dev-server-proxy.cjs":
             p = p.parent.parent
-        if p.is_dir() and (p / "tools" / "dev-server-proxy.cjs").exists():
+        if _iwbp_has_proxy(p):
             return p
+        nested = p / "IWBP"
+        if _iwbp_has_proxy(nested):
+            return nested
     return None
 
 
@@ -562,9 +610,14 @@ class ServicePanel:
                 self.log("未找到 nginx.exe。请将 portable Nginx 放到 tools\\nginx\\nginx.exe，或在「路径配置」中指定。", "error")
             elif self.key == "iwbp":
                 if not find_node_exe():
-                    self.log("未找到 node.exe。请安装 Node.js LTS 并确保 node 在 PATH 中。", "error")
+                    self.log("未找到 node.exe。请安装 Node.js LTS，或把 node 加入系统 PATH 后重启启动器。", "error")
                 else:
-                    self.log("未配置有效 IWBP 目录（需包含 tools\\dev-server-proxy.cjs）。请点「路径配置」。", "error")
+                    checked = path or str(DEFAULT_IWBP_DIR)
+                    self.log(
+                        f"未找到 IWBP 启动脚本。当前配置：{checked}。"
+                        f"请选择含 tools\\dev-server-proxy.cjs 的 IWBP 根目录（也可选仓库根目录）。",
+                        "error",
+                    )
             else:
                 self.log(f"未配置有效启动路径，无法启动。请点「路径配置」。", "error")
             self.app.after(0, self._ui_unstarted)
@@ -1489,7 +1542,8 @@ class PathConfigDialog(ctk.CTkToplevel):
 
         self.iwbp_entry = self._dir_row(
             "IWBP 项目根目录（含 tools/dev-server-proxy.cjs）",
-            self.cfg.get("iwbp", {}).get("work_dir", str(DEFAULT_IWBP_DIR) if DEFAULT_IWBP_DIR.exists() else ""),
+            self.cfg.get("iwbp", {}).get("work_dir")
+            or (str(DEFAULT_IWBP_DIR) if DEFAULT_IWBP_DIR.exists() else ""),
             "选择 IWBP 项目根目录")
         self.iwbp_port = self._port_row("IWBP 内部端口", self.cfg.get("iwbp", {}).get("port", 8787))
 
@@ -1565,8 +1619,9 @@ class PathConfigDialog(ctk.CTkToplevel):
             self.hint.configure(text="⚠ MTWS 根目录无效，需能定位到 mtws_django/manage.py。"); return
         if omics_path and (not os.path.isdir(os.path.join(omics_path, "backend")) or not os.path.isdir(os.path.join(omics_path, "frontend"))):
             self.hint.configure(text="⚠ OMICS 项目根目录无效，需包含 backend/frontend。"); return
-        if iwbp_path and not resolve_iwbp_root(iwbp_path):
-            self.hint.configure(text="⚠ IWBP 根目录无效，需包含 tools/dev-server-proxy.cjs。"); return
+        resolved_iwbp = resolve_iwbp_root(iwbp_path) if iwbp_path else resolve_iwbp_root(DEFAULT_IWBP_DIR)
+        if iwbp_path and not resolved_iwbp:
+            self.hint.configure(text="⚠ IWBP 根目录无效，需能定位到 tools/dev-server-proxy.cjs。"); return
         try:
             self.cfg["mtws"]["port"] = int(self.mtws_port.get().strip() or 8001)
             self.cfg["omics"]["port"] = int(self.omics_port.get().strip() or 8002)
@@ -1585,7 +1640,7 @@ class PathConfigDialog(ctk.CTkToplevel):
         self.cfg["iwbp"]["name"] = self.cfg["iwbp"].get("name") or "IWBP 业务工作台"
         self.cfg["iwbp"]["host"] = "127.0.0.1"
         self.cfg["iwbp"]["home_path"] = "/index.html"
-        self.cfg["iwbp"]["work_dir"] = iwbp_path or (str(DEFAULT_IWBP_DIR) if DEFAULT_IWBP_DIR.exists() else "")
+        self.cfg["iwbp"]["work_dir"] = str(resolved_iwbp) if resolved_iwbp else (iwbp_path or "")
         self.cfg["iwbp"]["public_home_url"] = f"http://127.0.0.1:{nginx_port}/iwbp/"
         self.cfg["nginx"].setdefault("name", "Nginx 统一入口")
         self.cfg["nginx"]["host"] = "0.0.0.0"
