@@ -3898,11 +3898,6 @@ function updateAirportGridForModal(airportElement) {
 
 // ============== 鉴权相关函数 ==============
 
-function isLocalBrowserHost() {
-    const h = String(location.hostname || "").toLowerCase();
-    return h === "127.0.0.1" || h === "localhost" || h === "::1";
-}
-
 const UNIFIED_AUTH_STATUS_URL = '/auth/status';
 const UNIFIED_AUTH_UPDATE_URL = '/auth/update';
 const UNIFIED_AUTH_CLEAR_URL = '/auth/clear';
@@ -4282,9 +4277,7 @@ function showUserInfo() {
     const userInfoSection = document.getElementById('user-info-section');
     const userCodeSpan = document.getElementById('user-code');
 
-    userCodeSpan.textContent = (!isLocalBrowserHost())
-        ? '共享用户'
-        : (currentUserCode || '未知用户');
+    userCodeSpan.textContent = currentUserCode || '未知用户';
     userInfoSection.style.display = 'flex';
 }
 
