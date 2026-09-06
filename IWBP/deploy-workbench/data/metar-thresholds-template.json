@@ -1,0 +1,60 @@
+{
+  "_说明": "复制本文件为 metar-thresholds.json 后按需填写；与 index.html 中 METAR_MONITOR_RULES 结构对应，便于业务评审与版本管理。单位：能见度米(m)、风速节(kt)、rank 1=注意 2=警告 3=严重。",
+  "visibility": {
+    "treatNumericAsMetersWhenAbove": 50,
+    "criticalBelowM": 400,
+    "warningBelowM": 800,
+    "cautionBelowM": 3000
+  },
+  "wind": {
+    "cautionKts": 17,
+    "warningKts": 28,
+    "criticalKts": 35
+  },
+  "flightCategory": {
+    "lifrRank": 3,
+    "ifrRank": 2,
+    "mvfrRank": 1
+  },
+  "weather": {
+    "fogBrWithVisWarningBelowM": 800,
+    "rules": [
+      {
+        "rank": 2,
+        "reason": "雷暴相关",
+        "patternHint": "示例：TS / TSRA / VCTS / LTNG（正则写在 METAR_MONITOR_RULES 内）"
+      },
+      {
+        "rank": 2,
+        "reason": "冻降水/结冰",
+        "patternHint": "FZ / FZRA / FZFG / FZDZ"
+      },
+      {
+        "rank": 2,
+        "reason": "强降水（+）",
+        "patternHint": "+RA / +SN / +TSRA 等"
+      },
+      {
+        "rank": 2,
+        "reason": "阵性降水（中等以上）",
+        "patternHint": "SHRA / SHSN"
+      },
+      {
+        "rank": 1,
+        "reason": "危险现象（冰雹/飑等）",
+        "patternHint": "GR / GS / SQ"
+      },
+      {
+        "rank": 1,
+        "reason": "中等强度降水（非轻/强标记）",
+        "patternHint": "空格后的 RA/SN/DZ/PL（排除 -RA 与 +RA）"
+      }
+    ]
+  },
+  "业务扩展（可选）": {
+    "RVR": "若接入 RVR，可与能见度合并为「运行最低标准」一条规则。",
+    "跑道": "侧风/阵风分量、道面污染代码需单独字段与阈值表。",
+    "席位": "按席位/角色过滤机场列表与告警等级（如仅看本区枢纽）。",
+    "值班": "确认与发布、交接班记录、与要素展示联动（同一机场一键跳转）。"
+  }
+}

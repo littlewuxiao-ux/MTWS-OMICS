@@ -1,0 +1,833 @@
+{
+  "version": 1,
+  "source": "docs/天气标准",
+  "levelLegend": {
+    "R": "红色",
+    "Y": "黄色",
+    "G": "绿色"
+  },
+  "badWeatherLegend": {
+    "Y": "是",
+    "N": "否"
+  },
+  "global": {
+    "_columns": [
+      "红色标准",
+      "黄色标准",
+      "绿色标准",
+      "单位"
+    ],
+    "visibilityM": {
+      "red": 800.0,
+      "yellow": 1600.0,
+      "green": 2000.0,
+      "unit": "m"
+    },
+    "rvrM": {
+      "red": 550.0,
+      "yellow": 1000.0,
+      "green": 2000.0,
+      "unit": "m"
+    },
+    "cloudBase30m": {
+      "red": 2.0,
+      "yellow": 5.0,
+      "green": 10.0,
+      "unit": "30m"
+    },
+    "windAvgMps": {
+      "red": 12.0,
+      "yellow": 8.0,
+      "green": 5.0,
+      "unit": "m/s"
+    },
+    "windAvgKt": {
+      "red": 24.0,
+      "yellow": 16.0,
+      "green": 10.0,
+      "unit": "kt"
+    },
+    "gustMps": {
+      "red": 17.0,
+      "yellow": 13.0,
+      "green": 10.0,
+      "unit": "m/s"
+    },
+    "gustKt": {
+      "red": 34.0,
+      "yellow": 26.0,
+      "green": 20.0,
+      "unit": "kt"
+    },
+    "tempHighC": {
+      "red": 40.0,
+      "yellow": 35.0,
+      "green": 32.0,
+      "unit": "℃"
+    },
+    "tempLowC": {
+      "red": -30.0,
+      "yellow": -27.0,
+      "green": -25.0,
+      "unit": "℃"
+    }
+  },
+  "phenomena": [
+    {
+      "code": "+DS",
+      "label": "强尘暴",
+      "level": "R",
+      "badWeather": false
+    },
+    {
+      "code": "+DZ",
+      "label": "强毛毛雨",
+      "level": "R",
+      "badWeather": false
+    },
+    {
+      "code": "+FZRA",
+      "label": "强冻雨",
+      "level": "R",
+      "badWeather": false
+    },
+    {
+      "code": "+FZUP",
+      "label": "强冻/过冷却降水不明",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "+PL",
+      "label": "大冰粒",
+      "level": "R",
+      "badWeather": false
+    },
+    {
+      "code": "+RA",
+      "label": "大雨",
+      "level": "R",
+      "badWeather": false
+    },
+    {
+      "code": "+SG",
+      "label": "强米雪",
+      "level": "R",
+      "badWeather": false
+    },
+    {
+      "code": "+SHGR",
+      "label": "强阵性冰雹",
+      "level": "R",
+      "badWeather": false
+    },
+    {
+      "code": "+SHGS",
+      "label": "强阵性小冰雹/霰",
+      "level": "R",
+      "badWeather": false
+    },
+    {
+      "code": "+SHRA",
+      "label": "强阵雨",
+      "level": "R",
+      "badWeather": false
+    },
+    {
+      "code": "+SHRASN",
+      "label": "强阵雨夹雪",
+      "level": "R",
+      "badWeather": false
+    },
+    {
+      "code": "+SHSN",
+      "label": "强阵雪",
+      "level": "R",
+      "badWeather": false
+    },
+    {
+      "code": "+SHSNRA",
+      "label": "强阵雨夹雪",
+      "level": "R",
+      "badWeather": false
+    },
+    {
+      "code": "+SN",
+      "label": "大雪",
+      "level": "R",
+      "badWeather": false
+    },
+    {
+      "code": "+SS",
+      "label": "强沙暴",
+      "level": "R",
+      "badWeather": false
+    },
+    {
+      "code": "+TSGR",
+      "label": "强雷暴伴有冰雹",
+      "level": "R",
+      "badWeather": false
+    },
+    {
+      "code": "+TSGS",
+      "label": "强雷暴伴有小冰雹或霰",
+      "level": "R",
+      "badWeather": false
+    },
+    {
+      "code": "+TSPL",
+      "label": "强雷暴伴有冰粒",
+      "level": "R",
+      "badWeather": false
+    },
+    {
+      "code": "+TSRA",
+      "label": "强雷雨",
+      "level": "R",
+      "badWeather": false
+    },
+    {
+      "code": "+TSRAGR",
+      "label": "强雷雨伴冰雹",
+      "level": "R",
+      "badWeather": false
+    },
+    {
+      "code": "+TSRAGS",
+      "label": "强雷雨伴小冰雹/霰",
+      "level": "R",
+      "badWeather": false
+    },
+    {
+      "code": "+TSSN",
+      "label": "强雷暴伴有雪",
+      "level": "R",
+      "badWeather": false
+    },
+    {
+      "code": "+UP",
+      "label": "强降水不明",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "-DZ",
+      "label": "小毛毛雨",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "-FZDZ",
+      "label": "小冻毛毛雨",
+      "level": "Y",
+      "badWeather": false
+    },
+    {
+      "code": "-FZRA",
+      "label": "小冻雨",
+      "level": "Y",
+      "badWeather": false
+    },
+    {
+      "code": "-FZUP",
+      "label": "弱冻/过冷却降水不明",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "-PL",
+      "label": "小冰粒",
+      "level": "Y",
+      "badWeather": false
+    },
+    {
+      "code": "-RA",
+      "label": "小雨",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "-RASN",
+      "label": "小雨夹雪",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "-SG",
+      "label": "小米雪",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "-SHGR",
+      "label": "小阵性冰雹",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "-SHGS",
+      "label": "小阵性小冰雹/霰",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "-SHRA",
+      "label": "小阵雨",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "-SHRASN",
+      "label": "小阵雨夹雪",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "-SHSN",
+      "label": "小阵雪",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "-SHSNRA",
+      "label": "小阵雨夹雪",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "-SN",
+      "label": "小雪",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "-SNRA",
+      "label": "小雨夹雪",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "-TSGR",
+      "label": "弱雷暴伴有冰雹",
+      "level": "R",
+      "badWeather": false
+    },
+    {
+      "code": "-TSGS",
+      "label": "弱雷暴伴有小冰雹或霰",
+      "level": "R",
+      "badWeather": false
+    },
+    {
+      "code": "-TSPL",
+      "label": "弱雷暴伴有冰粒",
+      "level": "R",
+      "badWeather": false
+    },
+    {
+      "code": "-TSRA",
+      "label": "弱雷雨",
+      "level": "R",
+      "badWeather": false
+    },
+    {
+      "code": "-TSRAGR",
+      "label": "弱雷雨伴冰雹",
+      "level": "R",
+      "badWeather": false
+    },
+    {
+      "code": "-TSRAGS",
+      "label": "弱雷雨伴小冰雹/霰",
+      "level": "R",
+      "badWeather": false
+    },
+    {
+      "code": "-TSSN",
+      "label": "弱雷暴伴有雪",
+      "level": "R",
+      "badWeather": false
+    },
+    {
+      "code": "-UP",
+      "label": "弱降水不明",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "BCFG",
+      "label": "散片雾",
+      "level": "Y",
+      "badWeather": false
+    },
+    {
+      "code": "BLDU",
+      "label": "高吹尘",
+      "level": "Y",
+      "badWeather": false
+    },
+    {
+      "code": "BLSA",
+      "label": "高吹沙",
+      "level": "Y",
+      "badWeather": false
+    },
+    {
+      "code": "BLSN",
+      "label": "高吹雪",
+      "level": "Y",
+      "badWeather": false
+    },
+    {
+      "code": "BR",
+      "label": "轻雾",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "DRDU",
+      "label": "低吹尘",
+      "level": "Y",
+      "badWeather": false
+    },
+    {
+      "code": "DRSA",
+      "label": "低吹沙",
+      "level": "Y",
+      "badWeather": false
+    },
+    {
+      "code": "DRSN",
+      "label": "低吹雪",
+      "level": "Y",
+      "badWeather": false
+    },
+    {
+      "code": "DS",
+      "label": "中等强度尘暴",
+      "level": "R",
+      "badWeather": false
+    },
+    {
+      "code": "DU",
+      "label": "浮尘",
+      "level": "Y",
+      "badWeather": false
+    },
+    {
+      "code": "DZ",
+      "label": "中等强度毛毛雨",
+      "level": "Y",
+      "badWeather": false
+    },
+    {
+      "code": "FC",
+      "label": "漏斗云（陆龙卷/水龙卷）",
+      "level": "R",
+      "badWeather": false
+    },
+    {
+      "code": "FG",
+      "label": "雾",
+      "level": "R",
+      "badWeather": false
+    },
+    {
+      "code": "FU",
+      "label": "烟",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "FZDZ",
+      "label": "中等强度冻毛毛雨",
+      "level": "R",
+      "badWeather": false
+    },
+    {
+      "code": "FZFG",
+      "label": "冻雾",
+      "level": "R",
+      "badWeather": false
+    },
+    {
+      "code": "FZRA",
+      "label": "中等强度冻雨",
+      "level": "R",
+      "badWeather": false
+    },
+    {
+      "code": "FZUP",
+      "label": "冻/过冷却降水不明",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "HZ",
+      "label": "霾",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "IC",
+      "label": "冰晶",
+      "level": "Y",
+      "badWeather": false
+    },
+    {
+      "code": "MIFG",
+      "label": "浅雾",
+      "level": "Y",
+      "badWeather": false
+    },
+    {
+      "code": "PL",
+      "label": "中等强度冰粒",
+      "level": "R",
+      "badWeather": false
+    },
+    {
+      "code": "PO",
+      "label": "尘/沙旋风",
+      "level": "R",
+      "badWeather": false
+    },
+    {
+      "code": "PRFG",
+      "label": "部分雾",
+      "level": "Y",
+      "badWeather": false
+    },
+    {
+      "code": "RA",
+      "label": "中雨",
+      "level": "Y",
+      "badWeather": false
+    },
+    {
+      "code": "RASN",
+      "label": "中雨夹雪",
+      "level": "Y",
+      "badWeather": false
+    },
+    {
+      "code": "REBLSN",
+      "label": "上次报告后至本次观测前有高吹雪",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "REDS",
+      "label": "上次报告后至本次观测前有尘暴",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "REDZ",
+      "label": "上次报告后至本次观测前有毛毛雨",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "REFC",
+      "label": "上次报告后至本次观测前有龙卷",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "REFZDZ",
+      "label": "上次报告后至本次观测前有冻毛毛雨",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "REFZRA",
+      "label": "上次报告后至本次观测前有冻雨",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "REPL",
+      "label": "上次报告后至本次观测前有冰粒",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "RERA",
+      "label": "上次报告后至本次观测前有雨",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "RESG",
+      "label": "上次报告后至本次观测前有米雪",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "RESHGR",
+      "label": "上次报告后至本次观测前有阵性冰雹",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "RESHGS",
+      "label": "上次报告后至本次观测前有阵性小冰雹",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "RESHRA",
+      "label": "次报告后至本次观测前有阵雨",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "RESHSN",
+      "label": "上次报告后至本次观测前有阵雪",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "RESN",
+      "label": "上次报告后至本次观测前有雪",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "RESS",
+      "label": "上次报告后至本次观测前有沙暴",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "RETS",
+      "label": "上次报告后至本次观测前有雷暴",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "RETSGR",
+      "label": "上次报告后至本次观测前有雷暴伴冰雹",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "RETSGS",
+      "label": "上次报告后至本次观测前有雷暴伴小冰雹/霰",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "RETSPL",
+      "label": "上次报告后至本次观测前有雷暴伴冰粒",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "RETSRA",
+      "label": "上次报告后至本次观测前有雷雨",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "RETSSN",
+      "label": "上次报告后至本次观测前有雷暴伴降雪",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "REUP",
+      "label": "上次报告后至本次观测前的降水状况不明",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "REVA",
+      "label": "上次报告后至本次观测前有火山灰",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "SA",
+      "label": "沙",
+      "level": "Y",
+      "badWeather": false
+    },
+    {
+      "code": "SG",
+      "label": "中等强度米雪",
+      "level": "Y",
+      "badWeather": false
+    },
+    {
+      "code": "SHGR",
+      "label": "中等强度阵性冰雹",
+      "level": "R",
+      "badWeather": false
+    },
+    {
+      "code": "SHGS",
+      "label": "中等强度阵性小冰雹/霰",
+      "level": "R",
+      "badWeather": false
+    },
+    {
+      "code": "SHRA",
+      "label": "中阵雨",
+      "level": "Y",
+      "badWeather": false
+    },
+    {
+      "code": "SHRASN",
+      "label": "阵性雨夹雪",
+      "level": "Y",
+      "badWeather": false
+    },
+    {
+      "code": "SHSN",
+      "label": "中阵雪",
+      "level": "Y",
+      "badWeather": false
+    },
+    {
+      "code": "SHSNRA",
+      "label": "阵性雨夹雪",
+      "level": "Y",
+      "badWeather": false
+    },
+    {
+      "code": "SN",
+      "label": "中雪",
+      "level": "Y",
+      "badWeather": false
+    },
+    {
+      "code": "SQ",
+      "label": "飑",
+      "level": "R",
+      "badWeather": false
+    },
+    {
+      "code": "SS",
+      "label": "中等强度沙暴",
+      "level": "R",
+      "badWeather": false
+    },
+    {
+      "code": "TS",
+      "label": "雷暴",
+      "level": "R",
+      "badWeather": false
+    },
+    {
+      "code": "TSGR",
+      "label": "雷暴伴有冰雹",
+      "level": "R",
+      "badWeather": false
+    },
+    {
+      "code": "TSGS",
+      "label": "雷暴伴有小冰雹或霰",
+      "level": "R",
+      "badWeather": false
+    },
+    {
+      "code": "TSPL",
+      "label": "雷暴伴有冰粒",
+      "level": "R",
+      "badWeather": false
+    },
+    {
+      "code": "TSRA",
+      "label": "中雷雨",
+      "level": "R",
+      "badWeather": false
+    },
+    {
+      "code": "TSRAGR",
+      "label": "中雷雨伴冰雹",
+      "level": "R",
+      "badWeather": false
+    },
+    {
+      "code": "TSRAGS",
+      "label": "中雷雨伴小冰雹/霰",
+      "level": "R",
+      "badWeather": false
+    },
+    {
+      "code": "TSSN",
+      "label": "雷暴伴有雪",
+      "level": "R",
+      "badWeather": false
+    },
+    {
+      "code": "UP",
+      "label": "降水不明",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "VA",
+      "label": "火山灰",
+      "level": "R",
+      "badWeather": false
+    },
+    {
+      "code": "VCBLDU",
+      "label": "在附近有高吹尘",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "VCBLSA",
+      "label": "在附近有高吹沙",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "VCBLSN",
+      "label": "在附近有高吹雪",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "VCDS",
+      "label": "在附近有尘暴",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "VCRA",
+      "label": "在附近有降水",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "VCSH",
+      "label": "在附近有阵性降水",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "VCSS",
+      "label": "在附近有沙暴",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "VCTS",
+      "label": "在附近有雷暴",
+      "level": "G",
+      "badWeather": false
+    },
+    {
+      "code": "WS",
+      "label": "风切变",
+      "level": "R",
+      "badWeather": false
+    }
+  ]
+}

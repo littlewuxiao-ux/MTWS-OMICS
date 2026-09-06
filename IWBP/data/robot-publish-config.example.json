@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "targetGroup": {
+    "name": "航空气象信息通报群",
+    "openConversationId": "cidYDAaXULIy7DovWKMT4IkZQ==",
+    "webhookUrl": "https://oapi.dingtalk.com/robot/send?access_token=在此填入自定义机器人Webhook"
+  },
+  "sendMethod": {
+    "method": "custom_webhook_local",
+    "pollIntervalSeconds": 120
+  },
+  "roles": {
+    "aoc-dispatch": {
+      "label": "AOC签派放行",
+      "nextUserId": ""
+    },
+    "aoc-duty-control": {
+      "label": "AOC运行控制带班席",
+      "nextUserId": "sfim070482"
+    },
+    "eoc-duty-manager": {
+      "label": "EOC值班经理",
+      "nextUserId": "sfim114936"
+    }
+  },
+  "contentTypes": {
+    "alert": {
+      "label": "机场警报",
+      "mentionRolesAlways": ["aoc-dispatch", "aoc-duty-control"],
+      "mentionRolesByStation": {
+        "ZHEC": ["eoc-duty-manager"]
+      }
+    },
+    "period": { "label": "时段预报", "mentionRoles": ["aoc-dispatch"] },
+    "brush": { "label": "天气梳理", "mentionRoles": ["aoc-dispatch"] },
+    "tc": { "label": "热带气旋", "mentionRoles": ["aoc-dispatch"] }
+  }
+}

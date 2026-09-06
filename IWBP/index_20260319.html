@@ -1,0 +1,1819 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>气象智能业务工作台（静态）</title>
+    <style>
+      :root {
+        --bg: #0b1020;
+        --panel: rgba(18, 26, 55, 0.72);
+        --panel-2: rgba(14, 20, 44, 0.65);
+        --border: rgba(157, 181, 255, 0.18);
+        --border-2: rgba(157, 181, 255, 0.12);
+        --text: rgba(235, 242, 255, 0.92);
+        --muted: rgba(235, 242, 255, 0.68);
+        --muted-2: rgba(235, 242, 255, 0.56);
+        --brand: #7aa2ff;
+        --brand-2: #5eead4;
+        --warn: #ffb020;
+        --danger: #ff5c5c;
+        --ok: #2ee59d;
+        --shadow: 0 18px 60px rgba(0, 0, 0, 0.38);
+        --shadow2: 0 10px 30px rgba(0, 0, 0, 0.25);
+        --radius: 16px;
+        --radius2: 12px;
+        --gap: 14px;
+        --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans",
+          "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        margin: 0;
+        font-family: var(--font);
+        color: var(--text);
+        background:
+          radial-gradient(1200px 520px at 15% 10%, rgba(122, 162, 255, 0.18), transparent 55%),
+          radial-gradient(980px 520px at 85% 25%, rgba(94, 234, 212, 0.12), transparent 55%),
+          radial-gradient(860px 520px at 60% 80%, rgba(255, 176, 32, 0.08), transparent 55%),
+          linear-gradient(180deg, #070a14 0%, #0b1020 45%, #070a14 100%);
+      }
+
+      .app {
+        min-height: 100%;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .topbar {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        background: rgba(7, 10, 20, 0.62);
+        backdrop-filter: blur(10px);
+        border-bottom: 1px solid rgba(157, 181, 255, 0.12);
+      }
+      .topbar-inner {
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 14px 18px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 240px;
+      }
+      .brand-badge {
+        width: 34px;
+        height: 34px;
+        border-radius: 10px;
+        background: linear-gradient(135deg, rgba(122, 162, 255, 0.95), rgba(94, 234, 212, 0.8));
+        box-shadow: 0 14px 40px rgba(122, 162, 255, 0.22);
+      }
+      .brand-title {
+        font-weight: 700;
+        letter-spacing: 0.3px;
+      }
+      .brand-subtitle {
+        margin-top: 2px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .top-actions {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 10px;
+        flex: 1;
+      }
+      .view-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .field {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 10px;
+        border: 1px solid var(--border-2);
+        border-radius: 12px;
+        background: rgba(13, 18, 40, 0.55);
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+      }
+      .field label {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      select,
+      input[type="text"],
+      textarea {
+        background: transparent;
+        border: none;
+        outline: none;
+        color: var(--text);
+        font-family: var(--font);
+      }
+      select {
+        padding: 2px 4px;
+        font-size: 13px;
+      }
+      .chip {
+        padding: 7px 10px;
+        border-radius: 999px;
+        border: 1px solid rgba(122, 162, 255, 0.22);
+        background: rgba(122, 162, 255, 0.08);
+        color: rgba(214, 226, 255, 0.94);
+        font-size: 12px;
+      }
+
+      .content {
+        max-width: 1400px;
+        width: 100%;
+        margin: 0 auto;
+        padding: 16px 18px 20px;
+        display: grid;
+        grid-template-columns: 320px 1.2fr 1.6fr;
+        grid-template-rows: auto auto auto;
+        gap: var(--gap);
+      }
+
+      /* Multi-screen views */
+      body[data-view="monitor"] .content,
+      body[data-view="action"] .content,
+      body[data-view="analysis"] .content {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto;
+      }
+      body[data-view="monitor"] #card1,
+      body[data-view="monitor"] #card2,
+      body[data-view="monitor"] #card4,
+      body[data-view="monitor"] #card5,
+      body[data-view="monitor"] #card6 {
+        display: none;
+      }
+      body[data-view="monitor"] #card3 {
+        grid-column: 1;
+        grid-row: 1;
+        min-height: calc(100vh - 84px - 36px);
+      }
+      body[data-view="monitor"] #card3 .triple {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      body[data-view="monitor"] #card3 .subcard {
+        min-height: 0;
+      }
+      body[data-view="monitor"] #subShort {
+        flex: 0 0 auto;
+        min-height: 220px;
+      }
+      body[data-view="monitor"] #subMsg {
+        flex: 0 0 auto;
+        min-height: 260px;
+      }
+      body[data-view="monitor"] #subViz {
+        flex: 1 1 auto;
+        min-height: 260px;
+      }
+      body[data-view="monitor"] #subViz .subbody {
+        overflow: auto;
+      }
+
+      body[data-view="analysis"] #card1,
+      body[data-view="analysis"] #card2,
+      body[data-view="analysis"] #card3,
+      body[data-view="analysis"] #card5,
+      body[data-view="analysis"] #card6 {
+        display: none;
+      }
+      body[data-view="analysis"] #card4 {
+        grid-column: 1;
+        grid-row: 1;
+        min-height: calc(100vh - 84px - 36px);
+      }
+
+      body[data-view="action"] #card2,
+      body[data-view="action"] #card3,
+      body[data-view="action"] #card4,
+      body[data-view="action"] #card6 {
+        display: none;
+      }
+      body[data-view="action"] #card1,
+      body[data-view="action"] #card5 {
+        grid-column: 1;
+        grid-row: auto;
+      }
+      body[data-view="action"] #card5 {
+        min-height: calc(100vh - 84px - 36px - 200px);
+      }
+
+      /* 占比规则（修订）：
+         - 卡片4（天气分析模块）最大
+         - 卡片3（天气提醒）第二大
+         - 卡片5（预警发布）第三大
+         - 卡片1/2/6 尽量小 */
+      .card {
+        background: linear-gradient(180deg, rgba(18, 26, 55, 0.78), rgba(10, 14, 30, 0.62));
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow2);
+        overflow: hidden;
+        position: relative;
+      }
+      .card::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background:
+          radial-gradient(760px 220px at 15% 0%, rgba(122, 162, 255, 0.15), transparent 45%),
+          radial-gradient(680px 220px at 85% 10%, rgba(94, 234, 212, 0.10), transparent 45%);
+        opacity: 0.85;
+        pointer-events: none;
+      }
+      .card-inner {
+        position: relative;
+        padding: 12px 12px 14px;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .card-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 10px;
+      }
+      .card-title {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .card-title strong {
+        font-size: 14px;
+        letter-spacing: 0.2px;
+      }
+      .card-title span {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .card-tools {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .open-new {
+        cursor: pointer;
+        user-select: none;
+        font-size: 12px;
+        padding: 6px 8px;
+        border-radius: 10px;
+        border: 1px solid rgba(157, 181, 255, 0.18);
+        background: rgba(13, 18, 40, 0.45);
+        color: rgba(235, 242, 255, 0.78);
+        transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
+        text-decoration: none;
+        line-height: 1;
+      }
+      .open-new:hover {
+        transform: translateY(-1px);
+        background: rgba(122, 162, 255, 0.10);
+        border-color: rgba(122, 162, 255, 0.26);
+      }
+
+      /* Card accents + bigger titles */
+      .card.accent-blue {
+        border-color: rgba(122, 162, 255, 0.32);
+        background: linear-gradient(180deg, rgba(34, 55, 110, 0.62), rgba(10, 14, 30, 0.60));
+      }
+      .card.accent-teal {
+        border-color: rgba(94, 234, 212, 0.28);
+        background: linear-gradient(180deg, rgba(16, 70, 80, 0.50), rgba(10, 14, 30, 0.60));
+      }
+      .card.accent-amber {
+        border-color: rgba(255, 176, 32, 0.28);
+        background: linear-gradient(180deg, rgba(90, 60, 16, 0.46), rgba(10, 14, 30, 0.60));
+      }
+      .card.accent-purple {
+        border-color: rgba(176, 126, 255, 0.24);
+        background: linear-gradient(180deg, rgba(52, 34, 92, 0.56), rgba(10, 14, 30, 0.60));
+      }
+      .card-title strong {
+        font-size: 18px;
+        font-weight: 850;
+        letter-spacing: 0.2px;
+      }
+
+      .btn {
+        cursor: pointer;
+        border: 1px solid rgba(122, 162, 255, 0.24);
+        background: rgba(122, 162, 255, 0.12);
+        color: rgba(235, 242, 255, 0.92);
+        padding: 9px 10px;
+        border-radius: 12px;
+        font-size: 13px;
+        transition: transform 120ms ease, background 120ms ease, border-color 120ms ease, opacity 120ms ease;
+      }
+      .btn:hover {
+        transform: translateY(-1px);
+        background: rgba(122, 162, 255, 0.18);
+        border-color: rgba(122, 162, 255, 0.34);
+      }
+      .btn.secondary {
+        border-color: rgba(157, 181, 255, 0.18);
+        background: rgba(13, 18, 40, 0.38);
+        color: rgba(235, 242, 255, 0.78);
+      }
+      .btn.secondary:hover {
+        background: rgba(13, 18, 40, 0.56);
+        border-color: rgba(157, 181, 255, 0.28);
+      }
+      .btn.danger {
+        border-color: rgba(255, 92, 92, 0.28);
+        background: rgba(255, 92, 92, 0.12);
+      }
+      .btn.ok {
+        border-color: rgba(46, 229, 157, 0.28);
+        background: rgba(46, 229, 157, 0.10);
+      }
+      .btn.view-monitor {
+        border-color: rgba(255, 176, 32, 0.32);
+        background: rgba(255, 176, 32, 0.12);
+      }
+      .btn.view-action {
+        border-color: rgba(46, 229, 157, 0.28);
+        background: rgba(46, 229, 157, 0.10);
+      }
+      .btn.view-analysis {
+        border-color: rgba(122, 162, 255, 0.30);
+        background: rgba(122, 162, 255, 0.12);
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        border: 1px solid rgba(157, 181, 255, 0.16);
+        background: rgba(13, 18, 40, 0.45);
+        font-size: 12px;
+        color: rgba(235, 242, 255, 0.76);
+      }
+      .pill.dot::before {
+        content: "";
+        width: 7px;
+        height: 7px;
+        border-radius: 999px;
+        background: rgba(122, 162, 255, 0.9);
+        box-shadow: 0 0 0 3px rgba(122, 162, 255, 0.18);
+      }
+      .pill.warn.dot::before {
+        background: rgba(255, 176, 32, 0.95);
+        box-shadow: 0 0 0 3px rgba(255, 176, 32, 0.16);
+      }
+      .pill.danger.dot::before {
+        background: rgba(255, 92, 92, 0.95);
+        box-shadow: 0 0 0 3px rgba(255, 92, 92, 0.14);
+      }
+      .pill.ok.dot::before {
+        background: rgba(46, 229, 157, 0.95);
+        box-shadow: 0 0 0 3px rgba(46, 229, 157, 0.14);
+      }
+
+      .scroll {
+        overflow: auto;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(157, 181, 255, 0.26) transparent;
+      }
+      .scroll::-webkit-scrollbar {
+        height: 10px;
+        width: 10px;
+      }
+      .scroll::-webkit-scrollbar-thumb {
+        background: rgba(157, 181, 255, 0.22);
+        border-radius: 10px;
+        border: 2px solid transparent;
+        background-clip: content-box;
+      }
+
+      /* Grid placement */
+      #card1 {
+        grid-column: 1;
+        grid-row: 1;
+        min-height: 180px;
+      }
+      #card2 {
+        grid-column: 1;
+        grid-row: 2;
+        min-height: 250px;
+      }
+      #card6 {
+        grid-column: 1;
+        grid-row: 3;
+        min-height: 120px;
+      }
+
+      #card4 {
+        grid-column: 2 / 4;
+        grid-row: 2;
+        min-height: 360px;
+      }
+      #card3 {
+        grid-column: 2 / 4;
+        grid-row: 1;
+        min-height: 320px;
+      }
+      #card5 {
+        grid-column: 2 / 4;
+        grid-row: 3;
+        min-height: 300px;
+      }
+
+      /* Card 1: tasks */
+      .task-list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .task {
+        border: 1px solid rgba(157, 181, 255, 0.14);
+        border-radius: 14px;
+        background: rgba(13, 18, 40, 0.34);
+        padding: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+      .task-left {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .task-name {
+        font-size: 13px;
+        font-weight: 650;
+      }
+      .task-meta {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .task.overdue .task-name {
+        color: rgba(255, 92, 92, 0.95);
+      }
+      .task.overdue {
+        border-color: rgba(255, 92, 92, 0.22);
+        box-shadow: 0 12px 30px rgba(255, 92, 92, 0.06);
+      }
+
+      /* Card 2: chat */
+      .chat-box {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        min-height: 0;
+      }
+      .chat-log {
+        flex: 1;
+        min-height: 0;
+        padding: 10px;
+        border-radius: 14px;
+        border: 1px solid rgba(157, 181, 255, 0.14);
+        background: rgba(13, 18, 40, 0.34);
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .msg {
+        max-width: 92%;
+        padding: 9px 10px;
+        border-radius: 14px;
+        border: 1px solid rgba(157, 181, 255, 0.12);
+        background: rgba(122, 162, 255, 0.08);
+        color: rgba(235, 242, 255, 0.88);
+        font-size: 12.5px;
+        line-height: 1.45;
+      }
+      .msg.ai {
+        background: rgba(94, 234, 212, 0.07);
+        border-color: rgba(94, 234, 212, 0.14);
+      }
+      .msg.user {
+        align-self: flex-end;
+        background: rgba(122, 162, 255, 0.10);
+        border-color: rgba(122, 162, 255, 0.18);
+      }
+      .chat-input {
+        display: flex;
+        gap: 10px;
+      }
+      .chat-input input[type="text"] {
+        width: 100%;
+        padding: 10px 12px;
+        border-radius: 12px;
+        border: 1px solid rgba(157, 181, 255, 0.14);
+        background: rgba(13, 18, 40, 0.34);
+        font-size: 13px;
+      }
+
+      /* Card 3: three modules */
+      .triple {
+        display: grid;
+        grid-template-columns: 1fr 1.2fr 1fr;
+        gap: 12px;
+        min-height: 0;
+      }
+      .subcard {
+        border-radius: 14px;
+        border: 1px solid rgba(157, 181, 255, 0.14);
+        background: rgba(13, 18, 40, 0.34);
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        min-height: 220px;
+      }
+      .subheader {
+        padding: 10px 10px 8px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        border-bottom: 1px solid rgba(157, 181, 255, 0.10);
+        background: rgba(13, 18, 40, 0.20);
+      }
+      .subheader strong {
+        font-size: 13px;
+      }
+      .subbody {
+        padding: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        min-height: 0;
+      }
+      .warning-list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        min-height: 0;
+      }
+      .warning-item {
+        border-radius: 12px;
+        border: 1px solid rgba(255, 176, 32, 0.22);
+        background: rgba(255, 176, 32, 0.08);
+        padding: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .warning-item .meta {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        font-size: 12px;
+        color: rgba(235, 242, 255, 0.76);
+      }
+      .warning-item .text {
+        font-size: 12.5px;
+        line-height: 1.5;
+        color: rgba(235, 242, 255, 0.90);
+        word-break: break-word;
+      }
+
+      iframe {
+        width: 100%;
+        height: 100%;
+        border: none;
+      }
+      .iframe-wrap {
+        flex: 1;
+        min-height: 0;
+        border-radius: 12px;
+        overflow: hidden;
+        border: 1px solid rgba(157, 181, 255, 0.14);
+        background: rgba(7, 10, 20, 0.55);
+      }
+
+      .station-row {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+      .station-row input[type="text"] {
+        flex: 1;
+        padding: 10px 12px;
+        border-radius: 12px;
+        border: 1px solid rgba(157, 181, 255, 0.14);
+        background: rgba(13, 18, 40, 0.34);
+        font-size: 13px;
+      }
+      .metrics {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+      .metric {
+        border-radius: 12px;
+        border: 1px solid rgba(157, 181, 255, 0.14);
+        background: rgba(13, 18, 40, 0.34);
+        padding: 10px;
+      }
+      .metric .k {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .metric .v {
+        margin-top: 6px;
+        font-size: 16px;
+        font-weight: 750;
+        letter-spacing: 0.2px;
+      }
+      .chart {
+        border-radius: 12px;
+        border: 1px solid rgba(157, 181, 255, 0.14);
+        background: rgba(13, 18, 40, 0.34);
+        padding: 10px;
+        min-height: 140px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .chart .k {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .spark {
+        width: 100%;
+        height: 90px;
+        border-radius: 10px;
+        background: linear-gradient(180deg, rgba(122, 162, 255, 0.08), rgba(13, 18, 40, 0.0));
+        border: 1px dashed rgba(157, 181, 255, 0.18);
+        display: grid;
+        place-items: center;
+        color: rgba(235, 242, 255, 0.62);
+        font-size: 12px;
+      }
+
+      /* Card 4: external sites */
+      .site-layout {
+        display: grid;
+        grid-template-columns: 320px 1fr;
+        gap: 12px;
+        min-height: 0;
+        flex: 1;
+      }
+      .site-panel {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        min-height: 0;
+      }
+      .site-buttons {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 10px;
+      }
+      .fav-tools {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .fav-form {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 10px;
+        padding: 10px;
+        border-radius: 14px;
+        border: 1px solid rgba(157, 181, 255, 0.14);
+        background: rgba(13, 18, 40, 0.34);
+      }
+      .fav-form input[type="text"] {
+        width: 100%;
+        padding: 10px 12px;
+        border-radius: 12px;
+        border: 1px solid rgba(157, 181, 255, 0.14);
+        background: rgba(13, 18, 40, 0.34);
+        font-size: 13px;
+      }
+
+      .toast {
+        position: fixed;
+        right: 16px;
+        bottom: 16px;
+        z-index: 50;
+        max-width: min(520px, calc(100vw - 32px));
+        padding: 12px 12px;
+        border-radius: 14px;
+        border: 1px solid rgba(157, 181, 255, 0.18);
+        background: rgba(13, 18, 40, 0.85);
+        backdrop-filter: blur(10px);
+        box-shadow: var(--shadow);
+        color: rgba(235, 242, 255, 0.92);
+        display: none;
+      }
+      .toast.show {
+        display: block;
+      }
+      .toast .t {
+        font-weight: 700;
+        margin-bottom: 4px;
+      }
+      .toast .d {
+        color: rgba(235, 242, 255, 0.74);
+        font-size: 12.5px;
+        line-height: 1.45;
+      }
+      .site-btn {
+        text-align: left;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+      .site-btn small {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .site-view {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        gap: 10px;
+      }
+      .site-toggle {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 10px;
+        border-radius: 14px;
+        border: 1px solid rgba(157, 181, 255, 0.14);
+        background: rgba(13, 18, 40, 0.34);
+      }
+      .site-toggle .left {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+      }
+      .site-toggle .left strong {
+        font-size: 12.5px;
+      }
+      .site-toggle .left span {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .switch {
+        position: relative;
+        width: 44px;
+        height: 26px;
+        border-radius: 999px;
+        border: 1px solid rgba(157, 181, 255, 0.18);
+        background: rgba(7, 10, 20, 0.55);
+        cursor: pointer;
+        flex: none;
+      }
+      .switch input {
+        position: absolute;
+        inset: 0;
+        opacity: 0;
+        cursor: pointer;
+      }
+      .switch i {
+        position: absolute;
+        top: 3px;
+        left: 3px;
+        width: 20px;
+        height: 20px;
+        border-radius: 999px;
+        background: rgba(235, 242, 255, 0.90);
+        transition: transform 140ms ease, background 140ms ease;
+        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.25);
+      }
+      .switch input:checked + i {
+        transform: translateX(18px);
+        background: linear-gradient(135deg, rgba(122, 162, 255, 0.95), rgba(94, 234, 212, 0.85));
+      }
+      .hint {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      /* Card 5: warning publish */
+      .publish-grid {
+        display: grid;
+        grid-template-columns: 1.1fr 1fr;
+        gap: 12px;
+        flex: 1;
+        min-height: 0;
+      }
+      textarea {
+        width: 100%;
+        min-height: 120px;
+        resize: vertical;
+        padding: 10px 12px;
+        border-radius: 12px;
+        border: 1px solid rgba(157, 181, 255, 0.14);
+        background: rgba(13, 18, 40, 0.34);
+        font-size: 13px;
+        line-height: 1.5;
+      }
+      .form-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+      .form-row .field {
+        flex: 1;
+      }
+      .list {
+        border-radius: 14px;
+        border: 1px solid rgba(157, 181, 255, 0.14);
+        background: rgba(13, 18, 40, 0.34);
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+      }
+      .list-header {
+        padding: 10px;
+        border-bottom: 1px solid rgba(157, 181, 255, 0.10);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+      .list-header strong {
+        font-size: 13px;
+      }
+      .rows {
+        padding: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        min-height: 0;
+      }
+      .row {
+        padding: 10px;
+        border-radius: 12px;
+        border: 1px solid rgba(157, 181, 255, 0.12);
+        background: rgba(122, 162, 255, 0.06);
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .row .top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .row .body {
+        font-size: 12.5px;
+        line-height: 1.5;
+        color: rgba(235, 242, 255, 0.90);
+        word-break: break-word;
+      }
+      .row .actions {
+        display: flex;
+        gap: 10px;
+        justify-content: flex-end;
+      }
+
+      /* Card 6 */
+      .accuracy {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .accuracy strong {
+        font-size: 26px;
+        letter-spacing: 0.3px;
+      }
+      .bar {
+        height: 10px;
+        border-radius: 999px;
+        border: 1px solid rgba(157, 181, 255, 0.14);
+        background: rgba(13, 18, 40, 0.34);
+        overflow: hidden;
+      }
+      .bar > i {
+        display: block;
+        height: 100%;
+        width: 85%;
+        background: linear-gradient(90deg, rgba(122, 162, 255, 0.92), rgba(46, 229, 157, 0.86));
+      }
+
+      /* Responsive */
+      @media (max-width: 1180px) {
+        .content {
+          grid-template-columns: 1fr;
+          grid-template-rows: auto;
+        }
+        #card1,
+        #card2,
+        #card6,
+        #card3,
+        #card4,
+        #card5 {
+          grid-column: 1;
+          grid-row: auto;
+        }
+        .triple {
+          grid-template-columns: 1fr;
+        }
+        .site-layout {
+          grid-template-columns: 1fr;
+        }
+        .publish-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <div class="topbar">
+        <div class="topbar-inner">
+          <div class="brand">
+            <div class="brand-badge"></div>
+            <div>
+              <div class="brand-title">气象智能业务工作台</div>
+              <div class="brand-subtitle">静态页面演示（HTML / CSS / JS，无外部框架）</div>
+            </div>
+          </div>
+
+          <div class="top-actions">
+            <div class="view-actions" aria-label="三屏视图快捷入口">
+              <button class="btn view-monitor" id="openMonitorViewBtn" type="button">打开告警屏</button>
+              <button class="btn view-action" id="openActionViewBtn" type="button">打开处置屏</button>
+              <button class="btn view-analysis" id="openAnalysisViewBtn" type="button">打开分析屏</button>
+            </div>
+
+            <div class="field">
+              <label for="accountSelect">账号</label>
+              <select id="accountSelect" aria-label="选择账号">
+                <option value="u1">值班员-甲</option>
+                <option value="u2">值班员-乙</option>
+                <option value="u3">值班员-丙</option>
+              </select>
+            </div>
+
+            <div class="field" id="roleField">
+              <label for="roleSelect">身份</label>
+              <select id="roleSelect" aria-label="选择身份">
+                <option value="operator">值班员</option>
+                <option value="leader">带班</option>
+              </select>
+            </div>
+            <div class="chip" id="roleHint">当前：值班员（仅提交，不可审核）</div>
+          </div>
+        </div>
+      </div>
+
+      <main class="content">
+        <!-- Card 1 -->
+        <section class="card accent-amber" id="card1" data-card-title="业务提醒">
+          <div class="card-inner">
+            <div class="card-header">
+              <div class="card-title">
+                <strong>业务提醒</strong>
+                <span>任务到期与超时提示（模拟）</span>
+              </div>
+              <div class="card-tools">
+                <a class="open-new" href="#" data-open-card="card1" title="在新标签页打开">新标签页</a>
+              </div>
+            </div>
+
+            <div class="task-list">
+              <div class="task overdue" data-task="A">
+                <div class="task-left">
+                  <div class="task-name">任务A</div>
+                  <div class="task-meta">截止 10:00 · <span class="pill danger dot">超时未完成</span></div>
+                </div>
+                <button class="btn danger" type="button">确认完成</button>
+              </div>
+
+              <div class="task" data-task="B">
+                <div class="task-left">
+                  <div class="task-name">任务B</div>
+                  <div class="task-meta">截止 11:30 · <span class="pill warn dot">进行中</span></div>
+                </div>
+                <button class="btn" type="button">确认完成</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Card 2 -->
+        <section class="card accent-purple" id="card2" data-card-title="AI对话窗口">
+          <div class="card-inner">
+            <div class="card-header">
+              <div class="card-title">
+                <strong>AI对话窗口</strong>
+                <span>输入/发送 + 占位对话记录</span>
+              </div>
+              <div class="card-tools">
+                <a class="open-new" href="#" data-open-card="card2" title="在新标签页打开">新标签页</a>
+              </div>
+            </div>
+
+            <div class="chat-box">
+              <div class="chat-log scroll" id="chatLog" aria-label="对话记录">
+                <div class="msg ai">系统：你可以在右侧“天气分析模块”进行主要分析，必要时在此记录结论。</div>
+                <div class="msg user">用户：今天机场ZBAA风向风速变化趋势如何？</div>
+                <div class="msg ai">AI：占位回复：建议结合雷达回波与数值模式输出综合研判。</div>
+                <div class="msg ai">AI：占位回复：如需发布预警，请在“预警发布”提交，带班审核通过后会同步到“天气预警”。</div>
+              </div>
+              <div class="chat-input">
+                <input id="chatInput" type="text" placeholder="输入问题或记录（占位交互）" />
+                <button class="btn" id="sendBtn" type="button">发送</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Card 4 (Largest) -->
+        <section class="card accent-blue" id="card4" data-card-title="天气分析模块">
+          <div class="card-inner">
+            <div class="card-header">
+              <div class="card-title">
+                <strong>天气分析模块</strong>
+                <span>主要天气分析入口（默认新标签页打开；可选内嵌预览）</span>
+              </div>
+              <div class="card-tools">
+                <a class="open-new" href="#" data-open-card="card4" title="在新标签页打开">新标签页</a>
+              </div>
+            </div>
+
+            <div class="site-layout">
+              <div class="site-panel">
+                <div class="site-toggle" aria-label="内嵌预览开关">
+                  <div class="left">
+                    <strong>内嵌预览（可选）</strong>
+                    <span>多数外部站点禁止 iframe，默认用新标签页打开</span>
+                  </div>
+                  <label class="switch" title="切换内嵌预览">
+                    <input id="embedToggle" type="checkbox" />
+                    <i></i>
+                  </label>
+                </div>
+                <div class="pill dot">常用站点（固定）</div>
+                <div class="site-buttons" id="fixedSiteButtons">
+                  <button class="btn secondary site-btn" type="button" data-site="cma" data-url="https://www.nmc.cn/">
+                    <span>中央气象台</span>
+                    <small>nmc.cn</small>
+                  </button>
+                  <button class="btn secondary site-btn" type="button" data-site="windy" data-url="https://www.windy.com/">
+                    <span>Windy</span>
+                    <small>windy.com</small>
+                  </button>
+                  <button class="btn secondary site-btn" type="button" data-site="obs" data-url="https://data.cma.cn/dataGis/static/gridgis/#/pcindex">
+                    <span>气象实况展示</span>
+                    <small>data.cma.cn</small>
+                  </button>
+                  <button class="btn secondary site-btn" type="button" data-site="lightning" data-url="http://www.nmic.cn/">
+                    <span>闪电监测</span>
+                    <small>nmic.cn</small>
+                  </button>
+                  <button class="btn secondary site-btn" type="button" data-site="air" data-url="https://air.cnemc.cn:18007/">
+                    <span>空气污染监测</span>
+                    <small>air.cnemc.cn</small>
+                  </button>
+                </div>
+
+                <div class="pill dot">我的收藏（按账号）</div>
+                <div class="fav-tools">
+                  <button class="btn secondary" id="toggleFavFormBtn" type="button">添加收藏</button>
+                  <button class="btn secondary" id="resetFavBtn" type="button">重置本账号收藏</button>
+                </div>
+                <div class="fav-form" id="favForm" style="display:none;">
+                  <input id="favName" type="text" placeholder="站点名称（例如：本地雷达）" />
+                  <input id="favUrl" type="text" placeholder="站点URL（例如：https://...）" />
+                  <div class="form-row" style="justify-content:flex-end;">
+                    <button class="btn secondary" id="cancelFavBtn" type="button">取消</button>
+                    <button class="btn" id="saveFavBtn" type="button">保存收藏</button>
+                  </div>
+                </div>
+                <div class="site-buttons" id="favSiteButtons">
+                  <!-- Filled by JS -->
+                </div>
+
+                <div class="hint">
+                  说明：按钮默认新标签页打开；当开启“内嵌预览”时，会尝试在右侧 iframe 预览。若站点禁止被 iframe 嵌入，浏览器仍会阻止加载（这是站点安全策略）。
+                </div>
+              </div>
+
+              <div class="site-view">
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+                  <div class="pill dot" id="siteNow">当前：中央气象台（默认新标签页）</div>
+                  <button class="btn secondary" type="button" id="openCurrentSiteBtn">在新标签页打开当前站点</button>
+                </div>
+                <div class="iframe-wrap">
+                  <iframe id="siteFrame" title="外部网站视图" src="https://www.nmc.cn/"></iframe>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Card 3 (Second largest) -->
+        <section class="card accent-teal" id="card3" data-card-title="天气提醒模块">
+          <div class="card-inner">
+            <div class="card-header">
+              <div class="card-title">
+                <strong>天气提醒模块</strong>
+                <span>天气预警 / 报文监控 / 形象展示</span>
+              </div>
+              <div class="card-tools">
+                <a class="open-new" href="#" data-open-card="card3" title="在新标签页打开">新标签页</a>
+              </div>
+            </div>
+
+            <div class="triple">
+              <div class="subcard" id="subShort">
+                <div class="subheader">
+                  <strong>天气预警</strong>
+                  <span class="pill warn dot">联动：来自预警发布审核通过</span>
+                </div>
+                <div class="subbody scroll">
+                  <div class="warning-list" id="shortWarningList" aria-label="天气预警列表">
+                    <div class="warning-item">
+                      <div class="meta">
+                        <span class="pill warn dot">模拟预警</span>
+                        <span>09:35</span>
+                      </div>
+                      <div class="text">【雷暴】预计未来1小时内本场附近可能出现雷暴，注意地面保障作业安全。</div>
+                    </div>
+                    <div class="warning-item">
+                      <div class="meta">
+                        <span class="pill warn dot">模拟预警</span>
+                        <span>10:05</span>
+                      </div>
+                      <div class="text">【阵风】预计11:00前后出现短时阵风，最大阵风可达 16m/s。</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="subcard" id="subMsg">
+                <div class="subheader">
+                  <strong>报文监控</strong>
+                  <span class="pill dot">iframe</span>
+                </div>
+                <div class="subbody" style="padding: 10px; flex: 1; min-height: 0">
+                  <div class="iframe-wrap" style="flex: 1; min-height: 0">
+                    <iframe title="报文监控示例" src="https://example.com"></iframe>
+                  </div>
+                </div>
+              </div>
+
+              <div class="subcard" id="subViz">
+                <div class="subheader">
+                  <strong>形象展示</strong>
+                  <span class="pill ok dot">机场要素</span>
+                </div>
+                <div class="subbody">
+                  <div class="station-row">
+                    <input id="stationInput" type="text" value="ZBAA" placeholder="输入机场/站点（如 ZBAA）" />
+                    <button class="btn secondary" id="stationQueryBtn" type="button">查询</button>
+                  </div>
+                  <div class="metrics">
+                    <div class="metric">
+                      <div class="k">风向</div>
+                      <div class="v" id="mWindDir">NE</div>
+                    </div>
+                    <div class="metric">
+                      <div class="k">风速</div>
+                      <div class="v" id="mWindSpd">8 m/s</div>
+                    </div>
+                    <div class="metric">
+                      <div class="k">气温</div>
+                      <div class="v" id="mTemp">23 ℃</div>
+                    </div>
+                    <div class="metric">
+                      <div class="k">气压</div>
+                      <div class="v" id="mPress">1008 hPa</div>
+                    </div>
+                  </div>
+                  <div class="chart">
+                    <div class="k">时序展示占位（后期可接入 OpenWeather / 自有数据源）</div>
+                    <div class="spark">风向 / 风速 / 气温 / 气压 折线图（占位）</div>
+                    <div class="hint">建议接入后按时间序列绘制（例如近2小时/6小时/24小时），并支持要素切换与缩放。</div>
+                  </div>
+                  <div class="hint">说明：此处为模拟数据展示，点击“查询”仅随机刷新占位值。</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Card 5 (Third largest) -->
+        <section class="card accent-amber" id="card5" data-card-title="预警发布">
+          <div class="card-inner">
+            <div class="card-header">
+              <div class="card-title">
+                <strong>预警发布</strong>
+                <span>编辑 → 提交审核 → 带班审核通过后同步到“天气预警”</span>
+              </div>
+              <div class="card-tools">
+                <a class="open-new" href="#" data-open-card="card5" title="在新标签页打开">新标签页</a>
+              </div>
+            </div>
+
+            <div class="publish-grid">
+              <div class="subcard" style="min-height: 0">
+                <div class="subheader">
+                  <strong>预警文字编辑</strong>
+                  <span class="pill dot">草稿</span>
+                </div>
+                <div class="subbody">
+                  <div class="form-row">
+                    <div class="field" style="flex: 1">
+                      <label for="publishTypeSelect">发布类型</label>
+                      <select id="publishTypeSelect" aria-label="选择发布类型">
+                        <option value="weather">天气预警</option>
+                        <option value="period">时段预报</option>
+                      </select>
+                    </div>
+                    <label class="pill dot" style="flex:none;">
+                      <input id="fengshengSync" type="checkbox" style="accent-color:#7aa2ff; margin-right:8px;" />
+                      同步到丰声群（模拟）
+                    </label>
+                  </div>
+                  <textarea id="warnText" placeholder="输入预警内容（示例：预计未来1小时出现...）">【强对流】预计未来1小时机场附近出现强对流天气，可能伴随短时强降水和雷电，请注意。</textarea>
+
+                  <div class="form-row">
+                    <div class="field" style="flex: 1">
+                      <label for="receiverSelect">接收对象</label>
+                      <select id="receiverSelect" aria-label="选择接收对象">
+                        <option value="塔台">塔台</option>
+                        <option value="地服">地服</option>
+                        <option value="航司">航司</option>
+                        <option value="指挥中心">指挥中心</option>
+                      </select>
+                    </div>
+                    <button class="btn" id="submitForReviewBtn" type="button">提交审核</button>
+                  </div>
+
+                  <div class="hint">
+                    - 值班员/管理员：可提交，默认进入“待审核”<br />
+                    - 带班：可对“待审核”执行审核通过/驳回（演示）
+                  </div>
+                </div>
+              </div>
+
+              <div class="list">
+                <div class="list-header">
+                  <strong>待审核列表</strong>
+                  <span class="pill warn dot" id="pendingCount">2 条</span>
+                </div>
+                <div class="rows scroll" id="pendingList" aria-label="待审核列表">
+                  <!-- Filled by JS -->
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Card 6 -->
+        <section class="card accent-purple" id="card6" data-card-title="实时检验">
+          <div class="card-inner">
+            <div class="card-header">
+              <div class="card-title">
+                <strong>实时检验</strong>
+                <span>准确率（模拟）</span>
+              </div>
+              <div class="card-tools">
+                <a class="open-new" href="#" data-open-card="card6" title="在新标签页打开">新标签页</a>
+              </div>
+            </div>
+
+            <div class="accuracy">
+              <div class="pill ok dot">今日预报准确率</div>
+              <strong id="accuracyValue">85%</strong>
+              <div class="bar" aria-label="准确率进度条"><i id="accuracyBar"></i></div>
+              <div class="hint">说明：此处为占位指标，可替换为实际检验统计结果。</div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite">
+      <div class="t" id="toastTitle">提示</div>
+      <div class="d" id="toastDesc">-</div>
+    </div>
+
+    <script>
+      (function () {
+        const $ = (sel, root = document) => root.querySelector(sel);
+        const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+
+        const accountSelect = $("#accountSelect");
+        const roleSelect = $("#roleSelect");
+        const roleField = $("#roleField");
+        const roleHint = $("#roleHint");
+        const openMonitorViewBtn = $("#openMonitorViewBtn");
+        const openActionViewBtn = $("#openActionViewBtn");
+        const openAnalysisViewBtn = $("#openAnalysisViewBtn");
+        const toast = $("#toast");
+        const toastTitle = $("#toastTitle");
+        const toastDesc = $("#toastDesc");
+
+        const siteFrame = $("#siteFrame");
+        const siteNow = $("#siteNow");
+        const embedToggle = $("#embedToggle");
+        const openCurrentSiteBtn = $("#openCurrentSiteBtn");
+        const toggleFavFormBtn = $("#toggleFavFormBtn");
+        const resetFavBtn = $("#resetFavBtn");
+        const favForm = $("#favForm");
+        const favName = $("#favName");
+        const favUrl = $("#favUrl");
+        const cancelFavBtn = $("#cancelFavBtn");
+        const saveFavBtn = $("#saveFavBtn");
+        const favSiteButtons = $("#favSiteButtons");
+
+        let currentSite = { name: "中央气象台", url: "https://www.nmc.cn/" };
+
+        function setViewFromUrl() {
+          const params = new URLSearchParams(window.location.search);
+          const view = (params.get("view") || "").trim().toLowerCase();
+          if (view === "monitor" || view === "action" || view === "analysis") {
+            document.body.setAttribute("data-view", view);
+          } else {
+            document.body.removeAttribute("data-view");
+          }
+        }
+
+        function getView() {
+          return document.body.getAttribute("data-view") || "main";
+        }
+
+        function openViewInNewWindow(view) {
+          const url = new URL(window.location.href);
+          url.searchParams.set("view", view);
+          window.open(url.toString(), "_blank", "noopener,noreferrer");
+        }
+
+        function showToast(title, desc, ms = 2200) {
+          if (!toast || !toastTitle || !toastDesc) return;
+          toastTitle.textContent = title;
+          toastDesc.textContent = desc;
+          toast.classList.add("show");
+          window.clearTimeout(showToast._t);
+          showToast._t = window.setTimeout(() => toast.classList.remove("show"), ms);
+        }
+
+        function setRoleOptionsForView() {
+          const v = getView();
+          const allowLeader = v === "action";
+          if (roleField) roleField.style.display = allowLeader ? "" : "none";
+          if (!roleSelect) return;
+          const keep = roleSelect.value;
+          roleSelect.innerHTML = allowLeader
+            ? `<option value="operator">值班员</option><option value="leader">带班</option>`
+            : `<option value="operator">值班员</option>`;
+          roleSelect.value = allowLeader && (keep === "leader" || keep === "operator") ? keep : "operator";
+        }
+
+        function getAccount() {
+          return accountSelect?.value || "u1";
+        }
+
+        function storageKey(account) {
+          return `wx_workbench_favs_${account}`;
+        }
+
+        function loadFavs() {
+          try {
+            const raw = localStorage.getItem(storageKey(getAccount()));
+            const arr = raw ? JSON.parse(raw) : [];
+            return Array.isArray(arr) ? arr : [];
+          } catch {
+            return [];
+          }
+        }
+
+        function saveFavs(list) {
+          localStorage.setItem(storageKey(getAccount()), JSON.stringify(list));
+        }
+
+        function renderFavButtons() {
+          if (!favSiteButtons) return;
+          const favs = loadFavs();
+          if (favs.length === 0) {
+            favSiteButtons.innerHTML = `<div class="hint">本账号暂无收藏。点击“添加收藏”新增。</div>`;
+            return;
+          }
+          favSiteButtons.innerHTML = favs
+            .map(
+              (f) => `
+                <button class="btn secondary site-btn" type="button" data-site="fav" data-url="${escapeHtml(f.url)}">
+                  <span>${escapeHtml(f.name)}</span>
+                  <small>收藏</small>
+                </button>
+              `
+            )
+            .join("");
+        }
+
+        const pendingList = $("#pendingList");
+        const pendingCount = $("#pendingCount");
+        const submitForReviewBtn = $("#submitForReviewBtn");
+        const warnText = $("#warnText");
+        const receiverSelect = $("#receiverSelect");
+        const publishTypeSelect = $("#publishTypeSelect");
+        const fengshengSync = $("#fengshengSync");
+
+        const shortWarningList = $("#shortWarningList");
+
+        const chatLog = $("#chatLog");
+        const chatInput = $("#chatInput");
+        const sendBtn = $("#sendBtn");
+
+        const stationQueryBtn = $("#stationQueryBtn");
+        const stationInput = $("#stationInput");
+        const mWindDir = $("#mWindDir");
+        const mWindSpd = $("#mWindSpd");
+        const mTemp = $("#mTemp");
+        const mPress = $("#mPress");
+
+        const accuracyValue = $("#accuracyValue");
+        const accuracyBar = $("#accuracyBar");
+
+        // ----- Data (mock) -----
+        /** @type {Array<{id:string, text:string, receiver:string, createdAt:string, status:"pending"|"approved"|"rejected", publishType:"weather"|"period", syncFengsheng:boolean}>} */
+        let reviewItems = [
+          {
+            id: "P-1001",
+            text: "【低能见度】预计12:00-13:30本场可能出现能见度下降，请航班运行注意。",
+            receiver: "塔台",
+            createdAt: "10:20",
+            status: "pending",
+            publishType: "weather",
+            syncFengsheng: false,
+          },
+          {
+            id: "P-1002",
+            text: "【阵风】预计未来2小时内出现短时阵风，最大阵风可达 17m/s。",
+            receiver: "指挥中心",
+            createdAt: "10:45",
+            status: "pending",
+            publishType: "weather",
+            syncFengsheng: true,
+          },
+        ];
+
+        function nowHHMM() {
+          const d = new Date();
+          const hh = String(d.getHours()).padStart(2, "0");
+          const mm = String(d.getMinutes()).padStart(2, "0");
+          return `${hh}:${mm}`;
+        }
+
+        function setRoleHint(role) {
+          if (role === "leader") roleHint.textContent = "当前：带班（可审核通过/驳回）";
+          else roleHint.textContent = "当前：值班员（仅提交，不可审核）";
+        }
+
+        function canReview(role) {
+          return role === "leader";
+        }
+
+        function escapeHtml(str) {
+          return String(str)
+            .replaceAll("&", "&amp;")
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;")
+            .replaceAll('"', "&quot;")
+            .replaceAll("'", "&#39;");
+        }
+
+        function renderPending() {
+          const role = roleSelect.value;
+          const isLeader = canReview(role);
+
+          const pending = reviewItems.filter((x) => x.status === "pending");
+          pendingCount.textContent = `${pending.length} 条`;
+
+          pendingList.innerHTML = pending
+            .map((item) => {
+              const actions = isLeader
+                ? `
+                  <div class="actions">
+                    <button class="btn ok" type="button" data-action="approve" data-id="${escapeHtml(item.id)}">审核通过</button>
+                    <button class="btn danger" type="button" data-action="reject" data-id="${escapeHtml(item.id)}">驳回</button>
+                  </div>
+                `
+                : `
+                  <div class="actions">
+                    <span class="pill warn dot">待带班审核</span>
+                  </div>
+                `;
+
+              const typeText = item.publishType === "period" ? "时段预报" : "天气预警";
+              const syncText = item.syncFengsheng ? " · 丰声同步(模拟)" : "";
+              return `
+                <div class="row">
+                  <div class="top">
+                    <span>${escapeHtml(item.id)} · ${escapeHtml(item.createdAt)} · ${typeText}${syncText} · 接收对象：${escapeHtml(
+                item.receiver
+              )}</span>
+                    <span class="pill warn dot">待审核</span>
+                  </div>
+                  <div class="body">${escapeHtml(item.text)}</div>
+                  ${actions}
+                </div>
+              `;
+            })
+            .join("");
+        }
+
+        function addShortWarningFromApproved(item) {
+          if (item.publishType !== "weather") return;
+          const wrap = document.createElement("div");
+          wrap.className = "warning-item";
+          wrap.innerHTML = `
+            <div class="meta">
+              <span class="pill ok dot">审核通过</span>
+              <span>${escapeHtml(nowHHMM())}</span>
+            </div>
+            <div class="text">${escapeHtml(item.text)}（接收对象：${escapeHtml(item.receiver)}）</div>
+          `;
+          shortWarningList.prepend(wrap);
+        }
+
+        function approveItem(id) {
+          const idx = reviewItems.findIndex((x) => x.id === id && x.status === "pending");
+          if (idx === -1) return;
+          reviewItems[idx].status = "approved";
+          addShortWarningFromApproved(reviewItems[idx]);
+          renderPending();
+        }
+
+        function rejectItem(id) {
+          const idx = reviewItems.findIndex((x) => x.id === id && x.status === "pending");
+          if (idx === -1) return;
+          reviewItems[idx].status = "rejected";
+          renderPending();
+        }
+
+        // ----- Interactions -----
+        accountSelect?.addEventListener("change", () => {
+          renderFavButtons();
+          bindSiteButtons();
+          showToast("账号已切换", `当前：${accountSelect.options[accountSelect.selectedIndex]?.textContent || getAccount()}`);
+        });
+
+        toggleFavFormBtn?.addEventListener("click", () => {
+          if (!favForm) return;
+          favForm.style.display = favForm.style.display === "none" ? "" : "none";
+        });
+        cancelFavBtn?.addEventListener("click", () => {
+          if (!favForm) return;
+          favForm.style.display = "none";
+        });
+        saveFavBtn?.addEventListener("click", () => {
+          const name = favName?.value?.trim();
+          const url = favUrl?.value?.trim();
+          if (!name || !url) {
+            showToast("未保存", "请填写站点名称与URL。");
+            return;
+          }
+          const list = loadFavs();
+          list.unshift({ name, url });
+          saveFavs(list);
+          if (favName) favName.value = "";
+          if (favUrl) favUrl.value = "";
+          if (favForm) favForm.style.display = "none";
+          renderFavButtons();
+          bindSiteButtons();
+          showToast("收藏已添加", `${name}`);
+        });
+        resetFavBtn?.addEventListener("click", () => {
+          saveFavs([]);
+          renderFavButtons();
+          showToast("收藏已重置", "仅影响当前账号。");
+        });
+
+        function openSiteNewTab(url) {
+          window.open(url, "_blank", "noopener,noreferrer");
+        }
+
+        function setCurrentSite(name, url) {
+          currentSite = { name, url };
+          const modeText = embedToggle?.checked ? "内嵌预览模式" : "默认新标签页";
+          siteNow.textContent = `当前：${name}（${modeText}）`;
+        }
+
+        function bindSiteButtons() {
+          $$(".site-btn").forEach((btn) => {
+            if (btn.dataset.bound === "1") return;
+            btn.dataset.bound = "1";
+            btn.addEventListener("click", () => {
+              const url = btn.getAttribute("data-url") || "https://example.com";
+              const name = btn.querySelector("span")?.textContent?.trim() || "外部站点";
+              setCurrentSite(name, url);
+
+              if (embedToggle?.checked) {
+                siteFrame.src = url;
+                return;
+              }
+
+              openSiteNewTab(url);
+            });
+          });
+        }
+
+        // External sites: default open new tab; optional embed preview
+        bindSiteButtons();
+
+        embedToggle?.addEventListener("change", () => {
+          setCurrentSite(currentSite.name, currentSite.url);
+          if (embedToggle.checked) siteFrame.src = currentSite.url;
+        });
+
+        openCurrentSiteBtn?.addEventListener("click", () => {
+          openSiteNewTab(currentSite.url);
+        });
+
+        openMonitorViewBtn?.addEventListener("click", () => openViewInNewWindow("monitor"));
+        openActionViewBtn?.addEventListener("click", () => openViewInNewWindow("action"));
+        openAnalysisViewBtn?.addEventListener("click", () => openViewInNewWindow("analysis"));
+
+        // Role switch toggles audit buttons
+        roleSelect.addEventListener("change", () => {
+          setRoleHint(roleSelect.value);
+          renderPending();
+        });
+
+        // Submit warning for review
+        submitForReviewBtn.addEventListener("click", () => {
+          const text = warnText.value.trim();
+          const receiver = receiverSelect.value;
+          if (!text) return;
+          const id = `P-${Math.floor(1000 + Math.random() * 9000)}`;
+          const publishType = publishTypeSelect?.value === "period" ? "period" : "weather";
+          const syncF = !!fengshengSync?.checked;
+          reviewItems.unshift({ id, text, receiver, createdAt: nowHHMM(), status: "pending", publishType, syncFengsheng: syncF });
+          renderPending();
+          if (syncF) showToast("丰声同步（模拟）", "已模拟发送到丰声群（实际需后端/接口对接）。");
+        });
+
+        // Pending list actions
+        pendingList.addEventListener("click", (e) => {
+          const t = /** @type {HTMLElement} */ (e.target);
+          const action = t.getAttribute("data-action");
+          const id = t.getAttribute("data-id");
+          if (!action || !id) return;
+          if (!canReview(roleSelect.value)) return;
+          if (action === "approve") approveItem(id);
+          if (action === "reject") rejectItem(id);
+        });
+
+        // Chat: placeholder send (append message only)
+        function sendChat() {
+          const v = chatInput.value.trim();
+          if (!v) return;
+          const userMsg = document.createElement("div");
+          userMsg.className = "msg user";
+          userMsg.textContent = v;
+          chatLog.appendChild(userMsg);
+
+          const aiMsg = document.createElement("div");
+          aiMsg.className = "msg ai";
+          aiMsg.textContent = "AI：占位回复（此处可接入实际模型/业务接口）。";
+          chatLog.appendChild(aiMsg);
+
+          chatInput.value = "";
+          chatLog.scrollTop = chatLog.scrollHeight;
+        }
+        sendBtn.addEventListener("click", sendChat);
+        chatInput.addEventListener("keydown", (e) => {
+          if (e.key === "Enter") sendChat();
+        });
+
+        // Station query: random refresh placeholders
+        function randomPick(arr) {
+          return arr[Math.floor(Math.random() * arr.length)];
+        }
+        stationQueryBtn.addEventListener("click", () => {
+          const code = stationInput.value.trim() || "ZBAA";
+          stationInput.value = code.toUpperCase();
+          mWindDir.textContent = randomPick(["N", "NE", "E", "SE", "S", "SW", "W", "NW"]);
+          mWindSpd.textContent = `${randomPick([3, 5, 7, 8, 10, 12, 14, 16])} m/s`;
+          mTemp.textContent = `${randomPick([18, 19, 20, 21, 22, 23, 24, 25, 26])} ℃`;
+          mPress.textContent = `${randomPick([1002, 1004, 1006, 1008, 1010, 1012])} hPa`;
+        });
+
+        // New tab open: clone current card content into a standalone page
+        function openCardInNewTab(cardId) {
+          const card = document.getElementById(cardId);
+          if (!card) return;
+          const title = card.getAttribute("data-card-title") || "详情";
+          const content = card.innerHTML;
+
+          const w = window.open("", "_blank");
+          if (!w) return;
+          w.document.open();
+          w.document.write(`
+            <!doctype html>
+            <html lang="zh-CN">
+              <head>
+                <meta charset="UTF-8" />
+                <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+                <title>${escapeHtml(title)} - 新标签页</title>
+                <style>
+                  body{
+                    margin:0;
+                    font-family:${getComputedStyle(document.body).fontFamily};
+                    background: ${getComputedStyle(document.body).background};
+                    color: ${getComputedStyle(document.body).color};
+                    padding: 18px;
+                  }
+                  .wrap{
+                    max-width: 1200px;
+                    margin: 0 auto;
+                  }
+                  .card{
+                    border-radius: 16px;
+                    border: 1px solid rgba(157,181,255,0.18);
+                    background: rgba(18,26,55,0.78);
+                    box-shadow: 0 18px 60px rgba(0,0,0,0.38);
+                    overflow:hidden;
+                  }
+                  .card-inner{ padding: 12px 12px 14px; }
+                  a{ color: rgba(122,162,255,0.92); }
+                  button, input, textarea, select{ font-family: inherit; }
+                  iframe{ width:100%; height: 72vh; border: none; background: rgba(7,10,20,0.55); }
+                </style>
+              </head>
+              <body>
+                <div class="wrap">
+                  <div class="card">
+                    <div class="card-inner">
+                      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px;">
+                        <div style="font-weight:700;">${escapeHtml(title)}（详情视图）</div>
+                        <a href="javascript:window.close()" style="text-decoration:none;">关闭</a>
+                      </div>
+                      <div>${content}</div>
+                    </div>
+                  </div>
+                </div>
+              </body>
+            </html>
+          `);
+          w.document.close();
+        }
+        $$("[data-open-card]").forEach((a) => {
+          a.addEventListener("click", (e) => {
+            e.preventDefault();
+            const id = a.getAttribute("data-open-card");
+            if (!id) return;
+            openCardInNewTab(id);
+          });
+        });
+
+        // Accuracy mock (sync bar with value)
+        function setAccuracy(pct) {
+          const clamped = Math.max(0, Math.min(100, pct));
+          accuracyValue.textContent = `${clamped}%`;
+          accuracyBar.style.width = `${clamped}%`;
+        }
+        setAccuracy(85);
+
+        // Initial render
+        setViewFromUrl();
+        setRoleOptionsForView();
+        setRoleHint(roleSelect.value);
+        renderPending();
+        setCurrentSite(currentSite.name, currentSite.url);
+        renderFavButtons();
+        bindSiteButtons();
+      })();
+    </script>
+  </body>
+</html>
+

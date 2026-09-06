@@ -1,0 +1,171 @@
+航班信息接口
+1.接口描述
+1）接口名称：获取航班列表信息
+2）业务流程：业务系统根据航班日期获取航班列表信息
+3）运行模式：数据提交
+4）执行方式：rest
+5）功能描述：以航班日期为主条件查询航班列表
+6）执行频率：实时
+7）URL（测试外网）：http://public-api-market-apis.intsit.sfcloud.local:8000/api/flight/flightSchedule/getByFlightDate
+8）METHOD：POST
+9）测试环境外网headers：
+systemKey:629dd582-f044-41ec-aebb-1f352e26ca92
+accessKey:api2_935b8fc3-a8dc-41d5-a6d0-1c91b1d3e209
+2.输入报文：
+1）开始时间
+属性：startTime
+数据类型：Date（毫秒级时间戳）
+是否必填：是
+填入内容：当前时间前24小时所在时刻的时间戳（毫秒级）。
+
+2）结束时间
+属性：endTime
+数据类型：Date（毫秒级时间戳）
+是否必填：是
+填入内容：当前时间后48小时所在时刻的时间戳（毫秒级）。
+
+3）过滤取消航班
+属性：excludeCancel
+数据类型：Boolean
+是否必填：是
+填入内容：true
+
+4）过滤实达不为空
+属性：excludeHaveAta
+数据类型：Boolean
+是否必填：是
+填入内容：true
+
+5）请求位置：Body
+6）请求样例：
+{
+    "startTime": 1755187200000,
+    "endTime": 1755446400000,
+    "excludeCancel": true,
+    "excludeHaveAta": true
+}
+3.输出报文：
+1）成功标识
+字段：success
+数据类型：Boolean
+说明：true:成功、false:失败
+2）成功返回信息
+字段：obj
+数据类型：List
+说明：航班列表信息
+3）obj（航班列表信息）中航班解析程序所需内容（每个列表元素都需要提取）：
+航班性质：flightType
+承运人：carrier
+起飞机场四码：departureAirport
+着陆机场四码：arrivalAirport
+计飞：std
+计达：sta
+预飞：etd
+预达：eta
+实飞：atd
+实达：ata
+
+4）输出样例（正常）{
+    "requestId": null,
+    "success": true,
+    "business": null,
+    "errorCode": null,
+    "errorMessage": null,
+    "params": null,
+    "date": null,
+    "version": null,
+    "obj": [
+        {
+            "flightId": 102432131,
+            "flightDate": 1753718400000,
+            "carrier": "O3",
+            "flightNo": "O3248",
+            "flightType": "H",
+            "acType": "B763",
+            "acReg": "B220T",
+            "std": 1753775100000,
+            "sta": 1753778400000,
+            "etd": 1753776300000,
+            "eta": 1753778400000,
+            "out": 1753776240000,
+            "inn": 1753778100000,
+            "blockOut": 1753775640000,
+            "closeDoorTime": 1753775460000,
+            "depAirportCn": "达卡",
+            "depAirport3Code": "DAC",
+            "depAirportCnShort": "达",
+            "arrAirportCn": "达卡",
+            "departureAirport": "VGHS",
+            "arrAirport3Code": "DAC",
+            "arrivalAirport": "VGHS",
+            "arrAirportCnShort": "达",
+            "companyFlag": "IBU_B",
+            "bay": "D13",
+            "flagAddFuel": "N",
+            "cssUnit": "KG",
+            "remark": "1624滑回排故\n\n航班在跑道头准备起飞时出现起飞形态告警，机组申请退出跑道滑回检查。",
+            "dorI": "I"
+        },
+        {
+            "flightId": 102431488,
+            "flightDate": 1754409600000,
+            "carrier": "O3",
+            "flightNo": "O37277",
+            "flightType": "N",
+            "acType": "B752",
+            "acReg": "B2826",
+            "ptd": 1754416500000,
+            "pta": 1754423400000,
+            "std": 1754417700000,
+            "sta": 1754423700000,
+            "etd": 1754440500000,
+            "eta": 1754450400000,
+            "atd": 1754441280000,
+            "out": 1754440860000,
+            "blockOut": 1754440440000,
+            "closeDoorTime": 1754439900000,
+            "depAirportCn": "温州",
+            "depAirport3Code": "WNZ",
+            "depAirportCnShort": "温",
+            "arrAirportCn": "深圳",
+            "departureAirport": "ZSWZ",
+            "arrAirport3Code": "SZX",
+            "arrivalAirport": "ZGSZ",
+            "arrAirportCnShort": "圳",
+            "companyFlag": "SF_B",
+            "flgVr": "VC",
+            "flgDelay": "D",
+            "bay": "230",
+            "bay2": "124",
+            "acarsAtd": 1754441280000,
+            "expectLoad": "26400",
+            "realLoad": "26433",
+            "limitLoad": "27215",
+            "totalFuel": 37081,
+            "tripFuel": 13331,
+            "slideFuel": 600,
+            "realFuel": 37681,
+            "flagAddFuel": "N",
+            "cssUnit": "LB",
+            "remark": "深圳进港GDP",
+            "fplDivAirport1": "ZGGG",
+            "fplDivAirport2": "ZGKL",
+            "cfpRoute": "ZSWZZGSZ3",
+            "totalFuelKg": 16819,
+            "tripFuelKg": 6046,
+            "dorI": "D"
+        }
+    ]
+}
+5）输出样例（异常）
+{
+    "success": false,
+    "errorCode": "1010",
+    "errorMessage": "调用的方法不存在"
+}
+
+
+
+
+
+

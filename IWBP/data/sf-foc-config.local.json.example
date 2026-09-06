@@ -1,0 +1,18 @@
+{
+  "baseUrl": "http://sfa-wgw-inn.sf-airlines.com:1080",
+  "_baseUrlNote": "生产外网（IT 2026-08）。UAT 联调改为 http://sfa-wgw-inn.uat.sf-airlines.com:1080",
+  "token": "",
+  "tokenObtainedAt": "",
+  "tokenExpiresAt": "",
+  "tokenTtlHours": 12,
+  "_tokenNote": "token 由工作台/MTWS/OMICS 扫码写入浏览器与 AuthBroker，不再保存在此文件",
+  "casAppKey": "sfaAlgo",
+  "casAppSecret": "sfaAlgo",
+  "_casAppKeyNote": "与 IT 提供的 cas_login.py 一致；若扫码失败再向 IT 确认 appKey/Secret",
+  "casValidateUrl": "https://sfa-gwgw-inn.sf-airlines.com:8443/apis-auth/login/cas3.0",
+  "sfUserId": "",
+  "_sfUserIdNote": "可选，与 F12 里 Sga-Userid / X-Sf-Userid 一致",
+  "systemKey": "",
+  "_systemKeyNote": "生产/UAT 外网网关仅 Token，留空；内网 Market API 才填 systemKey/accessKey",
+  "accessKey": ""
+}

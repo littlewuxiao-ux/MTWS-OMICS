@@ -1,0 +1,42 @@
+气象智能业务工作台 · 接入「航空气象统一服务启动器」说明
+（发给维护 MTWS+OMICS 启动器的同事）
+
+一、要增加的第 3 个任务
+  显示名称：气象智能业务工作台
+  简称：工作台 / MTWS 同屏第三块
+  项目目录：d:\weather agent\V2  （与 MTWS/OMICS 一样，路径可配置）
+
+二、端口与健康检查
+  监听端口：8787
+  健康检查 URL：http://127.0.0.1:8787/api/platform/health
+  判定：HTTP 200 即「运行中」
+
+三、启动 / 停止 / 打开主页（可直接填路径）
+  启动脚本：d:\weather agent\V2\tools\launcher-start-workbench.bat
+  停止脚本：d:\weather agent\V2\tools\launcher-stop-workbench.bat
+  打开主页：d:\weather agent\V2\tools\launcher-open-workbench.bat
+            或直接浏览器打开 http://localhost:8787/index.html
+
+  启动脚本会：
+    1. 检查必要文件与 robot webhook 配置
+    2. 以「隐藏窗口」方式后台启动 node（8787 + 机器人），任务栏无 cmd 黑框
+    3. bat 本身一闪即退（与 MTWS+OMICS 桌面 bat 相同）；请用 health 接口轮询就绪
+    4. 值班员日常只保留统一启动器 GUI 窗口；8787/机器人在后台跑
+
+  若启动器支持像 MTWS 一样直接拉起进程，也可改为：
+    进程 A：node tools\dev-server-proxy.cjs  （cwd = 项目根，隐藏窗口）
+    进程 B：node tools\robot-outbox-send.cjs --watch
+
+四、运行日志（建议在面板 tail，与 MTWS 一样）
+  机器人发群：d:\weather agent\V2\data\robot-outbox-send.log
+  工作台 Node：无单独 log 文件，以 8787 health 为准；异常时可看上述 robot 日志
+
+五、与 MTWS / OMICS 并列时的「全部启动」
+  第三块与 MTWS(8001)、OMICS(8002) 无端口冲突，可一并启动。
+
+六、后续 IT 正式鉴权 / 丰声扫码登录后
+  通常只需改「打开主页」URL（如改为 login.html 或内网域名），
+  启动/停止脚本路径一般不变。
+
+七、对接人（气象服务席）
+  曹骏 · 有问题可先看席位 data\robot-outbox-send.log

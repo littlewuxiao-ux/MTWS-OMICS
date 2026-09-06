@@ -1,0 +1,29 @@
+{
+  "name": "气象智能业务工作台",
+  "builtAt": "2026-07-16T08:34:59.792Z",
+  "sourceRoot": "D:\\weather agent\\V2",
+  "entry": "index.html",
+  "withSurvey": false,
+  "files": [
+    "index.html",
+    "assets/head-boot.js",
+    "assets/bootstrap.js",
+    "assets/app.js",
+    "data/checklist-embedded.json",
+    "login.html",
+    "index_enterprise.html",
+    "data/icao-whitelist.json",
+    "data/sf-approved-airports.json",
+    "data/active-warnings.json",
+    "data/weather-standards.json",
+    "data/flight-monitor-config.json",
+    "data/metar-thresholds-template.json",
+    "widget/ (6 files)"
+  ],
+  "warnings": [],
+  "splitScripts": {
+    "headBoot": true,
+    "bootstrap": true,
+    "appBytes": 552661
+  }
+}

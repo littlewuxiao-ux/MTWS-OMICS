@@ -58,3 +58,13 @@ Desktop.ini
 MTWS/data/raw/
 MTWS/mtws_django/staticfiles/
 
+# ==== IWBP seat-local runtime (do not upload; app code unchanged) ====
+IWBP/data/active-warnings.json
+IWBP/data/cas-web-sessions/
+IWBP/data/checklist-config.json
+IWBP/data/workbench-service-config.json
+IWBP/deploy-workbench/data/active-warnings.json
+IWBP/airports.csv
+IWBP/deploy-workbench.zip
+IWBP/.cursor/
+

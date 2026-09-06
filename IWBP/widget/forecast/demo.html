@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Forecast Widget Demo</title>
+    <link rel="stylesheet" href="./forecast-widget.css" />
+  </head>
+  <body>
+    <main class="page">
+      <h1>要素展示独立组件 Demo</h1>
+      <p class="hint">输入 ICAO 四字码后点击查询，打开独立要素弹窗。</p>
+      <div id="forecastMount"></div>
+    </main>
+
+    <script src="./forecast-widget.js"></script>
+    <script>
+      window.ForecastWidget.create({
+        mount: document.getElementById("forecastMount"),
+        // 部署到其它机器时，改成你自己的坐标库路径
+        overridesUrl: "../../icao-airport-overrides.json",
+        defaultCode: "ZBAA",
+      });
+    </script>
+  </body>
+  </html>

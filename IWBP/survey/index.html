@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>问卷入口</title>
+    <style>
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+        background: linear-gradient(160deg, #0f1419, #1a2430);
+        color: #e8eef4;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+      }
+      .card {
+        max-width: 420px;
+        width: 100%;
+        background: #1a222d;
+        border: 1px solid #2a3542;
+        border-radius: 16px;
+        padding: 28px 24px;
+        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
+      }
+      h1 {
+        font-size: 20px;
+        margin: 0 0 8px;
+      }
+      p {
+        color: #9aa8b6;
+        font-size: 14px;
+        line-height: 1.6;
+        margin: 0 0 20px;
+      }
+      a.btn {
+        display: block;
+        text-align: center;
+        padding: 14px 16px;
+        border-radius: 12px;
+        text-decoration: none;
+        font-size: 15px;
+        margin-bottom: 12px;
+        color: #fff;
+      }
+      a.btn-meteo {
+        background: #2563eb;
+      }
+      a.btn-dispatch {
+        background: #0d9488;
+      }
+      a.btn:hover {
+        filter: brightness(1.08);
+      }
+      code {
+        font-size: 12px;
+        background: #121920;
+        padding: 2px 6px;
+        border-radius: 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>问卷调查（本地版）</h1>
+      <p>在浏览器中打开本页，选择问卷类型。题目请在项目内编辑 <code>config-meteo.js</code> 与 <code>config-dispatch.js</code>。</p>
+      <a class="btn btn-meteo" href="form.html?survey=meteo">气象人员问卷</a>
+      <a class="btn btn-dispatch" href="form.html?survey=dispatch">签派人员问卷</a>
+      <p style="margin-bottom: 0; font-size: 12px">说明：这不是微信内小程序；若需微信里分发，可使用腾讯问卷等再嵌入或自行开发小程序。</p>
+    </div>
+  </body>
+</html>

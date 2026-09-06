@@ -1,0 +1,6 @@
+{
+  "carriers": ["O3"],
+  "hoursBack": 24,
+  "hoursAhead": 48,
+  "refreshMinutes": 10
+}

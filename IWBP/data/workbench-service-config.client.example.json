@@ -1,0 +1,6 @@
+{
+  "role": "client",
+  "host": "10.88.24.24",
+  "port": 8787,
+  "_comment": "席位 2 专用：复制为 workbench-service-config.json 后运行 start-workbench-client.bat。勿在本机运行 start-workbench-quiet.bat。"
+}

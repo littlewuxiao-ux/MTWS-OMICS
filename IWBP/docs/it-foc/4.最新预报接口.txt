@@ -1,0 +1,79 @@
+根据机场四码和时间获取最新的预报报文（支持批量，有FT时优先返回FT,无FT时返回TC）
+1.接口描述
+1）接口名称：根据机场四码和时间获取预报报文（支持批量。有FT时优先返回FT,无FT时返回TC）
+2）运行模式：数据获取
+3）执行方式：rest
+4）涉及数据库：FOCNEW
+5）执行频率：实时
+6）URL（测试外网）：http://public-api-market-apis.intsit.sfcloud.local:8000/api/met/dispatchTafMetTel/queryTafTelList
+7）测试环境外网headers：
+systemKey:629dd582-f044-41ec-aebb-1f352e26ca92
+accessKey:api2_935b8fc3-a8dc-41d5-a6d0-1c91b1d3e209
+2.输入参数
+1）机场四码列表
+属性：airport4Codes
+数据类型：List< String>
+是否必填：是
+填入内容：机场四码列表，如["ZBAA","ZGSZ"]
+2）观测时间
+属性：observationTime
+数据类型：Date（毫秒级时间戳）
+是否必填：是
+填入内容：当前时间前14小时所在时刻的时间戳（毫秒级）
+3）请求位置：Body
+4）请求样例
+{
+    "airport4Codes":["ZBAA","ZGSZ","ZSHC","ZLLL","ENGM"],
+    "observationTime":1733832055000
+}
+3.输出结果
+1）成功标识
+字段：success
+数据类型：Boolean
+说明：true:成功、false:失败
+2）失败错误信息：
+字段：errorMessage
+数据类型：String
+说明：错误信息
+3）成功返回信息：
+字段：obj
+数据类型：List
+说明：报文列表
+4）obj（最新实况报文列表）中所需字段值：同预报解析程序读取csv文件时的字段值（每个元素都需要进行提取所有所需字段值），字段名相同；
+5）输出样例（正常）：
+{
+    "requestId": null,
+    "success": true,
+    "business": null,
+    "errorCode": null,
+    "errorMessage": null,
+    "params": null,
+    "date": null,
+    "version": null,
+    "obj": [
+        {
+            "receiveTime": 1755284660000,
+            "observationTime": 1755284460000,
+            "content": "TAF ZBAA 160301Z 1606/1712 18004MPS 6000 NSC TX29/1607Z TX30/1707Z TN24/1621Z=",
+            "airport4Code": "ZBAA",
+            "sqc": 5622020,
+            "wtype": "FT"
+        },
+        {
+            "receiveTime": 1755285436000,
+            "observationTime": 1755285300000,
+            "content": "TAF ZGSZ 160315Z 1606/1712 12004MPS 8000 SCT040 TX34/1606Z TX32/1706Z TN27/1622Z TEMPO 1606/1609 SHRA FEW020CB SCT050 TEMPO 1621/1624 SHRA FEW015 FEW020CB BKN050 TEMPO 1705/1710 TSRA SCT015 FEW020CB BKN040=",
+            "airport4Code": "ZGSZ",
+            "sqc": 5622314,
+            "wtype": "FT"
+        }
+    ]
+}
+6）输出样例（异常）
+{
+"success": false,
+"errorCode": "1010",
+"errorMessage": "系统错误",
+"obj": null
+}
+
