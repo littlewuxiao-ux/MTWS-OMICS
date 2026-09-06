@@ -1,0 +1,183 @@
+{
+  "version": 1,
+  "description": "航空气象信息通报群 · 机器人发布与 @ 规则（丰声 Next userId 由 IT/机器人同事填写）",
+  "targetGroup": {
+    "name": "航空气象信息通报群",
+    "platform": "丰声Next",
+    "robotCode": "dingysvdtfxz04o88ifw",
+    "openConversationId": "cidYDAaXULIy7DovWKMT4IkZQ==",
+    "webhookUrl": "https://oapi.dingtalk.com/robot/send?access_token=57c19aa5f3a12e6a16bf4b2ab433ab938e8b0441616ebbdaef338c93b206693b",
+    "note": "小助手持久化发群用 webhookUrl；正式路径仍用应用机器人 send_robot_group_message"
+  },
+  "sendMethod": {
+    "method": "application_robot",
+    "pollIntervalSeconds": 120,
+    "mcpApi": "send_robot_group_message",
+    "robotCode": "dingysvdtfxz04o88ifw",
+    "openConversationId": "cidYDAaXULIy7DovWKMT4IkZQ==",
+    "atUsers": {
+      "useAtUserIdsParam": true,
+      "embedAtInBodyPrefix": true,
+      "bodyPrefixFormat": "@{userId} 空格分隔，换行后接正文",
+      "note": "联调确认：atUserIds 与正文 @userId 前缀两者缺一不可；nextUserId 为丰声Next userId（非 openDingTalkId）"
+    },
+    "deprecated": {
+      "customWebhook": "仅用于联调；正式值班不稳定，已弃用"
+    }
+  },
+  "workbenchApi": {
+    "baseUrl": "http://127.0.0.1:8787",
+    "outboxPending": "/api/publish/outbox?pending=1",
+    "outboxMarkPushed": "/api/publish/outbox",
+    "robotConfig": "/api/publish/robot-config"
+  },
+  "roles": {
+    "aoc-dispatch": {
+      "label": "AOC签派放行",
+      "nextUserId": "89006806",
+      "nextUserIds": []
+    },
+    "aoc-duty-control": {
+      "label": "AOC运行控制带班席",
+      "nextUserId": "sfim070482",
+      "nextUserIds": []
+    },
+    "eoc-duty-manager": {
+      "label": "EOC值班经理",
+      "nextUserId": "sfim114936",
+      "nextUserIds": []
+    },
+    "maintenance-control": {
+      "label": "维修控制席",
+      "nextUserId": "89006932",
+      "nextUserIds": []
+    },
+    "aoc-terminal-control": {
+      "label": "AOC航站控制席",
+      "nextUserId": "89015682",
+      "nextUserIds": []
+    },
+    "ezhou-dispatch": {
+      "label": "鄂州运行调度带班席",
+      "nextUserId": "sfim137016",
+      "nextUserIds": []
+    },
+    "shenzhen-command": {
+      "label": "深圳现场指挥中心-带班席",
+      "nextUserId": "sfim220096",
+      "nextUserIds": []
+    },
+    "beijing-base-dispatch": {
+      "label": "北京基地调度",
+      "nextUserId": "89006797",
+      "nextUserIds": []
+    },
+    "hangzhou-control": {
+      "label": "杭州控制席",
+      "nextUserId": "89006801",
+      "nextUserIds": []
+    }
+  },
+  "contentTypes": {
+    "period": {
+      "label": "时段预报",
+      "targetGroup": "航空气象信息通报群",
+      "mentionRoles": [],
+      "note": "发群即可，无需 @ 任何人（与天气梳理、热带气旋不同）"
+    },
+    "brush": {
+      "label": "天气梳理",
+      "targetGroup": "航空气象信息通报群",
+      "mentionRoles": ["aoc-dispatch"],
+      "deadlineBeijing": "24:00",
+      "deadlineNote": "每日北京时 24:00 前发布"
+    },
+    "tc": {
+      "label": "热带气旋信息通报",
+      "targetGroup": "航空气象信息通报群",
+      "mentionRoles": ["aoc-dispatch"],
+      "detectRule": "outbox.type=alert 且 phenomena 含「热带气旋」"
+    },
+    "alert": {
+      "label": "机场警报",
+      "targetGroup": "航空气象信息通报群",
+      "mentionRolesAlways": ["aoc-dispatch", "aoc-duty-control"],
+      "mentionRolesByPhenomena": {
+        "maintenance-control": [
+          "强地面风和阵风",
+          "冰雹",
+          "小雹（霰）",
+          "雪",
+          "雨夹雪",
+          "冻降水",
+          "沙暴",
+          "尘暴",
+          "冰粒",
+          "极寒天气"
+        ]
+      },
+      "mentionRolesByStation": {
+        "ZHEC": ["ezhou-dispatch", "eoc-duty-manager"],
+        "ZGSZ": ["shenzhen-command"],
+        "ZBAA": ["beijing-base-dispatch"],
+        "ZSHC": ["hangzhou-control"]
+      },
+      "mentionRolesByPhenomenaAndStation": [
+        {
+          "phenomena": ["强地面风和阵风"],
+          "station": "ZGSZ",
+          "roles": ["aoc-terminal-control"]
+        }
+      ]
+    }
+  },
+  "periodForecasts": [
+    {
+      "slotId": "h4",
+      "title": "未来4小时天气预报",
+      "validTimeBeijing": "当日 04:00–08:00",
+      "validTimeCrossDay": false,
+      "publishDeadlineBeijing": "04:00",
+      "publishDeadlineDay": "valid_start_day",
+      "publishDeadlineNote": "须在有效时段开始（当日 04:00 北京时）之前发布",
+      "pollWindowStartOffsetMinutes": 180,
+      "pollIntervalMinutes": 10,
+      "pollUntil": "published_and_marked_pushed"
+    },
+    {
+      "slotId": "h12",
+      "title": "未来12小时天气预报",
+      "validTimeBeijing": "当日 08:00–20:00",
+      "validTimeCrossDay": false,
+      "publishDeadlineBeijing": "08:00",
+      "publishDeadlineDay": "valid_start_day",
+      "publishDeadlineNote": "须在有效时段开始（当日 08:00 北京时）之前发布",
+      "pollWindowStartOffsetMinutes": 180,
+      "pollIntervalMinutes": 10,
+      "pollUntil": "published_and_marked_pushed"
+    },
+    {
+      "slotId": "h8",
+      "title": "未来8小时天气预报",
+      "validTimeBeijing": "当日 20:00–次日 04:00",
+      "validTimeCrossDay": true,
+      "publishDeadlineBeijing": "20:00",
+      "publishDeadlineDay": "valid_start_day",
+      "publishDeadlineNote": "须在有效时段开始（当日 20:00 北京时）之前发布；有效时段跨至次日 04:00，但发布截止不跨日",
+      "pollWindowStartOffsetMinutes": 180,
+      "pollIntervalMinutes": 10,
+      "pollUntil": "published_and_marked_pushed"
+    }
+  ],
+  "brushSchedule": {
+    "deadlineBeijing": "24:00",
+    "pollWindowStartBeijing": "20:00",
+    "pollIntervalMinutes": 15,
+    "pollUntil": "published_and_marked_pushed"
+  },
+  "alertSchedule": {
+    "mode": "immediate",
+    "pollIntervalMinutes": 2,
+    "note": "值班员发布后立即抓取待发项，非定时"
+  }
+}
