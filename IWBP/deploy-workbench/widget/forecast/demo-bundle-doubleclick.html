@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Forecast Widget Double-Click Demo</title>
+  </head>
+  <body style="margin:0;background:#0b1326;color:#e9f1ff;font-family:Segoe UI,Microsoft YaHei,sans-serif;">
+    <div style="max-width:980px;margin:24px auto;padding:0 16px;">
+      <h2 style="margin:0 0 10px;">要素展示（双击可用版）</h2>
+      <p style="margin:0 0 12px;color:#9fb0d4;font-size:13px;">
+        该版本不读取本地坐标库，直接使用 Open-Meteo 在线地理编码与预报。
+      </p>
+      <div id="mount"></div>
+    </div>
+    <script src="./forecast-widget.bundle.js"></script>
+    <script>
+      window.ForecastWidget.create({
+        mount: document.getElementById("mount"),
+        // 不传 overridesUrl，避免 file:// 下本地 JSON fetch 限制
+        defaultCode: "ZBAA",
+      });
+    </script>
+  </body>
+</html>

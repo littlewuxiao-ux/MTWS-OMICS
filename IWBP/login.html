@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>登录 - 气象智能业务工作台</title>
+    <style>
+      :root {
+        --text: rgba(236, 242, 255, 0.96);
+        --muted: rgba(236, 242, 255, 0.72);
+        --line: rgba(133, 170, 255, 0.24);
+        --line-strong: rgba(133, 170, 255, 0.5);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        color: var(--text);
+        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Microsoft YaHei", Arial, sans-serif;
+        background:
+          radial-gradient(1200px 520px at 15% 10%, rgba(122, 162, 255, 0.18), transparent 55%),
+          radial-gradient(980px 520px at 85% 25%, rgba(94, 234, 212, 0.1), transparent 55%),
+          linear-gradient(180deg, #070d1a 0%, #0b1428 48%, #070d1a 100%);
+        display: grid;
+        place-items: center;
+        padding: 16px;
+      }
+      .panel {
+        width: min(520px, 94vw);
+        border-radius: 16px;
+        border: 1px solid rgba(133, 170, 255, 0.24);
+        background: linear-gradient(180deg, rgba(14, 24, 52, 0.82), rgba(8, 14, 30, 0.74));
+        box-shadow: 0 16px 42px rgba(0, 0, 0, 0.3);
+        padding: 24px 24px 20px;
+      }
+      .brand-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 8px;
+      }
+      .brand-badge {
+        width: 38px;
+        height: 38px;
+        border-radius: 10px;
+        border: 1px solid var(--line);
+        background:
+          radial-gradient(24px 14px at 50% 14%, rgba(122, 162, 255, 0.22), transparent 70%),
+          linear-gradient(180deg, rgba(20, 30, 62, 0.88), rgba(10, 14, 30, 0.88));
+        position: relative;
+      }
+      .brand-badge::before {
+        content: "";
+        position: absolute;
+        left: 7px;
+        right: 7px;
+        top: 7px;
+        height: 8px;
+        border-radius: 6px;
+        border: 1px solid rgba(122, 162, 255, 0.4);
+      }
+      .brand-badge::after {
+        content: "";
+        position: absolute;
+        left: 8px;
+        right: 8px;
+        bottom: 8px;
+        height: 10px;
+        border-radius: 6px;
+        background: linear-gradient(180deg, rgba(122, 162, 255, 0.2), rgba(122, 162, 255, 0.1));
+        border: 1px solid rgba(122, 162, 255, 0.34);
+      }
+      .title {
+        font-size: 28px;
+        font-weight: 750;
+        margin: 0;
+        letter-spacing: 0.3px;
+      }
+      .sub {
+        margin: 0 0 18px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+      .field {
+        display: grid;
+        gap: 8px;
+        margin-bottom: 14px;
+      }
+      label {
+        color: var(--muted);
+        font-size: 13px;
+        padding-left: 2px;
+      }
+      input {
+        width: 100%;
+        height: 46px;
+        border: 1px solid var(--line);
+        background: rgba(11, 18, 38, 0.88);
+        color: var(--text);
+        border-radius: 12px;
+        padding: 0 14px;
+        font-size: 15px;
+        outline: none;
+      }
+      input::placeholder {
+        color: rgba(236, 242, 255, 0.46);
+      }
+      input:focus {
+        border-color: var(--line-strong);
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        margin: 4px 0 14px;
+      }
+      .remember {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .remember input[type="checkbox"] {
+        width: 14px;
+        height: 14px;
+        margin: 0;
+        accent-color: #7aa2ff;
+      }
+      .hint {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .login-tip {
+        margin-top: 8px;
+        font-size: 12px;
+        color: var(--muted);
+        text-align: center;
+      }
+      .btn {
+        border: 1px solid rgba(133, 170, 255, 0.38);
+        background: rgba(122, 162, 255, 0.14);
+        color: var(--text);
+        border-radius: 12px;
+        height: 44px;
+        padding: 0 14px;
+        font-size: 14px;
+        cursor: pointer;
+      }
+      .btn.full {
+        width: 100%;
+        font-size: 15px;
+        font-weight: 650;
+      }
+      .btn.ghost {
+        width: 100%;
+        margin-top: 8px;
+        background: rgba(13, 18, 40, 0.52);
+      }
+      .err {
+        margin-top: 12px;
+        color: #ff9c9c;
+        font-size: 13px;
+        display: none;
+        padding-left: 2px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="panel">
+      <div class="brand-row">
+        <div class="brand-badge" aria-hidden="true"></div>
+        <h1 class="title">气象智能业务工作台</h1>
+      </div>
+      <p class="sub">账号密码登录原型（后续可替换为单位统一身份 SSO）</p>
+
+      <form id="loginForm">
+        <div class="field">
+          <label for="empId">工号</label>
+          <input id="empId" type="text" placeholder="请输入工号" autocomplete="username" />
+        </div>
+        <div class="field">
+          <label for="password">密码</label>
+          <input id="password" type="password" placeholder="请输入密码" autocomplete="current-password" />
+        </div>
+        <div class="row">
+          <label class="remember"><input id="rememberMe" type="checkbox" />记住账号</label>
+        </div>
+        <button class="btn full" type="submit">登录</button>
+        <button class="btn ghost" id="ssoBtn" type="button">统一身份登录（SSO 预留）</button>
+        <div class="login-tip">示例登录，无后端校验</div>
+      </form>
+
+      <div class="err" id="errMsg">请填写工号和密码。</div>
+    </div>
+
+    <script>
+      (function () {
+        const form = document.getElementById("loginForm");
+        const empId = document.getElementById("empId");
+        const password = document.getElementById("password");
+        const rememberMe = document.getElementById("rememberMe");
+        const ssoBtn = document.getElementById("ssoBtn");
+        const errMsg = document.getElementById("errMsg");
+
+        const params = new URLSearchParams(window.location.search);
+        const redirect = params.get("redirect") || "./index.html";
+
+        function goNext() {
+          const url = new URL(redirect, window.location.href);
+          url.searchParams.set("view", "home");
+          window.location.href = url.toString();
+        }
+
+        // 已登录则直接进入
+        try {
+          const raw = localStorage.getItem("wx_auth_user");
+          if (raw) goNext();
+        } catch {}
+
+        // 回填账号
+        const remembered = localStorage.getItem("wx_last_empid");
+        if (remembered) {
+          empId.value = remembered;
+          rememberMe.checked = true;
+        }
+
+        form.addEventListener("submit", function (e) {
+          e.preventDefault();
+          const id = empId.value.trim();
+          const pwd = password.value.trim();
+          if (!id || !pwd) {
+            errMsg.style.display = "block";
+            return;
+          }
+          errMsg.style.display = "none";
+
+          localStorage.setItem(
+            "wx_auth_user",
+            JSON.stringify({
+              empId: id,
+              name: "值班员",
+              role: "operator",
+              loginAt: new Date().toISOString(),
+            })
+          );
+
+          if (rememberMe.checked) localStorage.setItem("wx_last_empid", id);
+          else localStorage.removeItem("wx_last_empid");
+
+          goNext();
+        });
+
+        ssoBtn.addEventListener("click", function () {
+          alert("SSO 对接预留：上线时可替换为单位统一身份登录跳转。");
+        });
+      })();
+    </script>
+  </body>
+</html>
+

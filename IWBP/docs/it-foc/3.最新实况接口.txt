@@ -1,0 +1,158 @@
+根据机场四码和时间获取最新的实况气象（支持批量）
+1.接口描述
+1）接口名称：根据机场四码和时间获取实况气象（支持批量）
+2）运行模式：数据获取
+3）执行方式：rest
+4）涉及数据库：FOCNEW
+5）执行频率：实时
+6）URL（测试外网）：http://public-api-market-apis.intsit.sfcloud.local:8000/api/met/dispatchMetarMetTel/queryMetarTelList
+7）测试环境外网headers：
+systemKey:629dd582-f044-41ec-aebb-1f352e26ca92
+accessKey:api2_935b8fc3-a8dc-41d5-a6d0-1c91b1d3e209
+2.输入参数
+1）机场四码列表
+属性：airport4Codes
+数据类型：List< String>
+是否必填：是
+填入内容：机场四码列表，如["ZBAA","ZGSZ"]
+2）观测时间
+属性：observationTime
+数据类型：Date（毫秒级时间戳）
+是否必填：是
+填入内容：当前时间前2小时所在时刻的时间戳（毫秒级）
+3）请求位置：Body
+4）请求样例
+{
+    "airport4Codes":["ZBAA","ZGSZ"],
+    "observationTime":1633832055000
+}
+3.输出结果
+1）成功标识
+字段：success
+数据类型：Boolean
+说明：true:成功、false:失败
+2）失败错误信息：
+字段：errorMessage
+数据类型：String
+说明：错误信息
+3）成功返回信息：
+字段：obj
+数据类型：List
+说明：报文列表
+4）obj（最新实况报文列表）中所需字段值：同实况解析程序读取csv文件时的字段值（每个元素都需要进行提取所有所需字段值），字段名相同；
+5）输出样例（正常）：
+{
+    "requestId": null,
+    "success": true,
+    "business": null,
+    "errorCode": null,
+    "errorMessage": null,
+    "params": null,
+    "date": null,
+    "version": null,
+    "obj": [
+        {
+            "sqc": 4725836,
+            "airport4Code": "ZBAA",
+            "receiveTime": 1755297143000,
+            "observationTime": 1755297000000,
+            "type": "SA",
+            "content": "METAR ZBAA 160630Z 20002MPS 120V260 9999 FEW030 28/22 Q1009 NOSIG=",
+            "autoFlag": null,
+            "windDirection": "200",
+            "windDirectionVar": "120V260",
+            "windSpeed": "2",
+            "flurry": null,
+            "visibility": 9999,
+            "runway": null,
+            "rvr": null,
+            "weather1": null,
+            "weather2": null,
+            "weather3": null,
+            "cloud1": "FEW030",
+            "cloud2": null,
+            "cloud3": null,
+            "temperature": 28,
+            "dewPoint": 22,
+            "airPressure": 1009,
+            "wsDsc": null,
+            "changeTrend": null,
+            "remark": null,
+            "ryg": "00000000000000000000",
+            "proWeather": null,
+            "temperature1": "28",
+            "dewPoint1": "22",
+            "windSpeed1": "02MPS",
+            "flurry1": null,
+            "visibility1": "9999",
+            "airPressure1": "Q1009",
+            "rwFlag": "1",
+            "rvrDsc": null,
+            "iceFlag": "N",
+            "insertDate": null,
+            "outerSqc": 5625027,
+            "historyFlag": "N",
+            "frictionCoefficientDsc": null,
+            "frictionCoefficientColor": null,
+            "abrr": null,
+            "weatherRemark": null,
+            "weatherryg": null,
+            "badwet": null
+        },
+        {
+            "sqc": 4725841,
+            "airport4Code": "ZGSZ",
+            "receiveTime": 1755297143000,
+            "observationTime": 1755297000000,
+            "type": "SA",
+            "content": "METAR ZGSZ 160630Z 26003MPS 9999 SCT026 SCT050 32/25 Q1007 NOSIG=",
+            "autoFlag": null,
+            "windDirection": "260",
+            "windDirectionVar": null,
+            "windSpeed": "3",
+            "flurry": null,
+            "visibility": 9999,
+            "runway": null,
+            "rvr": null,
+            "weather1": null,
+            "weather2": null,
+            "weather3": null,
+            "cloud1": "SCT026",
+            "cloud2": "SCT050",
+            "cloud3": null,
+            "temperature": 32,
+            "dewPoint": 25,
+            "airPressure": 1007,
+            "wsDsc": null,
+            "changeTrend": null,
+            "remark": null,
+            "ryg": "00000000100000000000",
+            "proWeather": null,
+            "temperature1": "32",
+            "dewPoint1": "25",
+            "windSpeed1": "03MPS",
+            "flurry1": null,
+            "visibility1": "9999",
+            "airPressure1": "Q1007",
+            "rwFlag": "1",
+            "rvrDsc": null,
+            "iceFlag": "N",
+            "insertDate": null,
+            "outerSqc": 5625032,
+            "historyFlag": "N",
+            "frictionCoefficientDsc": null,
+            "frictionCoefficientColor": null,
+            "abrr": null,
+            "weatherRemark": null,
+            "weatherryg": null,
+            "badwet": null
+        }
+    ]
+}
+6）输出样例（异常）
+{
+"success": false,
+"errorCode": "1010",
+"errorMessage": "系统错误",
+"obj": null
+}

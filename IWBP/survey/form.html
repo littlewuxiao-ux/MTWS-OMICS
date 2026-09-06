@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>问卷填写</title>
+    <style>
+      :root {
+        --bg: #0f1419;
+        --card: #1a222d;
+        --text: #e8eef4;
+        --muted: #9aa8b6;
+        --accent: #3d8bfd;
+        --border: #2a3542;
+        --err: #ff6b6b;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        min-height: 100vh;
+        padding: 20px 16px 40px;
+      }
+      .wrap {
+        max-width: 720px;
+        margin: 0 auto;
+      }
+      a.back {
+        color: var(--accent);
+        text-decoration: none;
+        font-size: 14px;
+      }
+      a.back:hover {
+        text-decoration: underline;
+      }
+      h1 {
+        font-size: 22px;
+        margin: 16px 0 8px;
+      }
+      .desc {
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.6;
+        margin-bottom: 20px;
+      }
+      .sec {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 16px 18px;
+        margin-bottom: 16px;
+      }
+      .sec-title {
+        font-size: 16px;
+        margin: 0 0 14px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid var(--border);
+      }
+      .q {
+        margin-bottom: 20px;
+      }
+      .q:last-child {
+        margin-bottom: 0;
+      }
+      .q-title {
+        font-size: 14px;
+        line-height: 1.55;
+        margin-bottom: 10px;
+      }
+      .req {
+        color: var(--err);
+        margin-left: 4px;
+      }
+      .likert {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .likert-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+        padding: 8px 10px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        cursor: pointer;
+        min-width: 64px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .likert-item:has(input:checked) {
+        border-color: var(--accent);
+        background: rgba(61, 139, 253, 0.12);
+        color: var(--text);
+      }
+      .likert-item input {
+        accent-color: var(--accent);
+      }
+      .likert-item .num {
+        font-weight: 700;
+        color: var(--text);
+      }
+      .opts {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .opt {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        font-size: 14px;
+        cursor: pointer;
+      }
+      textarea {
+        width: 100%;
+        padding: 10px 12px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: #121920;
+        color: var(--text);
+        font-family: inherit;
+        font-size: 14px;
+        resize: vertical;
+      }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 8px;
+      }
+      button {
+        padding: 10px 18px;
+        border-radius: 10px;
+        border: none;
+        background: var(--accent);
+        color: #fff;
+        font-size: 14px;
+        cursor: pointer;
+      }
+      button:hover {
+        filter: brightness(1.08);
+      }
+      .hint {
+        color: var(--muted);
+        font-size: 13px;
+        margin: 6px 0 0;
+      }
+      #surveyError {
+        color: var(--err);
+        font-size: 14px;
+        margin: 10px 0;
+        min-height: 1.2em;
+      }
+      #rawOut {
+        width: 100%;
+        min-height: 120px;
+        margin-top: 12px;
+        font-size: 12px;
+        font-family: ui-monospace, Consolas, monospace;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <a class="back" href="index.html">← 返回</a>
+      <h1 id="surveyTitle">问卷</h1>
+      <div id="surveyDesc" class="desc"></div>
+      <div id="surveyForm"></div>
+      <p id="surveyError"></p>
+      <div class="actions">
+        <button type="button" id="btnSubmit">提交并下载 JSON</button>
+      </div>
+      <p class="hint">提交后浏览器会下载一份结果文件；下方文本框为同一份 JSON，可复制备份。</p>
+      <textarea id="rawOut" readonly placeholder="提交后显示 JSON"></textarea>
+    </div>
+    <script src="form-app.js"></script>
+    <script>
+      (function () {
+        const id = (new URLSearchParams(location.search).get("survey") || "meteo").toLowerCase();
+        const src = id === "dispatch" ? "config-dispatch.js" : "config-meteo.js";
+        const sc = document.createElement("script");
+        sc.src = src;
+        sc.onerror = function () {
+          document.getElementById("surveyForm").innerHTML =
+            "<p class=\"hint\" style=\"color:#ff6b6b\">加载配置失败：请确认与本页同目录存在 " + src + "</p>";
+        };
+        sc.onload = function () {
+          if (!window.SURVEY_CONFIG) {
+            document.getElementById("surveyForm").innerHTML = "<p class=\"hint\" style=\"color:#ff6b6b\">配置未定义：请在 " + src + " 末尾设置 window.SURVEY_CONFIG</p>";
+            return;
+          }
+          window.renderSurvey(window.SURVEY_CONFIG);
+        };
+        document.head.appendChild(sc);
+      })();
+    </script>
+  </body>
+</html>

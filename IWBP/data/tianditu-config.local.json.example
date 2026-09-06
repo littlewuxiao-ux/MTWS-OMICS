@@ -1,0 +1,4 @@
+{
+  "tk": "",
+  "_note": "到 https://console.tianditu.gov.cn/ 注册并申请「浏览器端」Key，把 Key 填到 tk。创建应用时把访问域名（如 localhost:8787、席位内网地址）加到白名单。本文件复制为 tianditu-config.local.json 后生效，勿提交真实密钥。"
+}

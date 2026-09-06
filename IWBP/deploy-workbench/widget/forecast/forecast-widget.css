@@ -1,0 +1,229 @@
+.fw-root,
+.fw-root * {
+  box-sizing: border-box;
+}
+
+.fw-root {
+  color: rgba(236, 243, 255, 0.95);
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+.fw-panel {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  background: rgba(8, 14, 32, 0.72);
+  border: 1px solid rgba(157, 181, 255, 0.22);
+  border-radius: 12px;
+  padding: 10px;
+}
+
+.fw-input {
+  width: 170px;
+  border-radius: 8px;
+  border: 1px solid rgba(157, 181, 255, 0.3);
+  background: rgba(8, 12, 24, 0.9);
+  color: rgba(235, 242, 255, 0.95);
+  padding: 8px 10px;
+}
+
+.fw-btn {
+  border: 1px solid rgba(157, 181, 255, 0.28);
+  color: rgba(235, 242, 255, 0.95);
+  background: rgba(18, 28, 58, 0.84);
+  border-radius: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.fw-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 5000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(5, 10, 22, 0.55);
+}
+
+.fw-backdrop.is-open {
+  display: flex;
+}
+
+.fw-modal {
+  width: min(1680px, 98vw);
+  max-height: min(96vh, 1100px);
+  display: flex;
+  flex-direction: column;
+  border-radius: 14px;
+  border: 1px solid rgba(122, 200, 190, 0.32);
+  background: linear-gradient(180deg, rgba(14, 24, 52, 0.98), rgba(8, 14, 30, 0.98));
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+.fw-hd {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(157, 181, 255, 0.16);
+}
+
+.fw-toolbar {
+  padding: 10px 14px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.fw-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+}
+
+.fw-hint {
+  font-size: 12px;
+  color: rgba(210, 224, 255, 0.78);
+}
+
+.fw-seg {
+  display: inline-flex;
+  border-radius: 10px;
+  border: 1px solid rgba(157, 181, 255, 0.18);
+  overflow: hidden;
+}
+
+.fw-seg-btn {
+  border: none;
+  background: rgba(13, 18, 40, 0.4);
+  color: rgba(235, 242, 255, 0.62);
+  font-size: 12px;
+  font-weight: 650;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.fw-seg-btn.is-active {
+  background: rgba(122, 200, 190, 0.2);
+  color: rgba(235, 242, 255, 0.96);
+}
+
+.fw-pill {
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 650;
+  color: rgba(176, 201, 255, 0.95);
+  border: 1px solid rgba(176, 201, 255, 0.3);
+  background: rgba(116, 146, 226, 0.12);
+}
+
+.fw-meta {
+  font-size: 12px;
+  color: rgba(210, 224, 255, 0.78);
+}
+
+.fw-body {
+  padding: 0 14px 14px;
+  min-height: 0;
+  overflow: auto;
+}
+
+.fw-chart-wrap {
+  border-radius: 12px;
+  border: 1px solid rgba(157, 181, 255, 0.14);
+  background: rgba(5, 8, 18, 0.55);
+  overflow: auto;
+  max-height: min(80vh, 900px);
+  position: relative;
+  cursor: grab;
+}
+
+.fw-chart-wrap.is-dragging {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.fw-svg {
+  display: block;
+  width: max(100%, 1280px);
+  min-width: 420px;
+  min-height: 240px;
+  height: auto;
+  shape-rendering: geometricPrecision;
+}
+
+.fw-tip {
+  position: absolute;
+  z-index: 8;
+  pointer-events: none;
+  min-width: 180px;
+  max-width: 280px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(157, 181, 255, 0.28);
+  background: rgba(8, 12, 28, 0.97);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
+  font-size: 12px;
+  line-height: 1.45;
+  color: rgba(238, 244, 255, 0.95);
+  opacity: 0;
+  visibility: hidden;
+}
+
+.fw-tip.is-visible {
+  opacity: 1;
+  visibility: visible;
+}
+
+.fw-tip-hd {
+  font-weight: 700;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(157, 181, 255, 0.16);
+}
+
+.fw-tip-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 4px;
+}
+
+@media (min-width: 1900px) {
+  .fw-root {
+    font-size: 16px;
+  }
+  .fw-input,
+  .fw-btn {
+    font-size: 15px;
+  }
+  .fw-seg-btn {
+    font-size: 14px;
+    padding: 7px 14px;
+  }
+  .fw-hint,
+  .fw-meta {
+    font-size: 14px;
+  }
+  .fw-pill {
+    font-size: 12px;
+  }
+  .fw-svg {
+    width: max(100%, 1500px);
+  }
+}
+
+.page {
+  max-width: 980px;
+  margin: 28px auto;
+  padding: 0 16px;
+}
+
+.hint {
+  color: #637191;
+}

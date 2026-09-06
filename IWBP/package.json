@@ -1,0 +1,16 @@
+{
+  "name": "weather-workbench-v2",
+  "private": true,
+  "description": "气象智能业务工作台（静态页 + METAR 本地代理，供值班席位使用）",
+  "scripts": {
+    "start": "node tools/dev-server-proxy.cjs",
+    "serve": "node tools/dev-server-proxy.cjs",
+    "robot:once": "node tools/robot-outbox-send.cjs --once",
+    "robot:watch": "node tools/robot-outbox-send.cjs --watch",
+    "gen:threshold-xlsx": "node tools/gen-weather-alert-threshold-xlsx.cjs",
+    "bundle": "node tools/make-git-bundle.cjs"
+  },
+  "devDependencies": {
+    "xlsx": "^0.18.5"
+  }
+}

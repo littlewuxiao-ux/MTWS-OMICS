@@ -1,0 +1,11 @@
+# 打包前检查（上传慧应用前逐项打勾）
+
+[ ] 1. 已运行：node tools/build-deploy-workbench.cjs
+[ ] 2. 上传文件夹是 deploy-workbench，不是 V2 根目录
+[ ] 3. data/ 内无 *.local.json、无 token、无 robot-publish-config.json
+[ ] 4. 默认入口为 index.html
+[ ] 5. 未包含 review-search/、tools/、node_modules/
+[ ] 6. 内网试访问 login.html → index.html 可进入
+[ ] 7. 已知 FOC 本阶段不对接，报文来源为 AWC 或演示
+[ ] 8. （可选）survey 模块需要时已加 --with-survey 重新打包
+

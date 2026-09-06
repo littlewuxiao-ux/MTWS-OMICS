@@ -1,0 +1,6 @@
+{
+  "role": "local",
+  "host": "127.0.0.1",
+  "apiPort": 8502,
+  "searchPort": 8501
+}

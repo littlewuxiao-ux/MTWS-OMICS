@@ -1,0 +1,103 @@
+{
+  "version": 1,
+  "description": "航空气象信息通报群 · 完整 @ 规则（席位专用，复制为 robot-publish-config.json）",
+  "targetGroup": {
+    "name": "航空气象信息通报群",
+    "platform": "丰声Next",
+    "robotCode": "dingysvdtfxz04o88ifw",
+    "openConversationId": "cidYDAaXULIy7DovWKMT4IkZQ==",
+    "webhookUrl": ""
+  },
+  "sendMethod": {
+    "method": "application_robot",
+    "note": "正式值班用 dingtalk_send_group_message + atUserIds + bodyWithAtPrefix"
+  },
+  "roles": {
+    "aoc-dispatch": {
+      "label": "AOC签派放行",
+      "nextUserId": "89006806"
+    },
+    "aoc-duty-control": {
+      "label": "AOC运行控制带班席",
+      "nextUserId": "sfim070482"
+    },
+    "eoc-duty-manager": {
+      "label": "EOC值班经理",
+      "nextUserId": "sfim114936"
+    },
+    "maintenance-control": {
+      "label": "维修控制席",
+      "nextUserId": "89006932"
+    },
+    "aoc-terminal-control": {
+      "label": "AOC航站控制席",
+      "nextUserId": "89015682"
+    },
+    "ezhou-dispatch": {
+      "label": "鄂州运行调度带班席",
+      "nextUserId": "sfim137016"
+    },
+    "shenzhen-command": {
+      "label": "深圳现场指挥中心-带班席",
+      "nextUserId": "sfim220096"
+    },
+    "beijing-base-dispatch": {
+      "label": "北京基地调度",
+      "nextUserId": "89006797"
+    },
+    "hangzhou-control": {
+      "label": "杭州控制席",
+      "nextUserId": "89006801"
+    }
+  },
+  "contentTypes": {
+    "period": {
+      "label": "时段预报",
+      "targetGroup": "航空气象信息通报群",
+      "mentionRoles": [],
+      "note": "只发群，不 @"
+    },
+    "brush": {
+      "label": "天气梳理",
+      "targetGroup": "航空气象信息通报群",
+      "mentionRoles": ["aoc-dispatch"]
+    },
+    "tc": {
+      "label": "热带气旋信息通报",
+      "targetGroup": "航空气象信息通报群",
+      "mentionRoles": ["aoc-dispatch"]
+    },
+    "alert": {
+      "label": "机场警报",
+      "targetGroup": "航空气象信息通报群",
+      "mentionRolesAlways": ["aoc-dispatch", "aoc-duty-control"],
+      "mentionRolesByPhenomena": {
+        "maintenance-control": [
+          "强地面风和阵风",
+          "冰雹",
+          "小雹（霰）",
+          "雪",
+          "雨夹雪",
+          "冻降水",
+          "沙暴",
+          "尘暴",
+          "冰粒",
+          "极寒天气"
+        ]
+      },
+      "mentionRolesByStation": {
+        "ZHEC": ["ezhou-dispatch", "eoc-duty-manager"],
+        "ZGSZ": ["shenzhen-command"],
+        "ZBAA": ["beijing-base-dispatch"],
+        "ZSHC": ["hangzhou-control"]
+      },
+      "mentionRolesByPhenomenaAndStation": [
+        {
+          "phenomena": ["强地面风和阵风"],
+          "station": "ZGSZ",
+          "roles": ["aoc-terminal-control"]
+        }
+      ]
+    }
+  }
+}
