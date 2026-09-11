@@ -31,6 +31,17 @@ def _get_user_code(request, time_mode):
     return request.headers.get('X-User-Code', 'default')
 
 
+def _deny_settings_write(request, module_code: str):
+    """设置写接口统一鉴权：需对应模块写入权，且仅本机可改库。"""
+    from utils.access_control import resolve_access_identity, has_perm, is_local_request
+    identity = resolve_access_identity(request)
+    if not has_perm(identity, module_code, 'write'):
+        return JsonResponse({'success': False, 'error': '无该设置项写入权限'}, status=403)
+    if not is_local_request(request):
+        return JsonResponse({'success': False, 'error': '设置项仅允许本机用户修改'}, status=403)
+    return None
+
+
 # ===================== 机场信息 =====================
 
 @csrf_exempt
@@ -53,6 +64,9 @@ def settings_airport_info(request, time_mode='current'):
             return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
     # POST: 新增
+    denied = _deny_settings_write(request, 'settings_airport_info')
+    if denied:
+        return denied
     try:
         data = json.loads(request.body)
         code = (data.get('airport_4code') or '').strip().upper()
@@ -94,6 +108,9 @@ def settings_airport_info(request, time_mode='current'):
 @require_http_methods(["PUT", "DELETE"])
 def settings_airport_info_detail(request, airport_4code, time_mode='current'):
     user_code = _get_user_code(request, time_mode)
+    denied = _deny_settings_write(request, 'settings_airport_info')
+    if denied:
+        return denied
 
     if airport_4code.upper() == 'DEFAULT':
         return JsonResponse({'success': False, 'error': 'default 行不可修改或删除'}, status=403)
@@ -158,6 +175,9 @@ def settings_area_options(request, time_mode='current'):
             return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
     # POST: 新增
+    denied = _deny_settings_write(request, 'settings_area_options')
+    if denied:
+        return denied
     try:
         data = json.loads(request.body)
         classification = (data.get('classification') or '').strip()
@@ -188,6 +208,9 @@ def settings_area_options(request, time_mode='current'):
 @require_http_methods(["PUT", "DELETE"])
 def settings_area_options_detail(request, option_id, time_mode='current'):
     user_code = _get_user_code(request, time_mode)
+    denied = _deny_settings_write(request, 'settings_area_options')
+    if denied:
+        return denied
 
     try:
         option = AreaOptions.objects.get(id=option_id)
@@ -256,6 +279,9 @@ def settings_data_refresh_timer(request, time_mode='current'):
 @require_http_methods(["PUT"])
 def settings_data_refresh_timer_detail(request, timer_id, time_mode='current'):
     user_code = _get_user_code(request, time_mode)
+    denied = _deny_settings_write(request, 'settings_data_refresh')
+    if denied:
+        return denied
 
     try:
         timer = DataRefreshTimer.objects.get(id=timer_id)
@@ -313,6 +339,9 @@ def settings_carrier(request, time_mode='current'):
             return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
     # POST: 新增
+    denied = _deny_settings_write(request, 'settings_carrier')
+    if denied:
+        return denied
     try:
         data = json.loads(request.body)
         code = (data.get('carrier_code') or '').strip()
@@ -339,6 +368,9 @@ def settings_carrier(request, time_mode='current'):
 @require_http_methods(["PUT", "DELETE"])
 def settings_carrier_detail(request, carrier_id, time_mode='current'):
     user_code = _get_user_code(request, time_mode)
+    denied = _deny_settings_write(request, 'settings_carrier')
+    if denied:
+        return denied
 
     try:
         carrier = Carrier.objects.get(id=carrier_id)
@@ -395,21 +427,13 @@ def settings_popup(request, time_mode='current'):
             if not ps:
                 return JsonResponse({'success': False, 'error': '未找到弹窗设置'}, status=404)
 
-            intercept_raw = ps.intercept
-            if intercept_raw in ('True', 'true', '1', 1, True):
-                intercept_val = 1
-            else:
-                intercept_val = 0
-
             return JsonResponse({
                 'success': True,
                 'data': {
-                    'operation_metar_popup': 1 if ps.operation_metar_popup else 0,
-                    'parking_metar_popup': 1 if ps.parking_metar_popup else 0,
                     'operation_metar_popup_leeway': ps.operation_metar_popup_leeway if ps.operation_metar_popup_leeway is not None else 0,
                     'operation_metar_popup_level': ps.operation_metar_popup_level or 'Y',
                     'parking_metar_popup_level': ps.parking_metar_popup_level or 'Y',
-                    'intercept': intercept_val,
+                    'trace_time': int(ps.trace_time) if ps.trace_time is not None else 6,
                 }
             })
         except Exception as e:
@@ -417,6 +441,9 @@ def settings_popup(request, time_mode='current'):
             return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
     # PUT: 修改
+    denied = _deny_settings_write(request, 'settings_popup')
+    if denied:
+        return denied
     if user_code in ('default', 'test'):
         return JsonResponse({'success': False, 'error': 'default/test 账号设置不可修改'}, status=403)
 
@@ -428,15 +455,20 @@ def settings_popup(request, time_mode='current'):
             if level_field in data and data[level_field] not in valid_levels:
                 return JsonResponse({'success': False, 'error': '告警等级只能为 R/Y/G'}, status=400)
 
+        if 'trace_time' in data:
+            try:
+                tt = int(data['trace_time'])
+            except (TypeError, ValueError):
+                return JsonResponse({'success': False, 'error': '追溯时间需为0–9的整数'}, status=400)
+            if tt < 0 or tt > 9:
+                return JsonResponse({'success': False, 'error': '追溯时间需为0–9的整数'}, status=400)
+            data['trace_time'] = tt
+
         update_dict = {}
-        for field in ['operation_metar_popup', 'parking_metar_popup',
-                      'operation_metar_popup_leeway', 'operation_metar_popup_level',
-                      'parking_metar_popup_level']:
+        for field in ['operation_metar_popup_leeway', 'operation_metar_popup_level',
+                      'parking_metar_popup_level', 'trace_time']:
             if field in data:
                 update_dict[field] = data[field]
-
-        if 'intercept' in data:
-            update_dict['intercept'] = '1' if data['intercept'] else '0'
 
         updated = PopupSettings.objects.filter(user_code=user_code).update(**update_dict)
         if updated == 0:
@@ -444,12 +476,10 @@ def settings_popup(request, time_mode='current'):
             create_data = {'user_code': user_code}
             if default_ps:
                 create_data.update({
-                    'operation_metar_popup': default_ps.operation_metar_popup,
-                    'parking_metar_popup': default_ps.parking_metar_popup,
                     'operation_metar_popup_leeway': default_ps.operation_metar_popup_leeway,
                     'operation_metar_popup_level': default_ps.operation_metar_popup_level,
                     'parking_metar_popup_level': default_ps.parking_metar_popup_level,
-                    'intercept': '0',
+                    'trace_time': default_ps.trace_time if default_ps.trace_time is not None else 6,
                 })
             create_data.update(update_dict)
             PopupSettings.objects.create(**create_data)
@@ -491,6 +521,9 @@ def settings_alert_thresholds(request, time_mode='current'):
             logger.error(f"获取告警阈值失败: {e}")
             return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
+    denied = _deny_settings_write(request, 'settings_alert_thresholds')
+    if denied:
+        return denied
     try:
         data = json.loads(request.body)
         code = (data.get('airport_4code') or '').strip().upper()
@@ -521,6 +554,9 @@ def settings_alert_thresholds(request, time_mode='current'):
 @require_http_methods(["PUT", "DELETE"])
 def settings_alert_thresholds_detail(request, airport_4code, time_mode='current'):
     user_code = _get_user_code(request, time_mode)
+    denied = _deny_settings_write(request, 'settings_alert_thresholds')
+    if denied:
+        return denied
 
     if airport_4code.upper() == 'DEFAULT':
         return JsonResponse({'success': False, 'error': 'default 行不可修改或删除'}, status=403)
@@ -573,6 +609,9 @@ def settings_weather_type(request, time_mode='current'):
             logger.error(f"获取天气类型失败: {e}")
             return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
+    denied = _deny_settings_write(request, 'settings_weather_type')
+    if denied:
+        return denied
     try:
         data = json.loads(request.body)
         code = (data.get('weather_type_code') or '').strip()
@@ -603,6 +642,9 @@ def settings_weather_type(request, time_mode='current'):
 @require_http_methods(["PUT", "DELETE"])
 def settings_weather_type_detail(request, type_id, time_mode='current'):
     user_code = _get_user_code(request, time_mode)
+    denied = _deny_settings_write(request, 'settings_weather_type')
+    if denied:
+        return denied
 
     try:
         obj = WeatherTypeInfo.objects.get(id=type_id)
@@ -665,6 +707,9 @@ def settings_weather_alert(request, time_mode='current'):
             logger.error(f"获取天气告警等级失败: {e}")
             return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
+    denied = _deny_settings_write(request, 'settings_weather_alert')
+    if denied:
+        return denied
     try:
         data = json.loads(request.body)
         weather = (data.get('weather') or '').strip()
@@ -700,6 +745,9 @@ def settings_weather_alert(request, time_mode='current'):
 @require_http_methods(["PUT", "DELETE"])
 def settings_weather_alert_detail(request, alert_id, time_mode='current'):
     user_code = _get_user_code(request, time_mode)
+    denied = _deny_settings_write(request, 'settings_weather_alert')
+    if denied:
+        return denied
 
     try:
         obj = WeatherAlertLevels.objects.get(id=alert_id)
@@ -766,6 +814,9 @@ def settings_airport_location(request, time_mode='current'):
             logger.error(f"获取机场坐标失败: {e}")
             return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
+    denied = _deny_settings_write(request, 'settings_airport_location')
+    if denied:
+        return denied
     try:
         data = json.loads(request.body)
         code = (data.get('airport_4code') or '').strip().upper()
@@ -811,6 +862,10 @@ def settings_airport_location_detail(request, airport_4code, time_mode='current'
             'longitude': float(obj.longitude),
             'airport_name': obj.airport_name,
         }})
+
+    denied = _deny_settings_write(request, 'settings_airport_location')
+    if denied:
+        return denied
 
     if request.method == 'PUT':
         try:

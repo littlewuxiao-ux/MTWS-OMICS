@@ -114,21 +114,16 @@ class Metar(models.Model):
     # 上一份METAR的SQC标识
     last_metar_sqc = models.BigIntegerField(blank=True, null=True, verbose_name='上一份METAR的SQC标识')
     
-    # 弹窗类型标记
-    operation_metar_popup = models.BooleanField(blank=True, null=True, verbose_name='运行类弹窗')
-    parking_metar_popup = models.BooleanField(blank=True, null=True, verbose_name='停场类弹窗')
-    
     # 系统字段
     created_at = models.BigIntegerField(verbose_name='创建时间戳')
     updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
     
     # 弹窗相关字段
     user_code = models.CharField(max_length=12, blank=True, null=True, verbose_name='用户代码')
-    popup = models.CharField(max_length=1, blank=True, null=True, verbose_name='是否弹窗')
+    operation_popup = models.CharField(max_length=1, blank=True, null=True, verbose_name='运行类弹窗标记')
+    parking_popup = models.CharField(max_length=1, blank=True, null=True, verbose_name='停场类弹窗标记')
     popup_time = models.BigIntegerField(blank=True, null=True, verbose_name='弹窗时间')
-    popup_handle_time = models.BigIntegerField(blank=True, null=True, verbose_name='弹窗处理时间')
-    handling_user_code = models.CharField(max_length=12, blank=True, null=True, verbose_name='处理用户代码')
-    handling_method = models.CharField(max_length=15, blank=True, null=True, verbose_name='处理方式')
+    popup_handle_records = models.JSONField(blank=True, null=True, default=dict, verbose_name='弹窗处理记录')
     metar_weather_type = models.TextField(blank=True, null=True, verbose_name='天气类型字典')
     data_status = models.CharField(
         max_length=1, blank=True, null=True,
@@ -137,7 +132,6 @@ class Metar(models.Model):
     )
     rvr_min_org = models.IntegerField(blank=True, null=True, verbose_name='RVR最小值原始')
     rvr_min_val = models.IntegerField(blank=True, null=True, verbose_name='RVR最小值')
-    intercept = models.CharField(max_length=1, blank=True, null=True, verbose_name='拦截标识')
     operation_metar_popup_leeway = models.IntegerField(blank=True, null=True, verbose_name='运行区METAR弹窗余量')
     operation_metar_popup_level = models.CharField(max_length=1, blank=True, null=True, verbose_name='运行区METAR弹窗级别')
     parking_metar_popup_level = models.CharField(max_length=1, blank=True, null=True, verbose_name='停场METAR弹窗级别')

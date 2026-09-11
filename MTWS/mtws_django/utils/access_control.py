@@ -1,0 +1,467 @@
+"""
+访问控制：用户组权限、席位会话、超管口令、黑名单。
+"""
+
+from __future__ import annotations
+
+import secrets
+import threading
+import time
+import uuid
+from typing import Any, Dict, List, Optional, Tuple
+
+from django.contrib.auth.hashers import check_password, make_password
+from django.utils import timezone
+
+from utils.popup_utils import get_client_ip, is_loopback_ip
+
+# 模块定义（与《MTWS权限列表》对齐）
+ACCESS_MODULES: List[Dict[str, Any]] = [
+    {'code': 'login_user', 'name': '登录的用户/登出按钮', 'category': 'home', 'has_activate': True, 'has_write': False,
+     'hint_display': '显示右上角用户与登出', 'hint_activate': '允许点击登出'},
+    {'code': 'nwp', 'name': '温度辅助', 'category': 'home', 'has_activate': True, 'has_write': False,
+     'hint_display': '显示温度辅助按钮', 'hint_activate': '允许触发温度辅助解析'},
+    {'code': 'refresh_btn', 'name': '刷新按钮', 'category': 'home', 'has_activate': True, 'has_write': False,
+     'hint_display': '显示刷新按钮', 'hint_activate': '允许触发后台解析刷新'},
+    {'code': 'search', 'name': '搜索框和搜索按钮', 'category': 'home', 'has_activate': True, 'has_write': False,
+     'hint_display': '显示搜索框和按钮', 'hint_activate': '搜索时可触发解析'},
+    {'code': 'detail_sun', 'name': '机场详情页日出日落时间', 'category': 'airport_detail', 'has_activate': False, 'has_write': False,
+     'hint_display': '详情页显示日出日落'},
+    {'code': 'detail_contact', 'name': '机场详情页联系方式', 'category': 'airport_detail', 'has_activate': False, 'has_write': False,
+     'hint_display': '详情页显示联系方式'},
+    {'code': 'detail_metar_trend', 'name': '机场详情页实况趋势', 'category': 'airport_detail', 'has_activate': True, 'has_write': False,
+     'hint_display': '详情页显示实况趋势', 'hint_activate': '展开趋势时可触发解析'},
+    {'code': 'search_sun', 'name': '机场搜索结果日出日落时间', 'category': 'airport_detail', 'has_activate': False, 'has_write': False,
+     'hint_display': '搜索结果页显示日出日落'},
+    {'code': 'search_contact', 'name': '机场搜索结果联系方式', 'category': 'airport_detail', 'has_activate': False, 'has_write': False,
+     'hint_display': '搜索结果页显示联系方式'},
+    {'code': 'import_alert', 'name': '报文入库告警', 'category': 'import_alert', 'has_activate': False, 'has_write': True,
+     'hint_display': '显示入库告警入口', 'hint_write': '可将告警标为已处理并写库'},
+    {'code': 'metar_popup', 'name': '实况弹窗标题及选项', 'category': 'metar_popup', 'has_activate': True, 'has_write': True,
+     'hint_display': '显示弹窗及运行/停场等开关', 'hint_activate': '可点忽略/收到/稍后/详情', 'hint_write': '将处理记录写入报文（按用户）'},
+    {'code': 'settings_btn', 'name': '设置按钮', 'category': 'settings', 'has_activate': False, 'has_write': False,
+     'hint_display': '显示主页设置按钮'},
+    {'code': 'settings_airport_info', 'name': '机场信息设置', 'category': 'settings', 'has_activate': False, 'has_write': True, 'settings_write_exclusive': True,
+     'hint_display': '设置中显示机场信息', 'hint_write': '可改机场信息（全站仅一组）'},
+    {'code': 'settings_area_options', 'name': '区域信息设置', 'category': 'settings', 'has_activate': False, 'has_write': True, 'settings_write_exclusive': True,
+     'hint_display': '设置中显示区域信息', 'hint_write': '可改区域选项（全站仅一组）'},
+    {'code': 'settings_data_refresh', 'name': '数据更新设置', 'category': 'settings', 'has_activate': False, 'has_write': True, 'settings_write_exclusive': True,
+     'hint_display': '设置中显示数据更新', 'hint_write': '可改刷新定时（全站仅一组）'},
+    {'code': 'settings_carrier', 'name': '承运人', 'category': 'settings', 'has_activate': False, 'has_write': True, 'settings_write_exclusive': True,
+     'hint_display': '设置中显示承运人', 'hint_write': '可改承运人（全站仅一组）'},
+    {'code': 'settings_popup', 'name': '弹窗设置', 'category': 'settings', 'has_activate': False, 'has_write': True, 'settings_write_exclusive': True,
+     'hint_display': '设置中显示弹窗规则', 'hint_write': '可改等级/余量/追溯时间（全站仅一组）'},
+    {'code': 'settings_alert_thresholds', 'name': '告警阈值', 'category': 'settings', 'has_activate': False, 'has_write': True, 'settings_write_exclusive': True,
+     'hint_display': '设置中显示告警阈值', 'hint_write': '可改机场告警阈值（全站仅一组）'},
+    {'code': 'settings_weather_type', 'name': '天气类型', 'category': 'settings', 'has_activate': False, 'has_write': True, 'settings_write_exclusive': True,
+     'hint_display': '设置中显示天气类型', 'hint_write': '可改天气类型（全站仅一组）'},
+    {'code': 'settings_weather_alert', 'name': '天气告警等级', 'category': 'settings', 'has_activate': False, 'has_write': True, 'settings_write_exclusive': True,
+     'hint_display': '设置中显示天气告警等级', 'hint_write': '可改天气告警等级（全站仅一组）'},
+    {'code': 'settings_airport_location', 'name': '机场坐标', 'category': 'settings', 'has_activate': False, 'has_write': True, 'settings_write_exclusive': True,
+     'hint_display': '设置中显示机场坐标', 'hint_write': '可改机场坐标（全站仅一组）'},
+]
+
+MODULE_CATEGORIES = [
+    {'code': 'home', 'name': '主页'},
+    {'code': 'airport_detail', 'name': '机场详情'},
+    {'code': 'import_alert', 'name': '入库告警'},
+    {'code': 'metar_popup', 'name': '实况弹窗'},
+    {'code': 'settings', 'name': '设置'},
+    {'code': 'other', 'name': '其他'},
+]
+
+MODULE_BY_CODE = {m['code']: m for m in ACCESS_MODULES}
+SETTINGS_WRITE_EXCLUSIVE = {m['code'] for m in ACCESS_MODULES if m.get('settings_write_exclusive')}
+
+LOCAL_GROUP_CODE = 'local'
+SUPERUSER_CONFIG_TYPE = 'access_control'
+SUPERUSER_CONFIG_KEY = 'superuser_password_hash'
+DEFAULT_SUPERUSER_PASSWORD = 'admin2026'
+
+SEAT_COOKIE = 'mtws_seat_sid'
+ADMIN_COOKIE = 'mtws_admin_sid'
+SEAT_TTL_SECONDS = 12 * 3600
+ADMIN_TTL_SECONDS = 30 * 60
+
+# 设置子页写入权限 → settings API 模块码
+SETTINGS_MODULE_MAP = {
+    'airport_info': 'settings_airport_info',
+    'area_options': 'settings_area_options',
+    'data_refresh': 'settings_data_refresh',
+    'carrier': 'settings_carrier',
+    'popup': 'settings_popup',
+    'alert_thresholds': 'settings_alert_thresholds',
+    'weather_type': 'settings_weather_type',
+    'weather_alert': 'settings_weather_alert',
+    'airport_location': 'settings_airport_location',
+}
+
+_lock = threading.Lock()
+_seat_sessions: Dict[str, dict] = {}
+_admin_sessions: Dict[str, dict] = {}
+
+
+def _now() -> float:
+    return time.time()
+
+
+def is_local_request(request) -> bool:
+    return is_loopback_ip(get_client_ip(request))
+
+
+def empty_perm(can_activate: bool = False, can_write: bool = False) -> dict:
+    return {'display': False, 'activate': False, 'write': False}
+
+
+def full_perm(module_code: str) -> dict:
+    meta = MODULE_BY_CODE.get(module_code, {})
+    return {
+        'display': True,
+        'activate': bool(meta.get('has_activate', False)),
+        'write': bool(meta.get('has_write', False)),
+    }
+
+
+def default_local_permissions() -> Dict[str, dict]:
+    """本机组出厂：除超管外全部打开。"""
+    return {m['code']: full_perm(m['code']) for m in ACCESS_MODULES}
+
+
+def permissions_dict_from_group(group) -> Dict[str, dict]:
+    result = {m['code']: empty_perm() for m in ACCESS_MODULES}
+    if not group:
+        return result
+    for row in group.permissions.all():
+        meta = MODULE_BY_CODE.get(row.module_code) or {}
+        result[row.module_code] = {
+            'display': bool(row.can_display),
+            'activate': bool(row.can_activate) if meta.get('has_activate') else False,
+            'write': bool(row.can_write) if meta.get('has_write') else False,
+        }
+    return result
+
+
+def ensure_bootstrap_data():
+    """确保本机组、出厂权限、超管口令哈希存在。"""
+    from core.models import AccessGroup, AccessGroupPermission, SystemConfig
+
+    group, created = AccessGroup.objects.get_or_create(
+        code=LOCAL_GROUP_CODE,
+        defaults={
+            'name': '本机用户',
+            'is_local': True,
+            'require_qr': False,
+            'is_builtin': True,
+            'sort_order': 0,
+        },
+    )
+    if created or not group.permissions.exists():
+        AccessGroupPermission.objects.filter(group=group).delete()
+        bulk = []
+        for m in ACCESS_MODULES:
+            bulk.append(AccessGroupPermission(
+                group=group,
+                module_code=m['code'],
+                can_display=True,
+                can_activate=bool(m.get('has_activate')),
+                can_write=bool(m.get('has_write')),
+            ))
+        AccessGroupPermission.objects.bulk_create(bulk)
+
+    exists = SystemConfig.objects.filter(
+        config_type=SUPERUSER_CONFIG_TYPE, config_key=SUPERUSER_CONFIG_KEY
+    ).exists()
+    if not exists:
+        SystemConfig.objects.create(
+            config_type=SUPERUSER_CONFIG_TYPE,
+            config_key=SUPERUSER_CONFIG_KEY,
+            config_value=make_password(DEFAULT_SUPERUSER_PASSWORD),
+            description='超级用户口令哈希',
+        )
+
+
+def get_superuser_hash() -> str:
+    from core.models import SystemConfig
+    ensure_bootstrap_data()
+    row = SystemConfig.objects.filter(
+        config_type=SUPERUSER_CONFIG_TYPE, config_key=SUPERUSER_CONFIG_KEY
+    ).first()
+    return row.config_value if row else ''
+
+
+def set_superuser_password(raw_password: str) -> None:
+    from core.models import SystemConfig
+    SystemConfig.objects.update_or_create(
+        config_type=SUPERUSER_CONFIG_TYPE,
+        config_key=SUPERUSER_CONFIG_KEY,
+        defaults={
+            'config_value': make_password(raw_password),
+            'description': '超级用户口令哈希',
+        },
+    )
+
+
+def verify_superuser_password(raw_password: str) -> bool:
+    hashed = get_superuser_hash()
+    if not hashed:
+        return False
+    return check_password(raw_password, hashed)
+
+
+def create_admin_session(request) -> str:
+    sid = secrets.token_urlsafe(24)
+    with _lock:
+        _admin_sessions[sid] = {
+            'ip': get_client_ip(request),
+            'expires': _now() + ADMIN_TTL_SECONDS,
+        }
+    return sid
+
+
+def touch_admin_session(sid: str) -> bool:
+    with _lock:
+        sess = _admin_sessions.get(sid)
+        if not sess:
+            return False
+        if sess['expires'] < _now():
+            _admin_sessions.pop(sid, None)
+            return False
+        sess['expires'] = _now() + ADMIN_TTL_SECONDS
+        return True
+
+
+def clear_admin_session(sid: Optional[str]) -> None:
+    if not sid:
+        return
+    with _lock:
+        _admin_sessions.pop(sid, None)
+
+
+def is_admin_unlocked(request) -> bool:
+    if not is_local_request(request):
+        return False
+    sid = request.COOKIES.get(ADMIN_COOKIE) or request.headers.get('X-Admin-Session')
+    if not sid:
+        return False
+    return touch_admin_session(sid)
+
+
+def create_seat_session(
+    *,
+    group_id: int,
+    group_code: str,
+    group_name: str,
+    is_local: bool,
+    require_qr: bool,
+    user_id: Optional[str],
+    permissions: Dict[str, dict],
+) -> str:
+    sid = secrets.token_urlsafe(24)
+    with _lock:
+        _seat_sessions[sid] = {
+            'group_id': group_id,
+            'group_code': group_code,
+            'group_name': group_name,
+            'is_local': is_local,
+            'require_qr': require_qr,
+            'user_id': user_id,
+            'permissions': permissions,
+            'expires': _now() + SEAT_TTL_SECONDS,
+            'created_at': timezone.now().isoformat(),
+        }
+    return sid
+
+
+def get_seat_session(sid: Optional[str]) -> Optional[dict]:
+    if not sid:
+        return None
+    with _lock:
+        sess = _seat_sessions.get(sid)
+        if not sess:
+            return None
+        if sess['expires'] < _now():
+            _seat_sessions.pop(sid, None)
+            return None
+        sess['expires'] = _now() + SEAT_TTL_SECONDS
+        return dict(sess)
+
+
+def clear_seat_session(sid: Optional[str]) -> None:
+    if not sid:
+        return
+    with _lock:
+        _seat_sessions.pop(sid, None)
+
+
+def seat_sid_from_request(request) -> Optional[str]:
+    return request.COOKIES.get(SEAT_COOKIE) or request.headers.get('X-Seat-Session')
+
+
+def get_local_group():
+    from core.models import AccessGroup
+    ensure_bootstrap_data()
+    return AccessGroup.objects.filter(code=LOCAL_GROUP_CODE, is_local=True).first()
+
+
+def build_local_identity(request) -> dict:
+    group = get_local_group()
+    perms = permissions_dict_from_group(group) if group else default_local_permissions()
+    return {
+        'role': 'local',
+        'is_local': True,
+        'show_logout': True,
+        'label': '',
+        'group_id': group.id if group else None,
+        'group_code': LOCAL_GROUP_CODE,
+        'group_name': group.name if group else '本机用户',
+        'user_id': None,
+        'require_qr': False,
+        'permissions': perms,
+        'needs_role_select': False,
+        'host_login_ok': True,
+    }
+
+
+def build_identity_from_session(sess: dict, host_login_ok: bool = True) -> dict:
+    display_label = sess['group_name']
+    if sess.get('require_qr') and sess.get('user_id'):
+        display_label = f"{sess['group_name']} {sess['user_id']}"
+    return {
+        'role': 'non_local',
+        'is_local': False,
+        'show_logout': True,
+        'label': display_label,
+        'group_id': sess['group_id'],
+        'group_code': sess['group_code'],
+        'group_name': sess['group_name'],
+        'user_id': sess.get('user_id'),
+        'require_qr': sess.get('require_qr', False),
+        'permissions': sess.get('permissions') or {},
+        'needs_role_select': False,
+        'host_login_ok': host_login_ok,
+    }
+
+
+def check_host_login_ok() -> bool:
+    """本机调度 token 是否可用：有缓存 token 视为本机已登录过。"""
+    try:
+        from parsers.scheduler import get_scheduler_token
+        return bool(get_scheduler_token())
+    except Exception:
+        return True
+
+
+def resolve_access_identity(request) -> dict:
+    """统一解析当前访问身份。"""
+    ensure_bootstrap_data()
+    if is_local_request(request):
+        return build_local_identity(request)
+
+    sid = seat_sid_from_request(request)
+    sess = get_seat_session(sid)
+    host_ok = check_host_login_ok()
+    if sess and not sess.get('is_local'):
+        from core.models import AccessGroup
+        group = AccessGroup.objects.filter(id=sess.get('group_id')).first()
+        if group:
+            with _lock:
+                live = _seat_sessions.get(sid)
+                if live:
+                    live['permissions'] = permissions_dict_from_group(group)
+                    live['require_qr'] = bool(group.require_qr)
+                    live['group_name'] = group.name
+                    live['group_code'] = group.code
+                    sess = dict(live)
+        identity = build_identity_from_session(sess, host_login_ok=host_ok)
+        return identity
+
+    return {
+        'role': 'guest',
+        'is_local': False,
+        'show_logout': False,
+        'label': '',
+        'group_id': None,
+        'group_code': None,
+        'group_name': None,
+        'user_id': None,
+        'require_qr': False,
+        'permissions': {m['code']: empty_perm() for m in ACCESS_MODULES},
+        'needs_role_select': True,
+        'host_login_ok': host_ok,
+    }
+
+
+def has_perm(identity: dict, module_code: str, action: str) -> bool:
+    """action: display | activate | write"""
+    perms = (identity or {}).get('permissions') or {}
+    mod = perms.get(module_code) or {}
+    visible = bool(mod.get('display') or mod.get('activate') or mod.get('write'))
+    if action == 'display':
+        return visible
+    if action == 'activate':
+        return visible and bool(mod.get('activate'))
+    if action == 'write':
+        return visible and bool(mod.get('write'))
+    return False
+
+
+def is_user_blacklisted(user_id: str) -> bool:
+    from core.models import NonLocalQrBlacklist
+    if not user_id:
+        return False
+    return NonLocalQrBlacklist.objects.filter(user_id=str(user_id).strip()).exists()
+
+
+def validate_group_permission_payload(group, perms_payload: dict, is_local_group: bool) -> Tuple[bool, str, List[dict]]:
+    """校验并规范化权限保存载荷。"""
+    rows = []
+    for m in ACCESS_MODULES:
+        code = m['code']
+        raw = (perms_payload or {}).get(code) or {}
+        can_display = bool(raw.get('display'))
+        can_activate = bool(raw.get('activate')) if m.get('has_activate') else False
+        can_write = bool(raw.get('write')) if m.get('has_write') else False
+        # 勾了激活/写入视为需要显示对应模块
+        if can_activate or can_write:
+            can_display = True
+        if not can_display:
+            can_activate = False
+            can_write = False
+        if can_activate and not m.get('has_activate'):
+            can_activate = False
+        if can_write and not m.get('has_write'):
+            can_write = False
+        rows.append({
+            'module_code': code,
+            'can_display': can_display,
+            'can_activate': can_activate,
+            'can_write': can_write,
+        })
+
+    require_qr = bool(getattr(group, 'require_qr', False)) if group else False
+    # 写入强制扫码（非本机）
+    if not is_local_group:
+        any_write = any(r['can_write'] for r in rows)
+        if any_write and not require_qr:
+            return False, '勾选写入权限时必须同时勾选扫码认证', []
+
+    # 设置项写入互斥
+    from core.models import AccessGroupPermission
+    for r in rows:
+        if not r['can_write']:
+            continue
+        if r['module_code'] not in SETTINGS_WRITE_EXCLUSIVE:
+            continue
+        qs = AccessGroupPermission.objects.filter(
+            module_code=r['module_code'], can_write=True
+        )
+        if group and group.id:
+            qs = qs.exclude(group_id=group.id)
+        other = qs.select_related('group').first()
+        if other:
+            name = MODULE_BY_CODE[r['module_code']]['name']
+            return False, (
+                f'模块「{name}」的写入权限已授予用户组「{other.group.name}」，请先取消后再授权'
+            ), []
+
+    return True, '', rows

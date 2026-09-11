@@ -18,7 +18,7 @@ from parsers.models import Flight, Metar, Taf, ParseLog
 from parsers.parsing_manager import ParsingManager
 from utils.time_manager import TimeManager
 from utils.alert_calculator import AlertCalculator
-from utils.popup_utils import PopupManager
+from utils.popup_utils import PopupManager, get_seat_identity, get_popup_trace_hours
 from data_adapters.adapter_factory import AdapterFactory
 from utils.cas_api_log import cas_user_context, log_cas_api_request
 
@@ -100,6 +100,7 @@ def airports_overview(request, time_mode='current'):
                     'carriers': list(Carrier.objects.filter(is_active=True).values_list('carrier_code', flat=True)),
                     'timestamp': datetime.now().isoformat(),
                     'auth_status': get_overview_auth_status(time_mode),
+                    'seat_identity': get_seat_identity(request),
                 }
             })
         
@@ -203,7 +204,8 @@ def airports_overview(request, time_mode='current'):
                         'data_status': metar.data_status,
                         'created_at': metar.created_at,
                         'sqc': metar.sqc,
-                        'popup': metar.popup,
+                        'operation_popup': metar.operation_popup,
+                        'parking_popup': metar.parking_popup,
                         'import_alert': metar.import_alert,
                         'import_alert_time': metar.import_alert_time,
                         'handle_status': metar.handle_status,
@@ -340,6 +342,7 @@ def airports_overview(request, time_mode='current'):
                 },
                 'parsing_status': backend_parsing_status,
                 'auth_status': get_overview_auth_status(time_mode),
+                'seat_identity': get_seat_identity(request),
             }
         }
         
@@ -363,17 +366,23 @@ def airport_history_reports(request, airport_code, time_mode='current'):
     try:
         # 移除缓存机制，直接从API获取最新历史报文数据
         
-        # 获取token（仅在current模式下需要）
+        # 获取token（仅在current模式下需要）；非本机回退本机调度缓存
         token = None
         if time_mode == 'current':
             auth_header = request.headers.get('Authorization')
             if auth_header and auth_header.startswith('Bearer '):
                 token = auth_header[7:]  # 去掉 'Bearer ' 前缀
             else:
-                return JsonResponse({
-                    'success': False,
-                    'error': '未找到认证token，请先登录'
-                }, status=401)
+                try:
+                    from parsers.scheduler import get_scheduler_token
+                    token = get_scheduler_token()
+                except Exception:
+                    token = None
+                if not token:
+                    return JsonResponse({
+                        'success': False,
+                        'error': '未找到认证token，请先在本机登录'
+                    }, status=401)
         
         # 获取API适配器
         user_code = request.headers.get('X-User-Code')
@@ -468,9 +477,25 @@ def trigger_parsing(request, time_mode='current'):
             data = json.loads(request.body) if request.body else {}
         except json.JSONDecodeError:
             data = {}
+
+        from utils.access_control import resolve_access_identity, has_perm
+        identity = resolve_access_identity(request)
+        update_types = data.get('updateTypes', None)
+        only_nwp = isinstance(update_types, list) and set(update_types) == {'nwp'}
+        if only_nwp:
+            if not has_perm(identity, 'nwp', 'activate'):
+                return JsonResponse({'success': False, 'error': '无温度辅助激活权限'}, status=403)
+        else:
+            # 刷新/综合解析：需要刷新激活；搜索触发的解析也走此接口
+            if not (
+                has_perm(identity, 'refresh_btn', 'activate')
+                or has_perm(identity, 'search', 'activate')
+                or has_perm(identity, 'detail_metar_trend', 'activate')
+            ):
+                return JsonResponse({'success': False, 'error': '无激活解析权限'}, status=403)
         
         # 获取要更新的数据类型
-        update_types = data.get('updateTypes', None)
+        # update_types already parsed
 
         # 同步 NWP 开关状态到调度器缓存
         nwp_enabled = data.get('nwpEnabled', None)
@@ -494,24 +519,45 @@ def trigger_parsing(request, time_mode='current'):
                 except Exception:
                     pass
             else:
-                return JsonResponse({
-                    'success': False,
-                    'error': '未找到认证token，请先登录'
-                }, status=401)
+                # 非本机可用调度器缓存的本机 token
+                try:
+                    from parsers.scheduler import get_scheduler_token
+                    token = get_scheduler_token()
+                except Exception:
+                    token = None
+                if not token:
+                    return JsonResponse({
+                        'success': False,
+                        'error': '未找到认证token，请先在本机登录'
+                    }, status=401)
         
-        # 获取用户代码
-        user_code = request.headers.get('X-User-Code')
+        # 激活日志：需扫码的席位记 IP + user_id；免扫码只记 IP，避免落到本机值班工号
+        raw_user = request.headers.get('X-User-Code') or identity.get('user_id')
+        from utils.popup_utils import get_client_ip
+        activator_ip = get_client_ip(request)
+        log_user = raw_user if identity.get('require_qr') else None
+        if log_user:
+            logger.info(
+                '手动激活解析: types=%s IP=%s user_id=%s group=%s is_local=%s',
+                update_types, activator_ip, log_user,
+                identity.get('group_name'), identity.get('is_local'),
+            )
+        else:
+            logger.info(
+                '手动激活解析: types=%s IP=%s group=%s is_local=%s',
+                update_types, activator_ip,
+                identity.get('group_name'), identity.get('is_local'),
+            )
 
-        # 缓存值班用户标识供后端调度器复用
-        if user_code and time_mode == 'current':
+        # 仅扫码席位把激活人工号写入调度缓存；免扫码不覆盖本机值班工号
+        if log_user and time_mode == 'current':
             try:
                 from parsers.scheduler import set_scheduler_user_code
-                set_scheduler_user_code(user_code)
+                set_scheduler_user_code(log_user)
             except Exception:
                 pass
 
-        # 创建解析管理器
-        manager = ParsingManager(time_mode, token, user_code)
+        manager = ParsingManager(time_mode, token, log_user, activator_ip=activator_ip)
         
         # 根据是否有updateTypes参数决定调用哪个方法
         if update_types is None:
@@ -702,6 +748,8 @@ def check_login_status(request, time_mode='current'):
             # 清除二维码信息
             del request.session['qr_id']
             del request.session['routing']
+            if request.session.get('seat_pending_group_id'):
+                request.session['seat_scanned_user_id'] = scan_result.get('userCode')
             
             return JsonResponse({
                 'success': True,
@@ -723,6 +771,11 @@ def check_login_status(request, time_mode='current'):
             'error': '检查登录状态失败',
             'message': str(e)
         }, status=500)
+
+
+@require_http_methods(["GET"])
+def seat_identity(request, time_mode='current'):
+    return JsonResponse({'success': True, 'data': get_seat_identity(request)})
 
 
 @require_http_methods(["POST"])
@@ -897,7 +950,8 @@ def get_metar_popups(request, time_mode='current'):
         return JsonResponse({
             'success': True,
             'data': popup_list,
-            'current_time': current_time_ms
+            'current_time': current_time_ms,
+            'trace_time': get_popup_trace_hours(),
         })
         
     except Exception as e:
@@ -934,25 +988,14 @@ def handle_popup_received(request, time_mode='current'):
                 'error': '缺少SQC参数'
             }, status=400)
         
-        # 获取user_code
-        if time_mode == 'test':
-            user_code = 'test'
-        else:
-            user_code = request.headers.get('X-User-Code')
-        
-        # 处理收到操作
-        success = PopupManager.handle_popup_received(sqc, user_code)
-        
-        if success:
-            return JsonResponse({
-                'success': True,
-                'message': '操作成功'
-            })
-        else:
-            return JsonResponse({
-                'success': False,
-                'error': '操作失败'
-            }, status=400)
+        user_code = 'test' if time_mode == 'test' else request.headers.get('X-User-Code')
+        result = PopupManager.write_handle_records([sqc], user_code, 'handle', request)
+        return JsonResponse({
+            'success': True,
+            'written': result['written'],
+            'updated': result['updated'],
+            'message': '操作成功'
+        })
         
     except Exception as e:
         logger.error(f"处理弹窗收到操作失败: {str(e)}")
@@ -988,25 +1031,14 @@ def handle_popup_batch_ignore(request, time_mode='current'):
                 'error': '缺少sqc_list参数'
             }, status=400)
         
-        # 获取user_code
-        if time_mode == 'test':
-            user_code = 'test'
-        else:
-            user_code = request.headers.get('X-User-Code')
-        
-        # 批量忽略
-        success = PopupManager.handle_popup_batch_ignore(sqc_list, user_code)
-        
-        if success:
-            return JsonResponse({
-                'success': True,
-                'message': '批量忽略成功'
-            })
-        else:
-            return JsonResponse({
-                'success': False,
-                'error': '批量忽略失败'
-            }, status=400)
+        user_code = 'test' if time_mode == 'test' else request.headers.get('X-User-Code')
+        result = PopupManager.write_handle_records(sqc_list, user_code, 'ignore', request)
+        return JsonResponse({
+            'success': True,
+            'written': result['written'],
+            'updated': result['updated'],
+            'message': '批量忽略成功'
+        })
         
     except Exception as e:
         logger.error(f"批量忽略弹窗失败: {str(e)}")
@@ -1042,197 +1074,20 @@ def handle_popup_batch_received(request, time_mode='current'):
                 'error': '缺少sqc_list参数'
             }, status=400)
         
-        # 获取user_code
-        if time_mode == 'test':
-            user_code = 'test'
-        else:
-            user_code = request.headers.get('X-User-Code')
-        
-        # 批量处理
-        success = PopupManager.handle_popup_batch_received(sqc_list, user_code)
-        
-        if success:
-            return JsonResponse({
-                'success': True,
-                'message': '批量处理成功'
-            })
-        else:
-            return JsonResponse({
-                'success': False,
-                'error': '批量处理失败'
-            }, status=400)
+        user_code = 'test' if time_mode == 'test' else request.headers.get('X-User-Code')
+        result = PopupManager.write_handle_records(sqc_list, user_code, 'handle', request)
+        return JsonResponse({
+            'success': True,
+            'written': result['written'],
+            'updated': result['updated'],
+            'message': '批量处理成功'
+        })
         
     except Exception as e:
         logger.error(f"批量处理弹窗失败: {str(e)}")
         return JsonResponse({
             'success': False,
             'error': '批量处理弹窗失败',
-            'message': str(e)
-        }, status=500)
-
-
-@require_http_methods(["GET"])
-@csrf_exempt
-def get_popup_settings(request, time_mode='current'):
-    """
-    获取弹窗设置
-    
-    URL参数:
-        - time_mode: 时间模式（从URL路径获取）
-    
-    Headers:
-        - X-User-Code: 用户代码（current模式需要）
-    """
-    try:
-        from core.models import PopupSettings
-        
-        # 获取user_code
-        if time_mode == 'test':
-            user_code = 'test'
-        else:
-            user_code = request.headers.get('X-User-Code', 'default')
-        
-        popup_settings = PopupSettings.objects.filter(user_code=user_code).first()
-
-        if not popup_settings:
-            default_settings = PopupSettings.objects.filter(user_code='default').first()
-            if default_settings:
-                popup_settings = PopupSettings.objects.create(
-                    user_code=user_code,
-                    operation_metar_popup=default_settings.operation_metar_popup,
-                    operation_taf_popup=default_settings.operation_taf_popup,
-                    operation_NWP_popup=default_settings.operation_NWP_popup,
-                    parking_metar_popup=default_settings.parking_metar_popup,
-                    parking_taf_popup_other=default_settings.parking_taf_popup_other,
-                    parking_NWP_popup=default_settings.parking_NWP_popup,
-                    operation_metar_popup_leeway=default_settings.operation_metar_popup_leeway,
-                    operation_taf_popup_leeway=default_settings.operation_taf_popup_leeway,
-                    operation_NWP_popup_leeway=default_settings.operation_NWP_popup_leeway,
-                    operation_metar_popup_level=default_settings.operation_metar_popup_level,
-                    operation_taf_popup_level=default_settings.operation_taf_popup_level,
-                    operation_NWP_popup_level=default_settings.operation_NWP_popup_level,
-                    parking_metar_popup_level=default_settings.parking_metar_popup_level,
-                    parking_taf_popup_level=default_settings.parking_taf_popup_level,
-                    parking_NWP_popup_level=default_settings.parking_NWP_popup_level,
-                    intercept=default_settings.intercept,
-                )
-            else:
-                popup_settings = PopupSettings.objects.create(user_code=user_code)
-
-        if popup_settings:
-            return JsonResponse({
-                'success': True,
-                'data': {
-                    'operation_metar_popup': popup_settings.operation_metar_popup,
-                    'parking_metar_popup': popup_settings.parking_metar_popup,
-                    'intercept': popup_settings.intercept,
-                }
-            })
-        else:
-            return JsonResponse({
-                'success': False,
-                'error': '未找到弹窗设置'
-            }, status=404)
-    
-    except Exception as e:
-        logger.error(f"获取弹窗设置失败: {str(e)}")
-        return JsonResponse({
-            'success': False,
-            'error': '获取弹窗设置失败',
-            'message': str(e)
-        }, status=500)
-
-
-@require_http_methods(["POST"])
-@csrf_exempt
-def update_popup_settings(request, time_mode='current'):
-    """
-    更新弹窗设置
-    
-    URL参数:
-        - time_mode: 时间模式（从URL路径获取）
-    
-    Headers:
-        - X-User-Code: 用户代码（current模式需要）
-    
-    POST参数:
-        - field: 要更新的字段名（operation_metar_popup 或 parking_metar_popup）
-        - value: 布尔值（true 或 false）
-    """
-    try:
-        from core.models import PopupSettings
-        
-        data = json.loads(request.body)
-        field = data.get('field')
-        value = data.get('value')
-        
-        if not field or value is None:
-            return JsonResponse({
-                'success': False,
-                'error': '缺少必要参数'
-            }, status=400)
-        
-        # 验证字段名
-        if field not in ['operation_metar_popup', 'parking_metar_popup', 'intercept']:
-            return JsonResponse({
-                'success': False,
-                'error': '无效的字段名'
-            }, status=400)
-        
-        # 获取user_code
-        if time_mode == 'test':
-            user_code = 'test'
-        else:
-            user_code = request.headers.get('X-User-Code', 'default')
-        
-        # 尝试直接更新已有行（生成 SQL UPDATE，不依赖主键）
-        updated_count = PopupSettings.objects.filter(user_code=user_code).update(**{field: value})
-
-        if updated_count == 0:
-            default_settings = PopupSettings.objects.filter(user_code='default').first()
-            if default_settings:
-                create_data = {
-                    'user_code': user_code,
-                    'operation_metar_popup': default_settings.operation_metar_popup,
-                    'operation_taf_popup': default_settings.operation_taf_popup,
-                    'operation_NWP_popup': default_settings.operation_NWP_popup,
-                    'parking_metar_popup': default_settings.parking_metar_popup,
-                    'parking_taf_popup_other': default_settings.parking_taf_popup_other,
-                    'parking_NWP_popup': default_settings.parking_NWP_popup,
-                    'operation_metar_popup_leeway': default_settings.operation_metar_popup_leeway,
-                    'operation_taf_popup_leeway': default_settings.operation_taf_popup_leeway,
-                    'operation_NWP_popup_leeway': default_settings.operation_NWP_popup_leeway,
-                    'operation_metar_popup_level': default_settings.operation_metar_popup_level,
-                    'operation_taf_popup_level': default_settings.operation_taf_popup_level,
-                    'operation_NWP_popup_level': default_settings.operation_NWP_popup_level,
-                    'parking_metar_popup_level': default_settings.parking_metar_popup_level,
-                    'parking_taf_popup_level': default_settings.parking_taf_popup_level,
-                    'parking_NWP_popup_level': default_settings.parking_NWP_popup_level,
-                    'intercept': default_settings.intercept,
-                }
-                create_data[field] = value
-                PopupSettings.objects.create(**create_data)
-            else:
-                PopupSettings.objects.create(user_code=user_code, **{field: value})
-
-        # 重新查询以获取最新值返回给前端
-        popup_settings = PopupSettings.objects.filter(user_code=user_code).first()
-        
-        return JsonResponse({
-            'success': True,
-            'message': '更新成功',
-            'data': {
-                'operation_metar_popup': popup_settings.operation_metar_popup,
-                'parking_metar_popup': popup_settings.parking_metar_popup,
-                'intercept': popup_settings.intercept,
-            }
-        })
-    
-    except Exception as e:
-        logger.error(f"更新弹窗设置失败: {str(e)}")
-        return JsonResponse({
-            'success': False,
-            'error': '更新弹窗设置失败',
             'message': str(e)
         }, status=500)
 
@@ -1395,6 +1250,13 @@ def handle_import_alert(request, time_mode):
     处理实况入库告警：通过 sqc 定位 metar 行，写入 import_alert_handle_time 和 handle_status。
     """
     try:
+        from utils.access_control import resolve_access_identity, has_perm
+        if not has_perm(resolve_access_identity(request), 'import_alert', 'write'):
+            return JsonResponse({'success': False, 'error': '无入库告警写入权限', 'written': False}, status=403)
+    except Exception:
+        pass
+
+    try:
         data = json.loads(request.body)
     except (json.JSONDecodeError, Exception):
         return JsonResponse({'success': False, 'error': '请求数据格式错误'}, status=400)
@@ -1411,7 +1273,7 @@ def handle_import_alert(request, time_mode):
         metar.import_alert_handle_time = import_alert_handle_time
         metar.handle_status = handle_status
         metar.save(update_fields=['import_alert_handle_time', 'handle_status'])
-        return JsonResponse({'success': True})
+        return JsonResponse({'success': True, 'written': True})
     except Metar.DoesNotExist:
         return JsonResponse({'success': False, 'error': '告警记录不存在'}, status=404)
     except Exception as e:
@@ -1517,6 +1379,13 @@ def handle_taf_import_alert(request, time_mode):
     处理预报入库告警：通过 sqc 定位 taf 行，写入 import_alert_handle_time 和 handle_status。
     """
     try:
+        from utils.access_control import resolve_access_identity, has_perm
+        if not has_perm(resolve_access_identity(request), 'import_alert', 'write'):
+            return JsonResponse({'success': False, 'error': '无入库告警写入权限', 'written': False}, status=403)
+    except Exception:
+        pass
+
+    try:
         data = json.loads(request.body)
     except (json.JSONDecodeError, Exception):
         return JsonResponse({'success': False, 'error': '请求数据格式错误'}, status=400)
@@ -1533,7 +1402,7 @@ def handle_taf_import_alert(request, time_mode):
         taf.import_alert_handle_time = import_alert_handle_time
         taf.handle_status = handle_status
         taf.save(update_fields=['import_alert_handle_time', 'handle_status'])
-        return JsonResponse({'success': True})
+        return JsonResponse({'success': True, 'written': True})
     except Taf.DoesNotExist:
         return JsonResponse({'success': False, 'error': '告警记录不存在'}, status=404)
     except Exception as e:
@@ -1604,7 +1473,8 @@ def _serialize_metar(metar):
         'data_status': metar.data_status,
         'created_at': metar.created_at,
         'sqc': metar.sqc,
-        'popup': metar.popup,
+        'operation_popup': metar.operation_popup,
+        'parking_popup': metar.parking_popup,
         'import_alert': metar.import_alert,
         'import_alert_time': metar.import_alert_time,
         'handle_status': metar.handle_status,
@@ -1791,7 +1661,8 @@ def _get_external_airport_search_data(code, time_mode, token):
                         'data_status': 'N',
                         'created_at': now_ms,
                         'sqc': str(row.get('sqc', '')).strip() or None,
-                        'popup': False,
+                        'operation_popup': 'N',
+                        'parking_popup': 'N',
                         'import_alert': 'N',
                         'import_alert_time': None,
                         'handle_status': None,
@@ -1885,6 +1756,12 @@ def airport_search(request, time_mode='current'):
             auth_header = request.headers.get('Authorization', '')
             if auth_header.startswith('Bearer '):
                 token = auth_header[7:]
+            else:
+                try:
+                    from parsers.scheduler import get_scheduler_token
+                    token = get_scheduler_token()
+                except Exception:
+                    token = None
 
         user_code = request.headers.get('X-User-Code')
         result = []

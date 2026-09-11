@@ -408,27 +408,27 @@
     const res = await apiFetch(apiUrl('settings/popup/'));
     if (!res.success) { showMsg('popup-msg', res.error, 'error'); return; }
     const d = res.data;
-    document.getElementById('pf-operation-chk').checked = !!d.operation_metar_popup;
-    document.getElementById('pf-parking-chk').checked = !!d.parking_metar_popup;
     document.getElementById('pf-leeway').value = d.operation_metar_popup_leeway ?? 0;
-    document.getElementById('pf-intercept-chk').checked = !!d.intercept;
+    document.getElementById('pf-trace-time').value = d.trace_time ?? 6;
     opLevelTrack.setVal(d.operation_metar_popup_level || 'Y');
     parkLevelTrack.setVal(d.parking_metar_popup_level || 'Y');
   }
 
   async function savePopupSettings() {
     const payload = {
-      operation_metar_popup: document.getElementById('pf-operation-chk').checked ? 1 : 0,
-      parking_metar_popup: document.getElementById('pf-parking-chk').checked ? 1 : 0,
       operation_metar_popup_leeway: parseInt(document.getElementById('pf-leeway').value) || 0,
       operation_metar_popup_level: opLevelTrack ? opLevelTrack.getVal() : 'Y',
       parking_metar_popup_level: parkLevelTrack ? parkLevelTrack.getVal() : 'Y',
-      intercept: document.getElementById('pf-intercept-chk').checked ? 1 : 0,
+      trace_time: parseInt(document.getElementById('pf-trace-time').value, 10),
     };
 
     const leeway = payload.operation_metar_popup_leeway;
     if (isNaN(leeway) || leeway < 0 || leeway > 9) {
       showMsg('popup-msg', '告警裕度需为0–9的整数', 'error'); return;
+    }
+    const traceTime = payload.trace_time;
+    if (isNaN(traceTime) || traceTime < 0 || traceTime > 9) {
+      showMsg('popup-msg', '追溯时间需为0–9的整数', 'error'); return;
     }
 
     const res = await apiFetch(apiUrl('settings/popup/'), {
@@ -438,12 +438,7 @@
 
     if (res.success) {
       showMsg('popup-msg', '保存成功', 'success');
-      // 同步主页快捷按钮状态
-      if (window.updateToggleState) {
-        window.updateToggleState('operation-toggle', !!payload.operation_metar_popup);
-        window.updateToggleState('parking-toggle', !!payload.parking_metar_popup);
-        window.updateToggleState('intercept-toggle', !!payload.intercept);
-      }
+      window.__popupTraceHours = traceTime;
     } else {
       showMsg('popup-msg', res.error, 'error');
     }
@@ -754,6 +749,17 @@
       window.hideModal('settings-modal');
     });
 
+    const suBtn = document.getElementById('superuser-btn');
+    if (suBtn) {
+      suBtn.addEventListener('click', () => {
+        if (typeof openSuperuserAdmin === 'function') openSuperuserAdmin();
+        else {
+          const tm = window.timeMode || window.currentTimeMode || 'current';
+          window.location.href = `/${tm}/access-admin/`;
+        }
+      });
+    }
+
     // classification联动 area select (机场信息Tab)
     const afClassChk = document.getElementById('af-classification-chk');
     if (afClassChk) {
@@ -812,11 +818,33 @@
     document.getElementById('loc-cancel-btn').addEventListener('click', hideLocForm);
   }
 
+  function applySettingsTabVisibility() {
+    const TAB_PERM = {
+      'airport-info': 'settings_airport_info',
+      'area-options': 'settings_area_options',
+      'data-refresh-timer': 'settings_data_refresh',
+      'carrier': 'settings_carrier',
+      'popup': 'settings_popup',
+      'alert-thresholds': 'settings_alert_thresholds',
+      'weather-type': 'settings_weather_type',
+      'weather-alert': 'settings_weather_alert',
+      'airport-location': 'settings_airport_location',
+    };
+    Object.keys(TAB_PERM).forEach((tab) => {
+      const btn = document.querySelector(`.settings-tab[data-tab="${tab}"]`);
+      if (!btn) return;
+      const ok = typeof hasAccess !== 'function' || hasAccess(TAB_PERM[tab], 'display');
+      btn.style.display = ok ? '' : 'none';
+    });
+  }
+
   // ========== 公开接口 ==========
   window.SettingsModal = {
     open() {
+      applySettingsTabVisibility();
       window.showModal('settings-modal');
-      switchTab('airport-info');
+      const first = document.querySelector('.settings-tab:not([style*="display: none"])');
+      switchTab(first ? first.getAttribute('data-tab') : 'airport-info');
     },
 
     // 机场

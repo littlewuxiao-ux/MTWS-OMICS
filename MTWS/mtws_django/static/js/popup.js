@@ -11,24 +11,25 @@
 // 页面提示和Favicon相关
 // ==================================
 
-// 生成默认SVG favicon
-function generateDefaultFavicon() {
-    const svgString = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path d="M24 0l-6 22-8.129-7.239 7.802-8.234-10.458 7.227-7.215-1.754 24-12zm-15 16.668v7.332l3.258-4.431-3.258-2.901z"/></svg>';
-    return `data:image/svg+xml,${encodeURIComponent(svgString)}`;
+function getDefaultFaviconHref() {
+    const link = document.getElementById('mtws-favicon') || document.querySelector("link[rel*='icon']");
+    if (link && link.getAttribute('href')) return link.href;
+    return '/static/svg/mtws-favicon.svg';
 }
 
-// 初始化默认favicon
 function initDefaultFavicon() {
-    let link = document.querySelector("link[rel*='icon']");
+    let link = document.getElementById('mtws-favicon') || document.querySelector("link[rel*='icon']");
     if (!link) {
         link = document.createElement('link');
-        link.rel = 'shortcut icon';
+        link.rel = 'icon';
+        link.type = 'image/svg+xml';
+        link.id = 'mtws-favicon';
+        link.href = getDefaultFaviconHref();
         document.head.appendChild(link);
     }
-    const defaultFavicon = generateDefaultFavicon();
-    link.href = defaultFavicon;
-    originalFavicon = defaultFavicon;
+    originalFavicon = link.href || getDefaultFaviconHref();
 }
+initDefaultFavicon();
 
 // 生成红色方框+白色NEW的favicon
 function generateNewPopupFavicon() {
@@ -49,35 +50,52 @@ function generateNewPopupFavicon() {
     return canvas.toDataURL();
 }
 
-// 更新页面提示状态
+let _titleFlashTimer = null;
+let _titleFlashOn = true;
+
+function applyPopupAlertVisual(alertOn) {
+    document.title = alertOn ? `【新弹窗】${originalTitle}` : originalTitle;
+    const link = document.getElementById('mtws-favicon') || document.querySelector("link[rel*='icon']");
+    if (!link) return;
+    link.href = alertOn ? generateNewPopupFavicon() : (originalFavicon || getDefaultFaviconHref());
+}
+
+function stopTitleFlash() {
+    if (_titleFlashTimer) {
+        clearInterval(_titleFlashTimer);
+        _titleFlashTimer = null;
+    }
+}
+
+function startTitleFlash() {
+    if (_titleFlashTimer) return;
+    _titleFlashOn = true;
+    _titleFlashTimer = setInterval(() => {
+        _titleFlashOn = !_titleFlashOn;
+        applyPopupAlertVisual(_titleFlashOn);
+    }, 800);
+}
+
 function updatePopupAlert() {
     const hasPopups = Object.keys(popupAirports).length > 0;
     const isPageHidden = document.hidden;
 
     if (hasPopups && isPageHidden) {
         if (!isShowingPopupAlert) {
-            document.title = `【新弹窗】${originalTitle}`;
-
-            const link = document.querySelector("link[rel*='icon']");
-            if (link) {
-                link.href = generateNewPopupFavicon();
-            }
-
+            applyPopupAlertVisual(true);
             isShowingPopupAlert = true;
+            startTitleFlash();
         }
     } else {
         if (isShowingPopupAlert) {
-            document.title = originalTitle;
-
-            const link = document.querySelector("link[rel*='icon']");
-            if (link && originalFavicon) {
-                link.href = originalFavicon;
-            }
-
+            stopTitleFlash();
+            applyPopupAlertVisual(false);
             isShowingPopupAlert = false;
         }
     }
 }
+
+document.addEventListener('visibilitychange', updatePopupAlert);
 
 // ==================================
 // 稍后处理功能
@@ -240,7 +258,7 @@ function normalizeWeatherTypeForBadges(weather, nameLookupPopups) {
         if (value && typeof value === 'object' && !Array.isArray(value)) {
             result[code] = {
                 alert_level: value.alert_level,
-                cn_name: value.cn_name || code
+                cn_name: weatherTypeBadgeName(code, value)
             };
             return;
         }
@@ -253,9 +271,20 @@ function normalizeWeatherTypeForBadges(weather, nameLookupPopups) {
             }
             return false;
         });
-        result[code] = { alert_level: value, cn_name: cnName };
+        result[code] = { alert_level: value, cn_name: weatherTypeBadgeName(code, { cn_name: cnName }) };
     });
     return result;
+}
+
+const WEATHER_TYPE_CN_FALLBACK = { R: '近时天气' };
+const ALERT_LEVEL_LETTERS = { R: 1, Y: 1, G: 1, N: 1 };
+
+function weatherTypeBadgeName(code, info) {
+    const name = info && info.cn_name != null ? String(info.cn_name).trim() : '';
+    if (name && !ALERT_LEVEL_LETTERS[name]) return name;
+    if (WEATHER_TYPE_CN_FALLBACK[code]) return WEATHER_TYPE_CN_FALLBACK[code];
+    if (code && !ALERT_LEVEL_LETTERS[code]) return code;
+    return code === 'R' ? '近时天气' : (code || '天气现象');
 }
 
 // 实心：主页最新实况与未处理弹窗中观测时间最大的一份；空心：观测时间更早的未处理弹窗
@@ -358,12 +387,14 @@ function generateWarningBadgesHTML(popupData, airportPopups) {
         const historyMax = warningMaxLevel(levels);
         if (!historyMax) return;
         const firstWith = historyPopups.find(p => p.metar_weather_type && p.metar_weather_type[code]);
-        const name = firstWith && firstWith.metar_weather_type[code] ? (firstWith.metar_weather_type[code].cn_name || code) : code;
+        const name = firstWith && firstWith.metar_weather_type[code]
+            ? weatherTypeBadgeName(code, firstWith.metar_weather_type[code])
+            : weatherTypeBadgeName(code);
         row2.push(`<span class="warning-badge warning-border-${historyMax}">${name}</span>`);
     });
     currentWeatherEntries.forEach(([code, info]) => {
         const currentLevel = info.alert_level;
-        const name = info.cn_name || code;
+        const name = weatherTypeBadgeName(code, info);
         const historyLevels = historyPopups.map(p => (p.metar_weather_type && p.metar_weather_type[code]) ? p.metar_weather_type[code].alert_level : null).filter(Boolean);
         const historyMax = warningMaxLevel(historyLevels);
         const currentRank = warningLevelRank(currentLevel);
@@ -1013,11 +1044,14 @@ async function handleBatchIgnoreAll() {
 
     console.log('Total sqc count:', allSqc.length);
 
-    // 显示确认对话框
     const confirmed = await showConfirmDialog('全部弹窗的报文将视作已处理且不再弹出');
     console.log('User confirmed:', confirmed);
 
     if (!confirmed) return;
+
+    if (window.markPopupsDismissedLocally) {
+        window.markPopupsDismissedLocally(allSqc);
+    }
 
     try {
         const headers = {
@@ -1036,20 +1070,14 @@ async function handleBatchIgnoreAll() {
             headers: headers,
             body: JSON.stringify({ sqc_list: allSqc })
         });
-
-        if (response.ok) {
-            // 清空所有弹窗数据
-            popupAirports = {};
-            currentActiveAirport = null;
-            tabScrollOffset = 0;
-
-            renderPopup();
-        } else {
-            console.error('批量忽略失败:', response.status);
-        }
     } catch (error) {
         console.error('批量忽略出错:', error);
     }
+
+    popupAirports = {};
+    currentActiveAirport = null;
+    tabScrollOffset = 0;
+    renderPopup();
 }
 
 // 处理批量忽略（单个机场）
@@ -1111,6 +1139,9 @@ async function handleBatchIgnore(airport, sqcList) {
 
 // 处理批量收到
 async function handleBatchReceived(airport, sqcList) {
+    if (window.markPopupsDismissedLocally) {
+        window.markPopupsDismissedLocally(sqcList);
+    }
     try {
         const headers = {
             'Content-Type': 'application/json'
@@ -1123,43 +1154,36 @@ async function handleBatchReceived(airport, sqcList) {
             headers['X-User-Code'] = currentUserCode;
         }
 
-        const response = await fetch(`/${currentTimeMode}/api/popup-batch-received/`, {
+        await fetch(`/${currentTimeMode}/api/popup-batch-received/`, {
             method: 'POST',
             headers: headers,
             body: JSON.stringify({ sqc_list: sqcList })
         });
-
-        if (response.ok) {
-            // 移除该机场的弹窗数据
-            delete popupAirports[airport];
-
-            // 重置滚动偏移
-            tabScrollOffset = 0;
-
-            // 切换到最新的机场
-            const airports = Object.keys(popupAirports);
-            if (airports.length > 0) {
-                const sorted = airports.sort((a, b) => {
-                    const latestA = getLatestPopup(popupAirports[a]);
-                    const latestB = getLatestPopup(popupAirports[b]);
-                    return latestB.popup_time - latestA.popup_time;
-                });
-                currentActiveAirport = sorted[0];
-            } else {
-                currentActiveAirport = null;
-            }
-
-            renderPopup();
-        } else {
-            console.error('批量收到失败:', response.status);
-        }
     } catch (error) {
         console.error('批量收到出错:', error);
     }
+
+    delete popupAirports[airport];
+    tabScrollOffset = 0;
+    const airports = Object.keys(popupAirports);
+    if (airports.length > 0) {
+        const sorted = airports.sort((a, b) => {
+            const latestA = getLatestPopup(popupAirports[a]);
+            const latestB = getLatestPopup(popupAirports[b]);
+            return latestB.popup_time - latestA.popup_time;
+        });
+        currentActiveAirport = sorted[0];
+    } else {
+        currentActiveAirport = null;
+    }
+    renderPopup();
 }
 
 // 处理批量去处理
 async function handleBatchHandle(airport, sqcList) {
+    if (window.markPopupsDismissedLocally) {
+        window.markPopupsDismissedLocally(sqcList);
+    }
     try {
         const headers = {
             'Content-Type': 'application/json'
@@ -1172,48 +1196,35 @@ async function handleBatchHandle(airport, sqcList) {
             headers['X-User-Code'] = currentUserCode;
         }
 
-        const response = await fetch(`/${currentTimeMode}/api/popup-batch-received/`, {
+        await fetch(`/${currentTimeMode}/api/popup-batch-received/`, {
             method: 'POST',
             headers: headers,
             body: JSON.stringify({ sqc_list: sqcList })
         });
-
-        if (response.ok) {
-            // 先显示机场详情（在弹窗关闭之前）
-            // 标记本次打开需临时高于实况弹窗显示（唯一例外场景，见 showModal 中的层级规则说明）
-            window._openDetailAboveMetarPopup = true;
-            // 主页无该机场时 showAirportDetail 会走搜索外网接口，需等详情打开再拆弹窗
-            await showAirportDetail(airport);
-
-            // 移除该机场的弹窗数据
-            delete popupAirports[airport];
-
-            // 重置滚动偏移
-            tabScrollOffset = 0;
-
-            // 切换到最新的机场
-            const airports = Object.keys(popupAirports);
-            if (airports.length > 0) {
-                const sorted = airports.sort((a, b) => {
-                    const latestA = getLatestPopup(popupAirports[a]);
-                    const latestB = getLatestPopup(popupAirports[b]);
-                    return latestB.popup_time - latestA.popup_time;
-                });
-                currentActiveAirport = sorted[0];
-            } else {
-                currentActiveAirport = null;
-            }
-
-            // 延迟关闭弹窗，确保机场详情已经显示
-            setTimeout(() => {
-                renderPopup();
-            }, 50);
-        } else {
-            console.error('批量去处理失败:', response.status);
-        }
     } catch (error) {
         console.error('批量去处理出错:', error);
     }
+
+    window._openDetailAboveMetarPopup = true;
+    await showAirportDetail(airport);
+
+    delete popupAirports[airport];
+    tabScrollOffset = 0;
+    const airports = Object.keys(popupAirports);
+    if (airports.length > 0) {
+        const sorted = airports.sort((a, b) => {
+            const latestA = getLatestPopup(popupAirports[a]);
+            const latestB = getLatestPopup(popupAirports[b]);
+            return latestB.popup_time - latestA.popup_time;
+        });
+        currentActiveAirport = sorted[0];
+    } else {
+        currentActiveAirport = null;
+    }
+
+    setTimeout(() => {
+        renderPopup();
+    }, 50);
 }
 
 // 处理稍后处理
@@ -1311,6 +1322,10 @@ function showConfirmDialog(message) {
 // 检查并显示弹窗
 async function checkAndShowPopups() {
     try {
+        if (typeof hasAccess === 'function' && !hasAccess('metar_popup', 'display')) {
+            dismissMetarPopupsForAccess();
+            return;
+        }
         // 如果检测到token失效，停止弹窗检查
         if (currentTimeMode === 'current' && window.tokenInvalidDetected) {
             console.log('Token失效，停止弹窗检查');
@@ -1334,78 +1349,58 @@ async function checkAndShowPopups() {
 
         if (response.ok) {
             const result = await response.json();
-            if (result.success && result.data && result.data.length > 0) {
-                console.log(`检测到 ${result.data.length} 个弹窗`);
-
-                // 将current_time添加到每个popupData中
-                const currentTime = result.current_time;
-                result.data.forEach(popupData => {
-                    popupData.current_time = currentTime;
-                });
-
-                // 检查是否在稍后处理期间
-                if (shouldHidePopup()) {
-                    console.log('稍后处理期间，不显示弹窗');
-                    return;
-                }
-
-                const prevSqc = new Set();
-                Object.keys(popupAirports).forEach(airport => {
-                    popupAirports[airport].forEach(p => prevSqc.add(p.sqc));
-                });
-
-                // 按机场分组
-                const newGrouped = groupPopupsByAirport(result.data);
-
-                let hasNewPopup = false;
-                // 合并到现有数据
-                Object.keys(newGrouped).forEach(airport => {
-                    if (!popupAirports[airport]) {
-                        popupAirports[airport] = [];
-                    }
-
-                    // 合并并去重（根据sqc）
-                    const existingSqc = new Set(popupAirports[airport].map(p => p.sqc));
-                    newGrouped[airport].forEach(popup => {
-                        if (!existingSqc.has(popup.sqc)) {
-                            popupAirports[airport].push(popup);
-                            if (!prevSqc.has(popup.sqc)) {
-                                hasNewPopup = true;
-                            }
-                        }
-                    });
-
-                    // 重新排序
-                    popupAirports[airport].sort((a, b) => b.popup_time - a.popup_time);
-                });
-
-                if (hasNewPopup) {
-                    restoreDetailBelowMetarPopup();
-                }
-
-                // 如果没有选中的机场，选择最新的
-                if (!currentActiveAirport || !popupAirports[currentActiveAirport]) {
-                    const airports = Object.keys(popupAirports).sort((a, b) => {
-                        const latestA = getLatestPopup(popupAirports[a]);
-                        const latestB = getLatestPopup(popupAirports[b]);
-                        return latestB.popup_time - latestA.popup_time;
-                    });
-                    if (airports.length > 0) {
-                        currentActiveAirport = airports[0];
-                    }
-                }
-
-                // 渲染弹窗
-                renderPopup();
-            } else {
-                // 没有弹窗了，清空数据
-                if (Object.keys(popupAirports).length > 0) {
-                    popupAirports = {};
-                    currentActiveAirport = null;
-                    tabScrollOffset = 0;
-                    renderPopup();
-                }
+            if (!result.success) {
+                return;
             }
+            if (result.trace_time != null) {
+                window.__popupTraceHours = result.trace_time;
+            }
+
+            const currentTime = result.current_time;
+            const matcher = window.popupMatchesLocalPrefs || (() => true);
+            const filtered = (result.data || []).filter(popupData => {
+                popupData.current_time = currentTime;
+                return matcher(popupData);
+            });
+
+            if (shouldHidePopup()) {
+                console.log('稍后处理期间，不显示弹窗');
+                return;
+            }
+
+            const prevSqc = new Set();
+            Object.keys(popupAirports).forEach(airport => {
+                popupAirports[airport].forEach(p => prevSqc.add(p.sqc));
+            });
+
+            popupAirports = groupPopupsByAirport(filtered);
+            Object.keys(popupAirports).forEach(airport => {
+                popupAirports[airport].sort((a, b) => b.popup_time - a.popup_time);
+            });
+
+            const nextSqc = new Set();
+            Object.keys(popupAirports).forEach(airport => {
+                popupAirports[airport].forEach(p => nextSqc.add(p.sqc));
+            });
+            let hasNewPopup = false;
+            nextSqc.forEach(sqc => {
+                if (!prevSqc.has(sqc)) hasNewPopup = true;
+            });
+
+            if (hasNewPopup) {
+                restoreDetailBelowMetarPopup();
+            }
+
+            if (!currentActiveAirport || !popupAirports[currentActiveAirport]) {
+                const airports = Object.keys(popupAirports).sort((a, b) => {
+                    const latestA = getLatestPopup(popupAirports[a]);
+                    const latestB = getLatestPopup(popupAirports[b]);
+                    return latestB.popup_time - latestA.popup_time;
+                });
+                currentActiveAirport = airports.length > 0 ? airports[0] : null;
+            }
+
+            renderPopup();
         } else {
             console.error('获取弹窗数据失败:', response.status);
         }
@@ -1416,6 +1411,9 @@ async function checkAndShowPopups() {
 
 // 启动弹窗检查
 function startPopupCheck() {
+    if (typeof hasAccess === 'function' && !hasAccess('metar_popup', 'display')) {
+        return;
+    }
     // 加载稍后处理状态
     loadSnoozeState();
 
@@ -1447,6 +1445,20 @@ function stopPopupCheck() {
 function hideMetarPopupOverlay() {
     document.querySelectorAll('.metar-popup-overlay, .popup-confirm-overlay').forEach((el) => el.remove());
 }
+
+function dismissMetarPopupsForAccess() {
+    stopPopupCheck();
+    if (typeof stopPopupTimeUpdater === 'function') stopPopupTimeUpdater();
+    stopTitleFlash();
+    isShowingPopupAlert = false;
+    if (typeof originalTitle === 'string') document.title = originalTitle;
+    const fav = document.getElementById('mtws-favicon') || document.querySelector("link[rel*='icon']");
+    if (fav && originalFavicon) fav.href = originalFavicon;
+    popupAirports = {};
+    currentActiveAirport = null;
+    hideMetarPopupOverlay();
+}
+window.dismissMetarPopupsForAccess = dismissMetarPopupsForAccess;
 
 // ==================================
 // 时间相关工具函数

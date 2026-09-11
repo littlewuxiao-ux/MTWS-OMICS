@@ -73,13 +73,62 @@ function showAirportDetailModal(airportData) {
   document.getElementById('airport-title-name').textContent = airport.airport_name || '';
 
   // 联系方式（使用主页已有的字段）
-  document.getElementById('area-code').textContent = airport.area_code || 'N/A';
-  document.getElementById('forecast-phone').textContent = airport.forecast_phone || 'N/A';
-  document.getElementById('observation-phone').textContent = airport.observation_phone || 'N/A';
-  document.getElementById('other-phone').textContent = airport.other_phone || 'N/A';
+  const showContact = typeof hasAccess !== 'function' || hasAccess('detail_contact', 'display');
+  const showSun = typeof hasAccess !== 'function' || hasAccess('detail_sun', 'display');
+  const contactsEl = document.querySelector('#airport-detail-modal .airport-info-contacts');
+  const sunLeftEl = document.querySelector('#airport-detail-modal .airport-info-left');
+  const dividerEl = document.querySelector('#airport-detail-modal .airport-info-divider');
+  const infoRow = document.querySelector('#airport-detail-modal .airport-info-row');
+
+  if (contactsEl) {
+    contactsEl.style.display = showContact ? '' : 'none';
+    if (showContact) {
+      document.getElementById('area-code').textContent = airport.area_code || 'N/A';
+      document.getElementById('forecast-phone').textContent = airport.forecast_phone || 'N/A';
+      document.getElementById('observation-phone').textContent = airport.observation_phone || 'N/A';
+      document.getElementById('other-phone').textContent = airport.other_phone || 'N/A';
+    }
+  }
+  if (sunLeftEl) {
+    // 跑道始终跟着日出日落一侧；无日出日落权限时仍可显示跑道
+    const sunItems = sunLeftEl.querySelectorAll('.info-item');
+    sunItems.forEach((item) => {
+      const label = item.querySelector('.info-label');
+      if (!label) return;
+      const t = label.textContent || '';
+      if (t.indexOf('日出') >= 0 || t.indexOf('日落') >= 0) {
+        item.style.display = showSun ? '' : 'none';
+      }
+    });
+  }
+  if (dividerEl) dividerEl.style.display = (showContact && (showSun || true)) ? '' : 'none';
+  if (infoRow) {
+    if (!showContact && !showSun) {
+      // 仅保留跑道时仍显示左侧；若连跑道也不需要可整行隐藏——此处保留跑道
+      infoRow.style.justifyContent = 'center';
+    } else if (showContact && !showSun) {
+      infoRow.style.justifyContent = 'center';
+      if (dividerEl) dividerEl.style.display = 'none';
+    } else if (!showContact && showSun) {
+      infoRow.style.justifyContent = 'center';
+      if (dividerEl) dividerEl.style.display = 'none';
+    } else {
+      infoRow.style.justifyContent = '';
+    }
+  }
 
   // 加载机场额外信息（日出日落、跑道）
-  loadAirportExtraInfo(airport.airport_4code);
+  if (showSun) {
+    loadAirportExtraInfo(airport.airport_4code);
+  } else {
+    loadAirportExtraInfo(airport.airport_4code); // 仍拉跑道
+  }
+
+  const chartSection = document.getElementById('airport-chart-section');
+  if (chartSection) {
+    const showTrend = typeof hasAccess !== 'function' || hasAccess('detail_metar_trend', 'display');
+    chartSection.style.display = showTrend ? '' : 'none';
+  }
 
   // 生成时间轴
   generateAirportDetailTimeline();
@@ -261,17 +310,49 @@ function toggleAirportChartSection() {
   const section = document.getElementById('airport-chart-section');
   if (!section) return;
 
+  if (typeof hasAccess === 'function' && !hasAccess('detail_metar_trend', 'display')) {
+    return;
+  }
+
   const collapsed = section.classList.toggle('collapsed');
   updateChartToggleSwitchText(collapsed);
   if (collapsed) return;
 
-  if (!airportDetailChart.initialized) {
-    airportDetailChart.initialized = true;
-    initAirportDetailChart(airportDetailChart.airportCode, airportDetailChart.hours);
-    loadMetarHistoryData(airportDetailChart.airportCode);
-  } else if (airportDetailChart.chart) {
-    // 折叠期间容器尺寸为0，重新展开后需要修正图表尺寸
-    setTimeout(() => airportDetailChart.chart.resize(), 50);
+  const startChart = () => {
+    if (!airportDetailChart.initialized) {
+      airportDetailChart.initialized = true;
+      initAirportDetailChart(airportDetailChart.airportCode, airportDetailChart.hours);
+      loadMetarHistoryData(airportDetailChart.airportCode);
+    } else if (airportDetailChart.chart) {
+      setTimeout(() => airportDetailChart.chart.resize(), 50);
+    }
+  };
+
+  // 打开实况趋势前检查后端是否正在解析
+  if (typeof checkRunningParsers === 'function') {
+    checkRunningParsers((err, data) => {
+      if (!err) {
+        const running = (data && data.running) || [];
+        const queued = (data && data.queued) || [];
+        if (running.length > 0 || queued.length > 0) {
+          section.classList.add('collapsed');
+          updateChartToggleSwitchText(true);
+          if (typeof showParserRunningMessage === 'function') {
+            showParserRunningMessage(
+              (typeof buildParserStatusMessage === 'function'
+                ? buildParserStatusMessage(running, queued)
+                : '解析程序正在运行，请稍后再打开实况趋势')
+            );
+          } else {
+            alert('后端解析程序正在运行，请稍后再打开实况趋势');
+          }
+          return;
+        }
+      }
+      startChart();
+    });
+  } else {
+    startChart();
   }
 }
 

@@ -10,6 +10,16 @@ from utils.cas_api_log import log_cas_api_request
 
 session = requests.session()
 
+
+def reset_cas_http_session():
+    """新开一次扫码前清空服务端 CAS HTTP 会话，避免沿用上次已扫码状态。"""
+    global session
+    try:
+        session.close()
+    except Exception:
+        pass
+    session = requests.session()
+
 get_qar_url = "https://cas.sf-express.com/cas/qrcode?type=cXJjb2Rl"
 listion_scan_qrcode_url = "https://cas.sf-express.com/cas/qrcode?type=dmFsaWRhdGlvbg"
 validate_url = "https://sfa-gwgw-inn.sf-airlines.com:8443/apis-auth/login/cas3.0"
@@ -34,6 +44,7 @@ def get_qrcode(config):
     """
     获取二维码信息
     """
+    reset_cas_http_session()
     headers = {
         "routing": config.get("routing")
     }

@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load static %}
 
 {% block content %}
 <!-- 服务器断连提示横幅（轮询失败时显示，恢复后自动隐藏） -->
@@ -10,13 +11,14 @@
 <!-- 5.1 头部区域 -->
 <header class="header-section">
   <h1 class="system-title">
-    航空气象报文综合监控告警系统
+    <img class="system-title-logo" src="{% static 'svg/mtws-favicon.svg' %}" width="32" height="32" alt="">
+    <span>航空气象报文综合监控告警系统</span>
     <button class="help-icon-btn" id="help-btn" title="系统使用说明">?</button>
   </h1>
   <!-- 用户信息区域（仅current模式显示） -->
   <div class="user-info-section" id="user-info-section" style="display: none;">
     <span class="user-code" id="user-code"></span>
-    <button class="logout-btn" id="logout-btn">登出</button>
+    <button class="logout-btn" id="logout-btn" style="display: none;">登出</button>
   </div>
   <div class="status-info-container">
     <div class="parsing-status-display">
@@ -108,8 +110,8 @@
         <button class="filter-btn popup-toggle-btn" id="intercept-toggle"
           data-field="intercept">降级免打扰</button>
         <button class="filter-btn popup-toggle-btn" id="operation-toggle"
-          data-field="operation_metar_popup">运行类</button>
-        <button class="filter-btn popup-toggle-btn" id="parking-toggle" data-field="parking_metar_popup">停场类</button>
+          data-field="operation">运行类</button>
+        <button class="filter-btn popup-toggle-btn" id="parking-toggle" data-field="parking">停场类</button>
         <button class="snooze-restore-btn snooze-restore-inactive" id="snooze-restore-btn" title="没有可恢复的实况弹窗">
           <svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" width="20" height="20">
             <path
@@ -228,7 +230,10 @@
   <div class="modal-content settings-modal-content">
     <div class="settings-modal-header">
       <h3>系统设置</h3>
-      <button class="settings-modal-close-btn" id="settings-modal-close">关闭</button>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button type="button" class="settings-btn-save" id="superuser-btn" style="display:none;">超级用户</button>
+        <button class="settings-modal-close-btn" id="settings-modal-close">关闭</button>
+      </div>
     </div>
     <div class="settings-tabs">
       <button class="settings-tab active" data-tab="airport-info">机场信息</button>
@@ -451,35 +456,14 @@
       <!-- Tab5: 弹窗设置 -->
       <div class="settings-tab-pane" id="settings-pane-popup">
         <div class="settings-popup-form">
-          <div class="settings-form-row">
-            <label>运行类实况弹窗开关</label>
-            <div class="settings-toggle-wrap">
-              <label class="settings-toggle-label">
-                <input type="checkbox" id="pf-operation-chk" class="settings-toggle-chk">
-                <div class="settings-toggle-track">
-                  <span class="settings-toggle-side">关</span>
-                  <span class="settings-toggle-side">开</span>
-                  <div class="settings-toggle-thumb"></div>
-                </div>
-              </label>
-            </div>
-          </div>
-          <div class="settings-form-row">
-            <label>停场类实况弹窗开关</label>
-            <div class="settings-toggle-wrap">
-              <label class="settings-toggle-label">
-                <input type="checkbox" id="pf-parking-chk" class="settings-toggle-chk">
-                <div class="settings-toggle-track">
-                  <span class="settings-toggle-side">关</span>
-                  <span class="settings-toggle-side">开</span>
-                  <div class="settings-toggle-thumb"></div>
-                </div>
-              </label>
-            </div>
-          </div>
+          <p class="settings-hint">主页【运行类】【停场类】【降级免打扰】为各席位本地开关，不在此保存。此处仅维护全站解析规则。</p>
           <div class="settings-form-row">
             <label>运行类弹窗告警裕度（0–9整数）</label>
             <input type="number" id="pf-leeway" min="0" max="9" step="1" class="settings-input settings-input-sm">
+          </div>
+          <div class="settings-form-row">
+            <label>弹窗追溯时间（小时，0–9整数）</label>
+            <input type="number" id="pf-trace-time" min="0" max="9" step="1" class="settings-input settings-input-sm">
           </div>
           <div class="settings-form-row">
             <label>运行类弹窗告警等级</label>
@@ -503,21 +487,8 @@
               </div>
             </div>
           </div>
-          <div class="settings-form-row">
-            <label>告警降级免打扰开关</label>
-            <div class="settings-toggle-wrap">
-              <label class="settings-toggle-label">
-                <input type="checkbox" id="pf-intercept-chk" class="settings-toggle-chk">
-                <div class="settings-toggle-track">
-                  <span class="settings-toggle-side">关</span>
-                  <span class="settings-toggle-side">开</span>
-                  <div class="settings-toggle-thumb"></div>
-                </div>
-              </label>
-            </div>
-          </div>
           <div class="settings-form-actions">
-            <button class="settings-btn-save" id="popup-save-btn">保存</button>
+            <button class="settings-btn-save" id="popup-save-btn">保存规则</button>
           </div>
         </div>
         <div class="settings-msg" id="popup-msg"></div>
@@ -942,7 +913,7 @@
 <script src="{% static 'js/map.js' %}"></script>
 <script>
 document.getElementById('help-btn').addEventListener('click', function () {
-  window.open('{% static "docs/help.html" %}', '_blank');
+  window.open('{% url "system_reference_pdf" %}', '_blank');
 });
 </script>
 {% endblock %}

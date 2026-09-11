@@ -369,7 +369,10 @@ function _updateAlertBadge() {
     if (metarGroup) metarGroup.style.display = showMetar ? '' : 'none';
     if (tafGroup) tafGroup.style.display = showTaf ? '' : 'none';
     if (sep) sep.style.display = (showMetar && showTaf) ? '' : 'none';
-    if (badgeGroup) badgeGroup.style.display = (showMetar || showTaf) ? '' : 'none';
+    if (badgeGroup) {
+        const allow = typeof hasAccess !== 'function' || hasAccess('import_alert', 'display');
+        badgeGroup.style.display = (allow && (showMetar || showTaf)) ? '' : 'none';
+    }
 
     // 更新 Tab 标签上的计数
     const tabMetar = document.getElementById('ia-tab-metar');
@@ -498,6 +501,11 @@ function _initImportAlertBtn() {
     });
 
     _makeDraggable(btn);
+    if (typeof applyAccessUi === 'function') {
+        applyAccessUi();
+    } else if (typeof hasAccess === 'function' && !hasAccess('import_alert', 'display')) {
+        btn.style.display = 'none';
+    }
 }
 
 function _switchTab(tab, fetchData) {
@@ -821,6 +829,13 @@ function _onConfirm(rowKey, sqc, tab) {
     ).map(cb => cb.value);
     if (checked.length === 0) return;
 
+    if (typeof hasAccess === 'function' && !hasAccess('import_alert', 'write')) {
+        // 可处理界面，但不写库
+        container.style.display = 'none';
+        alert('当前角色无入库告警写入权限，处理结果不会保存到数据库');
+        return;
+    }
+
     const handleTime = Date.now();
     const handleStatus = checked.join('、');
     const endpoint = tab === 'taf' ? 'taf-import-alerts' : 'import-alerts';
@@ -843,6 +858,8 @@ function _onConfirm(rowKey, sqc, tab) {
                 fetchImportAlerts(importAlertCurrentPage);
             }
             if (typeof applyFilters === 'function') applyFilters();
+        } else if (data.error) {
+            alert(data.error);
         }
     })
     .catch(() => {});

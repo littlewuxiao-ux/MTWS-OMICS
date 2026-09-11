@@ -4,6 +4,7 @@
 """
 
 import logging
+from calendar import monthrange
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 from utils.time_manager import TimeManager
@@ -663,7 +664,6 @@ class AlertCalculator:
                 if target_day < current_day:
                     # target是下个月：计算当前月剩余天数 + target天数
                     # 使用UTC时间确保一致性
-                    from calendar import monthrange
                     current_month_days = monthrange(current_time.year, current_time.month)[1]
                     remaining_days = current_month_days - current_day
                     return (remaining_days + target_day) * 24 + (target_hour - current_hour)

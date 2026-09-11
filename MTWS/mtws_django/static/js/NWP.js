@@ -22,6 +22,25 @@ function updateNwpButtonState() {
  * NWP 按钮点击处理：切换开关状态
  */
 function handleNwpToggle() {
+    if (typeof hasAccess === 'function' && !hasAccess('nwp', 'display')) return;
+
+    // 无激活权限：只切换本地展示已缓存数据，不触发解析
+    if (typeof hasAccess === 'function' && !hasAccess('nwp', 'activate')) {
+        nwpEnabled = !nwpEnabled;
+        localStorage.setItem('mtws_nwp_enabled', nwpEnabled.toString());
+        updateNwpButtonState();
+        if (nwpEnabled) {
+            if (typeof fetchAndRenderNwp === 'function') fetchAndRenderNwp();
+            else if (Object.keys(_nwpCache || {}).length) {
+                if (typeof renderAllNwpOverlays === 'function') renderAllNwpOverlays();
+            }
+        } else {
+            _nwpCache = {};
+            clearAllNwpOverlays();
+        }
+        return;
+    }
+
     nwpEnabled = !nwpEnabled;
     localStorage.setItem('mtws_nwp_enabled', nwpEnabled.toString());
     updateNwpButtonState();

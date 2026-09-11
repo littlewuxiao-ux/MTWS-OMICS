@@ -86,7 +86,9 @@ SECRET_KEY = 'django-insecure-mtws-secret-key-change-in-production'
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0']
+# 内网统一入口会把局域网 IP 写进 Host（如 10.88.24.24:8000）。
+# 通配允许席位机用 IP 访问；本系统仅部署在局域网。
+ALLOWED_HOSTS = ['*']
 
 # Application definition
 INSTALLED_APPS = [

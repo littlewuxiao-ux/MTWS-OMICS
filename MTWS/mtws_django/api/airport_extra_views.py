@@ -17,6 +17,29 @@ def _cas_user_from_request(request):
     return request.headers.get('X-User-Code')
 
 
+def _resolve_cas_token(request, time_mode='current'):
+    """
+    解析 CAS token：优先请求头；非本机无自有 token 时回退本机调度缓存。
+    报文原文等只读外呼依赖此 token，与权限矩阵无关。
+    """
+    if time_mode != 'current':
+        return None, None
+    auth_header = request.headers.get('Authorization', '')
+    if auth_header.startswith('Bearer '):
+        return auth_header[7:], None
+    try:
+        from parsers.scheduler import get_scheduler_token
+        cached = get_scheduler_token()
+        if cached:
+            return cached, None
+    except Exception:
+        pass
+    return None, JsonResponse(
+        {'success': False, 'error': '未找到认证 token，请先在本机登录'},
+        status=401,
+    )
+
+
 @require_http_methods(["GET"])
 def airport_metar_history(request, airport_code, time_mode='current'):
     """
@@ -24,16 +47,9 @@ def airport_metar_history(request, airport_code, time_mode='current'):
     返回最近 72 小时内的解析数据点列表。
     """
     try:
-        token = None
-        if time_mode == 'current':
-            auth_header = request.headers.get('Authorization', '')
-            if auth_header.startswith('Bearer '):
-                token = auth_header[7:]
-            else:
-                return JsonResponse(
-                    {'success': False, 'error': '未找到认证 token，请先登录'},
-                    status=401,
-                )
+        token, err = _resolve_cas_token(request, time_mode)
+        if err:
+            return err
 
         from parsers.metar_history import fetch_and_parse_metar_history
         with cas_user_context(_cas_user_from_request(request)):
@@ -56,16 +72,9 @@ def airport_popup_metar_text(request, airport_code, time_mode='current'):
     不复用图表数值，也不改详情报文原文接口。
     """
     try:
-        token = None
-        if time_mode == 'current':
-            auth_header = request.headers.get('Authorization', '')
-            if auth_header.startswith('Bearer '):
-                token = auth_header[7:]
-            else:
-                return JsonResponse(
-                    {'success': False, 'error': '未找到认证 token，请先登录'},
-                    status=401,
-                )
+        token, err = _resolve_cas_token(request, time_mode)
+        if err:
+            return err
 
         from parsers.report_text_highlight import build_popup_metar_reports
         with cas_user_context(_cas_user_from_request(request)):
@@ -86,16 +95,9 @@ def airport_report_text(request, airport_code, time_mode='current'):
     机场详情报文原文：一次拉取 SA/SP/FC/FT，实况最新 5 份，预报按 FC/FT 规则筛选并着色。
     """
     try:
-        token = None
-        if time_mode == 'current':
-            auth_header = request.headers.get('Authorization', '')
-            if auth_header.startswith('Bearer '):
-                token = auth_header[7:]
-            else:
-                return JsonResponse(
-                    {'success': False, 'error': '未找到认证 token，请先登录'},
-                    status=401,
-                )
+        token, err = _resolve_cas_token(request, time_mode)
+        if err:
+            return err
 
         from parsers.report_text_highlight import build_airport_detail_reports
         with cas_user_context(_cas_user_from_request(request)):

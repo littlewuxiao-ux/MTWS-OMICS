@@ -3,6 +3,7 @@ METAR解析器
 基于原始mtws_02_metar解析.py的核心逻辑，适配Django框架
 """
 
+import json
 import pandas as pd
 import re
 from datetime import datetime, timedelta
@@ -431,7 +432,8 @@ class MetarParser:
             import_alert='Y',
             import_alert_time=now_ms,
             user_code=user_code,
-            popup='N',
+            operation_popup='N',
+            parking_popup='N',
         )
     
     def _parse_metar_content(self, row: pd.Series) -> Dict:
@@ -1181,101 +1183,49 @@ class MetarParser:
         
         # 添加基础字段
         parsed_data['user_code'] = user_code
-        parsed_data['popup_handle_time'] = None
+        parsed_data['popup_handle_records'] = {}
         parsed_data['metar_weather_type'] = json.dumps(weather_type_dict) if weather_type_dict else None
         parsed_data['created_at'] = current_time_ms
         parsed_data['updated_at'] = current_time
         
-        # 获取弹窗配置
         popup_settings = self._get_popup_settings()
-        
-        # 进行弹窗判断
-        popup_type = self._check_popup_conditions(parsed_data, weather_type_dict)
-        
-        if popup_type:
-            if popup_settings and popup_settings.intercept:
-                should_intercept = self._check_popup_intercept(parsed_data, weather_type_dict, popup_type, popup_settings)
-                parsed_data['popup'] = 'I' if should_intercept else 'Y'
-            else:
-                parsed_data['popup'] = 'Y'
+        op_level = (popup_settings.operation_metar_popup_level if popup_settings else None) or 'Y'
+        park_level = (popup_settings.parking_metar_popup_level if popup_settings else None) or 'Y'
+        op_leeway = popup_settings.operation_metar_popup_leeway if popup_settings else None
+
+        operation_met = self._check_operation_popup(
+            parsed_data, weather_type_dict, op_level, op_leeway
+        )
+        parking_met = self._check_parking_popup(
+            parsed_data, weather_type_dict, park_level
+        )
+
+        if operation_met:
+            parsed_data['operation_popup'] = (
+                'I' if self._check_type_intercept(
+                    parsed_data, weather_type_dict, 'operation', popup_settings
+                ) else 'Y'
+            )
+        else:
+            parsed_data['operation_popup'] = 'N'
+
+        if parking_met:
+            parsed_data['parking_popup'] = (
+                'I' if self._check_type_intercept(
+                    parsed_data, weather_type_dict, 'parking', popup_settings
+                ) else 'Y'
+            )
+        else:
+            parsed_data['parking_popup'] = 'N'
+
+        if parsed_data['operation_popup'] in ('Y', 'I') or parsed_data['parking_popup'] in ('Y', 'I'):
             parsed_data['popup_time'] = current_time_ms
         else:
-            parsed_data['popup'] = 'N'
             parsed_data['popup_time'] = None
-        
-        # 记录弹窗开关状态
-        if popup_settings:
-            parsed_data['operation_metar_popup'] = popup_settings.operation_metar_popup
-            parsed_data['parking_metar_popup'] = popup_settings.parking_metar_popup
-            parsed_data['intercept'] = popup_settings.intercept
-            parsed_data['operation_metar_popup_leeway'] = popup_settings.operation_metar_popup_leeway
-            parsed_data['operation_metar_popup_level'] = popup_settings.operation_metar_popup_level
-            parsed_data['parking_metar_popup_level'] = popup_settings.parking_metar_popup_level
-        else:
-            parsed_data['operation_metar_popup'] = None
-            parsed_data['parking_metar_popup'] = None
-            parsed_data['intercept'] = None
-            parsed_data['operation_metar_popup_leeway'] = None
-            parsed_data['operation_metar_popup_level'] = None
-            parsed_data['parking_metar_popup_level'] = None
-    
-    def _check_popup_conditions(self, parsed_data: Dict, weather_type_dict: Dict) -> str:
-        """
-        检查是否满足弹窗条件
-        
-        Args:
-            parsed_data: 解析后的数据（包含告警等级）
-            weather_type_dict: 天气类型字典
-            
-        Returns:
-            弹窗类型: 'operation'运行类, 'parking'停场类, 'both'两者都满足, ''不满足
-        """
-        try:
-            from core.models import PopupSettings, AircraftParkingInfo
-            from parsers.models import Flight
-            from django.conf import settings
-            
-            # 获取弹窗配置
-            popup_settings = self._get_popup_settings()
-            if not popup_settings:
-                return ''
-            
-            airport_4code = parsed_data.get('airport_4code')
-            if not airport_4code:
-                return ''
-            
-            # 判断运行类弹窗
-            operation_popup = False
-            if popup_settings.operation_metar_popup:
-                operation_popup = self._check_operation_popup(
-                    parsed_data, 
-                    weather_type_dict,
-                    popup_settings.operation_metar_popup_level,
-                    popup_settings.operation_metar_popup_leeway
-                )
-            
-            # 判断停场类弹窗
-            parking_popup = False
-            if popup_settings.parking_metar_popup:
-                parking_popup = self._check_parking_popup(
-                    parsed_data,
-                    weather_type_dict,
-                    popup_settings.parking_metar_popup_level
-                )
-            
-            # 返回弹窗类型
-            if operation_popup and parking_popup:
-                return 'both'
-            elif operation_popup:
-                return 'operation'
-            elif parking_popup:
-                return 'parking'
-            else:
-                return ''
-            
-        except Exception as e:
-            logger.error(f"弹窗条件判断失败: {e}")
-            return ''
+
+        parsed_data['operation_metar_popup_leeway'] = op_leeway
+        parsed_data['operation_metar_popup_level'] = op_level
+        parsed_data['parking_metar_popup_level'] = park_level
     
     def _get_popup_settings(self):
         """获取弹窗配置"""
@@ -1473,47 +1423,26 @@ class MetarParser:
             logger.error(f"检查停场类弹窗条件失败: {e}")
             return False
     
-    def _check_popup_intercept(self, parsed_data: Dict, weather_type_dict: Dict, popup_type: str, popup_settings) -> bool:
+    def _check_type_intercept(self, parsed_data: Dict, weather_type_dict: Dict, popup_type: str, popup_settings) -> bool:
         """
-        检查是否应该拦截弹窗
-
-        前提条件按概率从高到低排列，尽早短路退出：
-        1. intercept开关（无DB）
-        2. last_metar_sqc为空（无DB）
-        3. 查询previous_metar（唯一一次DB）
-        4. previous_metar.popup == 'N'
-        5. 时间戳差值不在1~4200000ms
-        6. user_code不同
-
-        Args:
-            parsed_data: 当前记录的解析数据
-            weather_type_dict: 当前记录的天气类型字典
-            popup_type: 弹窗类型 'operation', 'parking', 'both'
-            popup_settings: 弹窗配置对象
-
-        Returns:
-            是否应该拦截弹窗
+        数值降级时标记 I。始终按规则判断，不读库开关。
         """
         try:
-            # 前提1：intercept开关（主流程已拦截，此处兜底）
-            if not popup_settings or not popup_settings.intercept:
-                return False
-
-            # 前提2：last_metar_sqc为空 → 不拦截
             last_metar_sqc = parsed_data.get('last_metar_sqc')
             if not last_metar_sqc:
                 return False
 
-            # 前提3：查询上一份报文
             previous_metar = Metar.objects.filter(sqc=str(last_metar_sqc)).first()
             if not previous_metar:
                 return False
 
-            # 前提4：上一份报文popup == 'N' → 不拦截
-            if previous_metar.popup == 'N':
+            prev_flag = (
+                previous_metar.operation_popup if popup_type == 'operation'
+                else previous_metar.parking_popup
+            )
+            if prev_flag not in ('Y', 'I'):
                 return False
 
-            # 前提5：时间戳差值不在1~4200000ms（70分钟）→ 不拦截
             current_time = parsed_data.get('metar_observation_time')
             previous_time = previous_metar.metar_observation_time
             if not current_time or not previous_time:
@@ -1522,11 +1451,9 @@ class MetarParser:
             if time_diff <= 0 or time_diff > 4200000:
                 return False
 
-            # 前提6：user_code不同 → 不拦截
             if parsed_data.get('user_code') != previous_metar.user_code:
                 return False
 
-            # 解析上一份报文的天气类型字典
             previous_weather_type_dict = {}
             if previous_metar.metar_weather_type:
                 try:
@@ -1534,17 +1461,20 @@ class MetarParser:
                 except Exception:
                     previous_weather_type_dict = {}
 
-            # 根据弹窗类型分发拦截判断
-            if popup_type == 'operation':
-                return self._check_operation_intercept(parsed_data, weather_type_dict, previous_metar, previous_weather_type_dict, popup_settings)
-            elif popup_type == 'parking':
-                return self._check_parking_intercept(parsed_data, weather_type_dict, previous_metar, previous_weather_type_dict, popup_settings)
-            elif popup_type == 'both':
-                operation_intercept = self._check_operation_intercept(parsed_data, weather_type_dict, previous_metar, previous_weather_type_dict, popup_settings)
-                parking_intercept = self._check_parking_intercept(parsed_data, weather_type_dict, previous_metar, previous_weather_type_dict, popup_settings)
-                return operation_intercept and parking_intercept
-            else:
+            if not popup_settings:
                 return False
+
+            if popup_type == 'operation':
+                return self._check_operation_intercept(
+                    parsed_data, weather_type_dict, previous_metar,
+                    previous_weather_type_dict, popup_settings
+                )
+            if popup_type == 'parking':
+                return self._check_parking_intercept(
+                    parsed_data, weather_type_dict, previous_metar,
+                    previous_weather_type_dict, popup_settings
+                )
+            return False
 
         except Exception as e:
             logger.error(f"弹窗拦截判断失败: {e}")
