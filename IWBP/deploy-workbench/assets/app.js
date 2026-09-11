@@ -553,10 +553,12 @@
         let lastTafMessages = [];
         let metarSourceLive = false;
         let tafSourceLive = false;
-        /** @type {"sf-foc"|"awc"|"demo"|""} */
+        /** @type {"sf-foc"|"awc"|"error"|""} */
         let metarDataSource = "";
-        /** @type {"sf-foc"|"awc"|"demo"|""} */
+        /** @type {"sf-foc"|"awc"|"error"|""} */
         let tafDataSource = "";
+        let metarLoadError = "";
+        let tafLoadError = "";
         /** 报文范围：all | domestic | intl — 国内：ICAO 首字母 Z（大陆）；港澳台及境外为国际/地区 */
         let msgRegionMode = "all";
         /** 精细化表格区域筛选 */
@@ -864,6 +866,7 @@
           const s = String(source || "").toLowerCase();
           if (s === "sf-foc") return "公司 FOC";
           if (s === "awc") return "AWC";
+          if (s === "error") return "拉取失败";
           if (s === "demo") return "演示数据";
           return source || "—";
         }
@@ -1205,8 +1208,8 @@
             renderReviewRecommendItems(Array.isArray(data.items) ? data.items : []);
           } catch (err) {
             const focHint =
-              ctx.metarSource === "demo" || ctx.tafSource === "demo"
-                ? " 当前报文为演示数据（公司 FOC 未接通时与告警屏一致回退演示）。"
+              ctx.metarSource === "error" || ctx.tafSource === "error"
+                ? " 当前报文未拉取成功，请先恢复公司 FOC 后再试。"
                 : "";
             const clientHint =
               reviewServiceState.role === "client"
@@ -4088,6 +4091,7 @@
         }
 
         async function loadWarningPool() {
+          await detectLocalWorkbenchBackend();
           let data = null;
           if (window.location.protocol !== "file:") {
             if (!isStaticHuiDeploy()) {
@@ -8549,9 +8553,14 @@
           });
         }
 
+        let localWorkbenchBackend =
+          location.protocol !== "file:" &&
+          (String(location.hostname || "").toLowerCase() === "localhost" ||
+            String(location.hostname || "").toLowerCase() === "127.0.0.1");
+        let detectLocalWorkbenchBackendPromise = null;
+
         function canUseLocalWorkbenchBackend() {
-          const host = String(location.hostname || "").toLowerCase();
-          return host === "localhost" || host === "127.0.0.1";
+          return localWorkbenchBackend;
         }
 
         function isStaticHuiDeploy() {
@@ -8567,6 +8576,27 @@
             if (timer) clearTimeout(timer);
           }
         }
+
+        async function detectLocalWorkbenchBackend() {
+          if (detectLocalWorkbenchBackendPromise) return detectLocalWorkbenchBackendPromise;
+          detectLocalWorkbenchBackendPromise = (async () => {
+            if (location.protocol === "file:") {
+              localWorkbenchBackend = false;
+              return false;
+            }
+            if (localWorkbenchBackend) return true;
+            try {
+              const r = await fetchWithTimeout(`/api/sf-foc/status?t=${Date.now()}`, { cache: "no-store" }, 8000);
+              localWorkbenchBackend = Boolean(r && r.ok);
+            } catch (_) {
+              localWorkbenchBackend = false;
+            }
+            return localWorkbenchBackend;
+          })();
+          return detectLocalWorkbenchBackendPromise;
+        }
+
+        void detectLocalWorkbenchBackend();
 
         /** 慧应用 iframe 下用 script 基准路径解析 data/、assets/ */
         function resolveAppAssetUrl(relativePath) {
@@ -8587,6 +8617,7 @@
         }
 
         async function loadFlightMonitorAirports() {
+          await detectLocalWorkbenchBackend();
           if (!canUseLocalWorkbenchBackend()) {
             flightMonitorIcao = new Set();
             flightMonitorMeta = {
@@ -8995,6 +9026,7 @@
         }
 
         async function loadAirportWhitelist() {
+          await detectLocalWorkbenchBackend();
           const apply = (norm, /** @type {"api"|"static"|"fallback"} */ source, raw) => {
             airportWhitelistIcao = new Set(norm.icao);
             applyAlertPublishMode(raw);
@@ -9064,12 +9096,10 @@
                 ? "METAR·公司FOC"
                 : metarDataSource === "awc"
                   ? "METAR·AWC"
-                  : metarDataSource === "demo"
-                    ? "METAR·演示"
-                    : "METAR"
+                  : "METAR"
             );
-          } else if (metarDataSource === "demo") {
-            parts.push("METAR·演示");
+          } else if (metarDataSource === "error") {
+            parts.push("METAR·失败");
           }
           if (tafSourceLive) {
             parts.push(
@@ -9077,12 +9107,10 @@
                 ? "TAF·公司FOC"
                 : tafDataSource === "awc"
                   ? "TAF·AWC"
-                  : tafDataSource === "demo"
-                    ? "TAF·演示"
-                    : "TAF"
+                  : "TAF"
             );
-          } else if (tafDataSource === "demo") {
-            parts.push("TAF·演示");
+          } else if (tafDataSource === "error") {
+            parts.push("TAF·失败");
           }
           msgStatus.textContent = parts.length ? parts.join(" ") : "离线";
           updatePlatformHealthClientHints();
@@ -9135,8 +9163,8 @@
 
           const metSrc = platformHealthClientHints.metar || "—";
           const tafSrc = platformHealthClientHints.taf || "—";
-          const metDemo = metSrc === "demo";
-          const tafDemo = tafSrc === "demo";
+          const metErr = metSrc === "error";
+          const tafErr = tafSrc === "error";
           items.push({
             label: "METAR 来源",
             value:
@@ -9144,11 +9172,11 @@
                 ? "公司 FOC"
                 : metSrc === "awc"
                   ? "AWC 公网"
-                  : metSrc === "demo"
-                    ? "演示数据"
+                  : metErr
+                    ? "拉取失败"
                     : metSrc,
-            detail: metDemo ? "不可用于运行" : "",
-            state: metSrc === "sf-foc" ? "ok" : metSrc === "awc" ? "warn" : metDemo ? "bad" : "warn",
+            detail: metErr ? metarLoadError || "未获取到最新 METAR" : "",
+            state: metSrc === "sf-foc" ? "ok" : metSrc === "awc" ? "warn" : metErr ? "bad" : "warn",
           });
           items.push({
             label: "TAF 来源",
@@ -9157,11 +9185,11 @@
                 ? "公司 FOC"
                 : tafSrc === "awc"
                   ? "AWC 公网"
-                  : tafSrc === "demo"
-                    ? "演示数据"
+                  : tafErr
+                    ? "拉取失败"
                     : tafSrc,
-            detail: tafDemo ? "不可用于运行" : "",
-            state: tafSrc === "sf-foc" ? "ok" : tafSrc === "awc" ? "warn" : tafDemo ? "bad" : "warn",
+            detail: tafErr ? tafLoadError || "未获取到最新 TAF" : "",
+            state: tafSrc === "sf-foc" ? "ok" : tafSrc === "awc" ? "warn" : tafErr ? "bad" : "warn",
           });
 
           items.push({
@@ -10853,7 +10881,10 @@
           if (!sorted.length) {
             if (expandMetarMsgBtn) expandMetarMsgBtn.hidden = true;
             if (!lastMessages.length) {
-              messageList.innerHTML = `<div class="hint" style="padding:12px;text-align:center">${escapeHtml("暂无报文或无匹配项，可点击「刷新实况」或调整白名单")}</div>`;
+              const emptyHint = metarLoadError
+                ? `METAR 拉取失败：${metarLoadError}`
+                : "暂无报文或无匹配项，可点击「刷新实况」或调整白名单";
+              messageList.innerHTML = `<div class="hint" style="padding:12px;text-align:center">${escapeHtml(emptyHint)}</div>`;
               return;
             }
             const nPassRegion = lastMessages.filter((m) => msgPassesRegionFilter(m.station)).length;
@@ -10885,7 +10916,10 @@
           if (!sorted.length) {
             if (expandTafMsgBtn) expandTafMsgBtn.hidden = true;
             if (!lastTafMessages.length) {
-              tafMessageList.innerHTML = `<div class="hint" style="padding:12px;text-align:left">${escapeHtml("暂无 TAF 或无匹配项，可点击「刷新预报」或调整白名单")}</div>`;
+              const emptyHint = tafLoadError
+                ? `TAF 拉取失败：${tafLoadError}`
+                : "暂无 TAF 或无匹配项，可点击「刷新预报」或调整白名单";
+              tafMessageList.innerHTML = `<div class="hint" style="padding:12px;text-align:left">${escapeHtml(emptyHint)}</div>`;
               return;
             }
             const nPassRegion = lastTafMessages.filter((m) => msgPassesRegionFilter(m.station)).length;
@@ -11004,15 +11038,19 @@
         }
 
         async function loadMessages(opts) {
+          await detectLocalWorkbenchBackend();
           if (msgStatus && !opts?.silent) msgStatus.textContent = "拉取 METAR…";
 
           const codes = getMessageMonitorIcaoList();
           let usedLive = false;
-          let source = "demo";
+          let source = "";
           let lastMessagesBuilt = [];
+          let loadError = "";
 
           try {
-            if (canUseLocalWorkbenchBackend()) {
+            if (!canUseLocalWorkbenchBackend()) {
+              loadError = "工作台后端不可用，无法拉取 METAR";
+            } else {
               const sfRows = mapSfFocMetarRows(await fetchSfFocMetarBatch(codes));
               if (sfRows.length) {
                 lastMessagesBuilt = sfRows
@@ -11021,50 +11059,47 @@
                   .map((row) => enrichMessageSeverity(row));
                 usedLive = true;
                 source = "sf-foc";
-              }
-            }
-          } catch (_) {}
-
-          if (!lastMessagesBuilt.length) {
-            let rawRows = [];
-            if (isStaticHuiDeploy()) {
-              rawRows = mockMetarDemoData();
-              source = "demo";
-            } else {
-              const fetched = await fetchMetarJsonRaw();
-              if (fetched && fetched.rows && fetched.rows.length) {
-                rawRows = dedupeMetarLatest(fetched.rows);
-                usedLive = true;
-                source = "awc";
               } else {
-                rawRows = mockMetarDemoData();
-                source = "demo";
+                loadError = codes.length
+                  ? "公司 FOC 未返回 METAR 数据"
+                  : "监控机场列表为空，无法拉取 METAR";
               }
             }
-            lastMessagesBuilt = rawRows
-              .filter((m) => String(m.icaoId || "").trim().length > 0)
-              .map((m, i) => normalizeMessageItem(normalizeAwcRecord(m, i), i))
-              .map((row) => enrichMessageSeverity(row));
+          } catch (e) {
+            loadError = formatSfFocFetchError(e);
+          }
+
+          if (!lastMessagesBuilt.length && opts?.skipDemoFallback && lastMessages.length) {
+            if (!opts?.silent) syncMsgStatus();
+            return;
           }
 
           lastMessages = lastMessagesBuilt;
           lastMessages.sort((a, b) => (Number(b.obsTime) || 0) - (Number(a.obsTime) || 0));
           metarSourceLive = usedLive;
-          metarDataSource = source;
+          metarDataSource = usedLive ? source : loadError ? "error" : "";
+          metarLoadError = usedLive ? "" : loadError;
+          if (!usedLive && loadError && !opts?.silent) {
+            showToast("METAR 拉取失败", loadError);
+          }
           renderMessagesFromCache();
           syncMsgStatus();
         }
 
         async function loadTafMessages(opts) {
+          await detectLocalWorkbenchBackend();
           if (msgStatus && !opts?.silent) msgStatus.textContent = "拉取 TAF…";
 
           const codes = getMessageMonitorIcaoList();
           let usedLive = false;
-          let source = "demo";
+          let source = "";
           let lastTafBuilt = [];
+          let loadError = "";
 
           try {
-            if (canUseLocalWorkbenchBackend()) {
+            if (!canUseLocalWorkbenchBackend()) {
+              loadError = "工作台后端不可用，无法拉取 TAF";
+            } else {
               const sfRows = mapSfFocTafRows(await fetchSfFocTafBatch(codes));
               if (sfRows.length) {
                 lastTafBuilt = sfRows
@@ -11073,36 +11108,24 @@
                   .map((row) => enrichMessageSeverity(row));
                 usedLive = true;
                 source = "sf-foc";
-              }
-            }
-          } catch (_) {}
-
-          if (!lastTafBuilt.length) {
-            let rawRows = [];
-            if (isStaticHuiDeploy()) {
-              rawRows = mockTafDemoData();
-              source = "demo";
-            } else {
-              const fetched = await fetchTafJsonRaw();
-              if (fetched && fetched.rows && fetched.rows.length) {
-                rawRows = dedupeTafLatest(fetched.rows);
-                usedLive = true;
-                source = "awc";
               } else {
-                rawRows = mockTafDemoData();
-                source = "demo";
+                loadError = codes.length
+                  ? "公司 FOC 未返回 TAF 数据"
+                  : "监控机场列表为空，无法拉取 TAF";
               }
             }
-            lastTafBuilt = rawRows
-              .filter((m) => String(m.icaoId || m.station || "").trim().length > 0)
-              .map((m, i) => normalizeMessageItem(normalizeAwcTafRecord(m, i), i))
-              .map((row) => enrichMessageSeverity(row));
+          } catch (e) {
+            loadError = formatSfFocFetchError(e);
           }
 
           lastTafMessages = lastTafBuilt;
           lastTafMessages.sort((a, b) => (Number(b.obsTime) || 0) - (Number(a.obsTime) || 0));
           tafSourceLive = usedLive;
-          tafDataSource = source;
+          tafDataSource = usedLive ? source : loadError ? "error" : "";
+          tafLoadError = usedLive ? "" : loadError;
+          if (!usedLive && loadError && !opts?.silent) {
+            showToast("TAF 拉取失败", loadError);
+          }
           renderTafMessagesFromCache();
           syncMsgStatus();
         }
@@ -11434,6 +11457,7 @@
         }
 
         async function loadChecklistDefinition() {
+          await detectLocalWorkbenchBackend();
           if (window.__WB_CHECKLIST_EMBEDDED__?.shifts) {
             checklistEmbeddedDefault = cloneChecklistData(window.__WB_CHECKLIST_EMBEDDED__);
           } else {
