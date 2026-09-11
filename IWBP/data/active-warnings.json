@@ -1,0 +1,21 @@
+{
+  "version": 1802,
+  "source": "工作台·机场警报",
+  "updatedAt": "2026-09-06T20:02:15.177Z",
+  "items": [
+    {
+      "id": "wa-1788724935177-253b5",
+      "station": "RJAA",
+      "airportName": "东京/成田机场",
+      "phenomena": [
+        "强降水"
+      ],
+      "type": "强降水",
+      "text": "预计东京成田机‌场7日06z前小到中阵雨，短时大阵雨,强降水单次影响时间30分钟；",
+      "time": "04:02",
+      "isRevision": true,
+      "publishedAt": "2026-09-06T20:02:15.177Z",
+      "publishedBy": "值班员-甲"
+    }
+  ]
+}

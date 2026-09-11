@@ -1,0 +1,27 @@
+{
+  "sessionId": "28e7ea905e3f4a7b9e46f54a743fecb6",
+  "createdAt": 1788724700.3782015,
+  "config": {
+    "appid": "8AF0A885E7374412B78CE8BEC34AA517",
+    "authType": "SL",
+    "checkSlideCode": "N",
+    "expireTime": 1788726500773,
+    "keyid": "NuacqYiLHVq4tHERQ2MStA==",
+    "publickey": "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCGL0NyMKZkakaKJCFMRYUjpyU0D6qrAnoxXLUOK0DncobcDqISXcUyAmOzLhrNBJ0XcL7YoLiHjZTtRTUZq7pQD73ymR5eQkUSqedgzZ565ZqQEByjA9P0s6jJWtaJbKSxshujMgB8hRZy5UUE5KxpSE/NYyLmx8f5ZQLjsNyKIwIDAQAB",
+    "routing": "Y_03",
+    "status": "SUCCESS",
+    "token": "e224f44274be4088a059902f9610dcfe",
+    "transition": "N"
+  },
+  "qrId": "WmpFd1pUTmlOREJtTkdWaU5HVTFOMkl6TlRBMVlUSTVNakZrTldVeVpHVnc=",
+  "cookies": {
+    "IC_CAS_443": "24b7efdc2b660a3f917bfb2cbf689810",
+    "cas-server1": "http://10.240.32.45:8080",
+    "casTraceId": "d232449712604b28adce0aab05d48614",
+    "JSESSIONID": "node0rgpnp92lmsap1mgu4ggdczd8q3791713.node0"
+  },
+  "status": "pending",
+  "processing": false,
+  "userCode": null,
+  "error": null
+}

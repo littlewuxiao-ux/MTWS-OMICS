@@ -1,6 +1,6 @@
 ﻿"""
 统一服务启动器 (Unified Launcher)
-深色简洁风格 · CustomTkinter · 左侧服务管理 + 右侧合并/分项日志
+深色 macOS 风格 · CustomTkinter · 双服务双屏日志 + 后台 Nginx 统一入口
 
 一个入口同时启动并监控四个服务：
   ① MTWS 航空气象监控系统   (Django, 内部端口 8001)
@@ -11,8 +11,9 @@
 设计要点：
   - 业务服务对称处理：subprocess.Popen + CREATE_NO_WINDOW（无黑框）+ 读 stdout
   - 界面显示 MTWS / OMICS / IWBP；Nginx 作为后台统一入口由启动器静默管理
-  - 默认一个合并运行日志，可按级别勾选过滤；点左侧标签查看该子项目全部日志
   - 路径可配置：通过 launcher_config.json 记录各项目路径，不必放同一文件夹
+  - 任一服务未启动 → 对应面板显示「服务未启动」状态
+  - MTWS 启动方式与原 server_gui.py 完全一致，显示效果不变
 
 注意：本文件不改动 server_gui.py / main.py，作为独立启动器存在。
 """
@@ -27,10 +28,8 @@ import sys
 import os
 import json
 import queue
-import re
 import socket
 import time
-import tkinter.font as tkfont
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 from datetime import datetime
@@ -42,17 +41,10 @@ except ImportError:
     requests = None
 
 try:
-    from PIL import Image, ImageDraw, ImageFont, ImageTk
-    PIL_AVAILABLE = True
-except ImportError:
-    Image = ImageDraw = ImageFont = ImageTk = None
-    PIL_AVAILABLE = False
-
-try:
     import pystray
-    TRAY_AVAILABLE = PIL_AVAILABLE
+    from PIL import Image, ImageDraw
+    TRAY_AVAILABLE = True
 except ImportError:
-    pystray = None
     TRAY_AVAILABLE = False
 
 # ── 路径常量 ──────────────────────────────────────────────────────────────────
@@ -115,161 +107,6 @@ COLOR_ORANGE      = "#ff9f0a"
 COLOR_LABEL       = "#ffffff"
 COLOR_LABEL2      = "#ebebf5"
 COLOR_SEPARATOR   = "#38383a"
-COLOR_MUTED       = "#8e8e93"
-COLOR_APRICOT     = "#e8b86d"
-SIDEBAR_WIDTH     = 148
-USER_WIN_SIZE     = (920, 430)
-DEV_WIN_SIZE      = (1280, 760)
-USER_WIN_MIN      = (840, 380)
-DEV_WIN_MIN       = (1080, 620)
-MAX_LOG_ENTRIES   = 3000
-BADGE_W           = 58
-BADGE_H           = 16
-BADGE_RADIUS      = 5
-SERVICE_LABELS = {
-    "mtws":  ("气象报文监控/告警", "MTWS"),
-    "omics": ("预报发布/质量评定", "OMICS"),
-    "iwbp":  ("气象智能业务工作台", "IWBP"),
-}
-BADGE_STYLE = {
-    "mtws":  {"text": "MTWS",  "bg": "#c44742", "fg": "#ffffff"},
-    "omics": {"text": "OMICS", "bg": "#c4a035", "fg": "#1c1c1e"},
-    "iwbp":  {"text": "IWBP",  "bg": "#3b6fd4", "fg": "#ffffff"},
-}
-LOG_FILTER_GROUPS = {
-    "error": {"error"},
-    "warn":  {"warn"},
-    "debug": {"debug"},
-    "info":  {"info", "success", "normal", "dim"},
-}
-COLOR_DEBUG       = "#7aa2c4"
-
-
-def _hex_rgb(value):
-    raw = value.lstrip("#")
-    return tuple(int(raw[i:i + 2], 16) for i in (0, 2, 4))
-
-
-class MiniSwitch(ctk.CTkFrame):
-    """圆角开关：左关红底，右开绿底。labeled 时显示开启/关闭。"""
-
-    def __init__(self, master, command=None, labeled=False, **kwargs):
-        self.labeled = labeled
-        if labeled:
-            self.TRACK_W, self.TRACK_H = 58, 24
-            self.THUMB_W, self.THUMB_H = 18, 18
-            self.PAD = 3
-            radius = 12
-        else:
-            self.TRACK_W, self.TRACK_H = 38, 16
-            self.THUMB_W, self.THUMB_H = 12, 10
-            self.PAD = 3
-            radius = 5
-        super().__init__(
-            master,
-            width=self.TRACK_W,
-            height=self.TRACK_H,
-            corner_radius=radius,
-            fg_color=COLOR_RED,
-            cursor="hand2",
-        )
-        self.pack_propagate(False)
-        self.command = command
-        self._on = False
-        self.caption = None
-        if labeled:
-            self.caption = ctk.CTkLabel(
-                self, text="关闭",
-                font=ctk.CTkFont(size=11, weight="bold"),
-                text_color="#ffffff", cursor="hand2",
-            )
-        self.thumb = ctk.CTkFrame(
-            self,
-            width=self.THUMB_W,
-            height=self.THUMB_H,
-            corner_radius=self.THUMB_W // 2 if labeled else 3,
-            fg_color="#f2f2f7",
-            cursor="hand2",
-        )
-        self._place_thumb()
-        self.bind("<Button-1>", self._on_click)
-        self.thumb.bind("<Button-1>", self._on_click)
-        if self.caption:
-            self.caption.bind("<Button-1>", self._on_click)
-
-    def _place_thumb(self):
-        y = max(0, (self.TRACK_H - self.THUMB_H) // 2)
-        x = self.TRACK_W - self.THUMB_W - self.PAD if self._on else self.PAD
-        self.thumb.place(x=x, y=y)
-        self.thumb.lift()
-        if self.caption:
-            if self._on:
-                self.caption.configure(text="开启")
-                self.caption.place(x=7, rely=0.5, anchor="w")
-            else:
-                self.caption.configure(text="关闭")
-                self.caption.place(x=self.TRACK_W - 7, rely=0.5, anchor="e")
-
-    def _on_click(self, _event=None):
-        self._apply(not self._on, notify=True)
-
-    def _apply(self, on, notify=False):
-        self._on = bool(on)
-        self.configure(fg_color=COLOR_GREEN if self._on else COLOR_RED)
-        self._place_thumb()
-        if notify and self.command:
-            self.command(self._on)
-
-    def select(self):
-        self._apply(True, notify=False)
-
-    def deselect(self):
-        self._apply(False, notify=False)
-
-    def get(self):
-        return 1 if self._on else 0
-
-
-class FilterChip(ctk.CTkButton):
-    """标题栏用的圆角筛选开关：按下为开，再按为关。"""
-
-    def __init__(self, master, text, variable, command=None, accent="#3a3a3c"):
-        self.variable = variable
-        self._command = command
-        self._accent = accent
-        super().__init__(
-            master,
-            text=text,
-            width=52,
-            height=22,
-            corner_radius=11,
-            font=ctk.CTkFont(size=11),
-            border_width=1,
-            command=self._toggle,
-        )
-        self._refresh()
-
-    def _toggle(self):
-        self.variable.set(not bool(self.variable.get()))
-        self._refresh()
-        if self._command:
-            self._command()
-
-    def _refresh(self):
-        if bool(self.variable.get()):
-            self.configure(
-                fg_color=self._accent,
-                hover_color=self._accent,
-                text_color=COLOR_LABEL,
-                border_color=self._accent,
-            )
-        else:
-            self.configure(
-                fg_color="transparent",
-                hover_color=BG_TERTIARY,
-                text_color=COLOR_MUTED,
-                border_color=BG_GROUPED,
-            )
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("dark-blue")
@@ -645,9 +482,6 @@ http {{
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
-            proxy_set_header Authorization $http_authorization;
-            proxy_set_header token $http_token;
-            proxy_set_header X-User-Code $http_x_user_code;
             proxy_redirect ~^(/.*)$ /iwbp$1;
             proxy_redirect http://{iwbp_host}:{iwbp_port}/ /iwbp/;
         }}
@@ -772,11 +606,9 @@ class ServicePanel:
         # UI 句柄（由 build_ui 填充）
         self.status_dot = None
         self.status_label = None
-        self.power_switch = None
-        self.power_switches = []
-        self.nav_card = None
-        self.log_entries = []
-        self._switch_syncing = False
+        self.toggle_btn = None
+        self.log_text = None
+        self.log_time_label = None
 
     @property
     def host(self):
@@ -1048,57 +880,40 @@ class ServicePanel:
             pass
 
     # ── 状态 UI 更新 ──────────────────────────────────────────────────────
-    def _set_power_switch(self, on):
-        switches = self.power_switches or ([self.power_switch] if self.power_switch else [])
-        if not switches:
-            return
-        self._switch_syncing = True
-        try:
-            for sw in switches:
-                if on:
-                    sw.select()
-                else:
-                    sw.deselect()
-        except Exception:
-            pass
-        self._switch_syncing = False
-
-    def on_power_switch(self, want_on=None):
-        if self._switch_syncing:
-            return
-        if want_on is None:
-            if not self.power_switches:
-                return
-            want_on = bool(self.power_switches[0].get())
-        want_on = bool(want_on)
-        if want_on:
-            if not self.running:
-                self.start()
-            else:
-                self._set_power_switch(True)
-            return
-        if self.attached:
-            self.log("外部接管的服务无法在此停止。", "warn")
-            self._set_power_switch(True)
-            return
-        if self.running:
-            self.stop()
-        else:
-            self._set_power_switch(False)
-
     def _ui_started(self):
-        self._set_power_switch(True)
+        if self.status_dot:
+            self.status_dot.configure(text_color=COLOR_GREEN)
+        if self.status_label:
+            self.status_label.configure(text="运行中", text_color=COLOR_GREEN)
+        if self.toggle_btn:
+            self.toggle_btn.configure(text="停止", fg_color=COLOR_RED, hover_color="#e0362d")
         self.log(f"服务已启动 → {self.public_home_url}", "success")
 
     def _ui_attached(self):
-        self._set_power_switch(True)
+        if self.status_dot:
+            self.status_dot.configure(text_color=COLOR_ORANGE)
+        if self.status_label:
+            self.status_label.configure(text="已接管", text_color=COLOR_ORANGE)
+        if self.toggle_btn:
+            self.toggle_btn.configure(text="外部服务", fg_color=BG_TERTIARY,
+                                      hover_color=BG_GROUPED, text_color=COLOR_ORANGE)
 
     def _ui_stopped(self):
-        self._set_power_switch(False)
+        if self.status_dot:
+            self.status_dot.configure(text_color=COLOR_RED)
+        if self.status_label:
+            self.status_label.configure(text="服务未启动", text_color="#636366")
+        if self.toggle_btn:
+            self.toggle_btn.configure(text="启动", fg_color=COLOR_GREEN, hover_color="#27a846")
         self.log("服务未启动", "warn")
 
     def _ui_unstarted(self):
-        self._set_power_switch(False)
+        if self.status_dot:
+            self.status_dot.configure(text_color=COLOR_RED)
+        if self.status_label:
+            self.status_label.configure(text="服务未启动", text_color="#636366")
+        if self.toggle_btn:
+            self.toggle_btn.configure(text="启动", fg_color=COLOR_GREEN, hover_color="#27a846")
 
     # ── 日志 ──────────────────────────────────────────────────────────────
     def log(self, msg, level="normal"):
@@ -1108,53 +923,48 @@ class ServicePanel:
         try:
             while True:
                 item = self.log_queue.get_nowait()
-                self._store_log(item)
+                self._write_log(item)
         except queue.Empty:
             pass
 
-    def _classify_raw(self, text):
-        low = text.lower()
-        if "error" in low or "exception" in low or "[error]" in low or "traceback" in low:
-            return "error"
-        if "warning" in low or "[warn]" in low or " warn" in low:
-            return "warn"
-        if "debug" in low or "[debug]" in low:
-            return "debug"
-        if "starting" in low or "watching" in low or "监听" in text or "已启动" in text or "running on" in low:
-            return "success"
-        return "normal"
-
-    def _store_log(self, item):
+    def _write_log(self, item):
+        if not self.log_text:
+            return
+        tb = self.log_text._textbox
+        tb.configure(state="normal")
         now = datetime.now().strftime("%H:%M:%S")
         if item[0] == "styled":
             _, msg, level = item
             prefix = {"info": "ℹ", "success": "✓", "warn": "⚠",
-                      "error": "✕", "debug": "dbg", "normal": "·", "dim": "·"}.get(level, "·")
-            entry = {
-                "source": self.key,
-                "ts": now,
-                "level": level,
-                "text": f"{prefix} {msg}",
-            }
-        else:
+                      "error": "✕", "normal": "·", "dim": "·"}.get(level, "·")
+            tb.insert("end", f"{now}  ", "dim")
+            tb.insert("end", f"{prefix} ", level)
+            tb.insert("end", msg + "\n", level)
+        else:  # raw stdout
             _, text = item
-            level = self._classify_raw(text)
-            entry = {
-                "source": self.key,
-                "ts": now,
-                "level": level,
-                "text": text,
-            }
-        entry["seq"] = getattr(self.app, "_log_seq", 0)
-        self.app._log_seq = entry["seq"] + 1
-        self.log_entries.append(entry)
-        if len(self.log_entries) > MAX_LOG_ENTRIES:
-            self.log_entries = self.log_entries[-MAX_LOG_ENTRIES:]
-        self.app._on_log_entry(entry)
+            low = text.lower()
+            if "error" in low or "exception" in low or "[error]" in low or "traceback" in low:
+                tag = "error"
+            elif "warning" in low or "warn" in low:
+                tag = "warn"
+            elif "starting" in low or "watching" in low or "监听" in text or "已启动" in text or "running on" in low:
+                tag = "success"
+            else:
+                tag = "normal"
+            tb.insert("end", f"{now}  ", "dim")
+            tb.insert("end", text + "\n", tag)
+        tb.configure(state="disabled")
+        tb.see("end")
+        if self.log_time_label:
+            self.log_time_label.configure(text="更新 " + datetime.now().strftime("%H:%M:%S"))
 
     def clear_log(self):
-        """仅清空启动器里该项目的显示缓冲，不中断进程 stdout 写入。"""
-        self.app._request_clear_log(self)
+        if not self.log_text:
+            return
+        tb = self.log_text._textbox
+        tb.configure(state="normal")
+        tb.delete("1.0", "end")
+        tb.configure(state="disabled")
 
     def open_home(self):
         webbrowser.open(self.public_home_url)
@@ -1286,7 +1096,6 @@ class LauncherApp(ctk.CTk):
         self.cfg = load_config()
         self._ipc_sock = ipc_sock
         self._quitting = False
-        self._log_seq = 0
         self.tray_icon = None
         self.auth_state = {"logged_in": False, "token": None, "userCode": None, "displayName": None, "login_time": None, "source": None, "expired": False}
         self.auth_broker = None
@@ -1298,25 +1107,10 @@ class LauncherApp(ctk.CTk):
         self.iwbp = ServicePanel(self, "iwbp", self.cfg["iwbp"])
         self.nginx = ServicePanel(self, "nginx", self.cfg["nginx"])
 
-        self.title("统一服务启动器 · MTWS/OMICS/IWBP")
-        self.geometry(f"{USER_WIN_SIZE[0]}x{USER_WIN_SIZE[1]}")
-        self.minsize(*USER_WIN_MIN)
+        self.title("统一服务启动器 · MTWS + OMICS + IWBP")
+        self.geometry("1440x760")
+        self.minsize(1200, 620)
         self.configure(fg_color=BG_PRIMARY)
-        self._log_view = "all"
-        self.filter_error = ctk.BooleanVar(value=True)
-        self.filter_warn = ctk.BooleanVar(value=True)
-        self.filter_info = ctk.BooleanVar(value=True)
-        self.filter_debug = ctk.BooleanVar(value=True)
-        self.nav_all_btn = None
-        self.log_text = None
-        self.log_title_label = None
-        self.log_time_label = None
-        self.filter_bar = None
-        self._badge_photos = {}
-        self._log_body_indent = 120
-        self._ui_mode = "user"
-        self._dev_body = None
-        self._user_body = None
 
         self._build_ui()
         self._refresh_auth_info_label()
@@ -1325,7 +1119,10 @@ class LauncherApp(ctk.CTk):
                 self.iconbitmap(str(ICON_PATH))
             except Exception:
                 pass
-        self._configure_log_tags()
+        self._configure_log_tags(self.mtws)
+        self._configure_log_tags(self.omics)
+        self._configure_log_tags(self.iwbp)
+        self._configure_log_tags(self.nginx)
         self.auth_broker = AuthBrokerServer(self)
         self.auth_broker.start()
         self._setup_tray()
@@ -1343,489 +1140,137 @@ class LauncherApp(ctk.CTk):
     # ── UI ────────────────────────────────────────────────────────────────
     def _build_ui(self):
         self._build_titlebar()
-        self._dev_body = ctk.CTkFrame(self, fg_color=BG_PRIMARY, corner_radius=0)
-        self._build_sidebar(self._dev_body)
-        self._build_log_pane(self._dev_body)
-        self._user_body = ctk.CTkFrame(self, fg_color=BG_PRIMARY, corner_radius=0)
-        self._build_user_mode(self._user_body)
-        self._set_ui_mode("user")
-        self._refresh_nav_styles()
+        body = ctk.CTkFrame(self, fg_color=BG_PRIMARY, corner_radius=0)
+        body.pack(fill="both", expand=True, padx=14, pady=14)
+        body.grid_columnconfigure(0, weight=1, uniform="service_columns")
+        body.grid_columnconfigure(1, weight=1, uniform="service_columns")
+        body.grid_columnconfigure(2, weight=1, uniform="service_columns")
+        body.grid_rowconfigure(0, weight=1)
+        self._build_service_column(body, self.mtws, col_index=0, col_count=3)
+        self._build_service_column(body, self.omics, col_index=1, col_count=3)
+        self._build_service_column(body, self.iwbp, col_index=2, col_count=3)
 
     def _build_titlebar(self):
-        bar = ctk.CTkFrame(self, fg_color=BG_SECONDARY, corner_radius=0, height=44)
-        bar.pack(fill="x")
-        bar.pack_propagate(False)
-        left = ctk.CTkFrame(bar, fg_color="transparent")
-        self._port_box = left
-        left.pack(side="left", padx=16, pady=6)
-        ctk.CTkLabel(
-            left, text="统一入口 8000  ·  MTWS 8001  ·  OMICS 8002  ·  IWBP 8787",
-            font=ctk.CTkFont(size=12),
-            text_color="#636366",
-        ).pack(side="left")
-
-        def bind_text_hover(btn, rest="#ffffff", lit="#fff4c2"):
-            btn.bind("<Enter>", lambda _e, b=btn: b.configure(text_color=lit))
-            btn.bind("<Leave>", lambda _e, b=btn: b.configure(text_color=rest))
-
-        self._quit_btn = ctk.CTkButton(
-            bar, text="退出服务", width=96, command=self._quit_app,
-            font=ctk.CTkFont(size=13), fg_color=COLOR_RED, hover_color="#e03a32",
-            text_color="#ffffff", corner_radius=6, height=30,
-        )
-        bind_text_hover(self._quit_btn)
-
-        self._path_btn = ctk.CTkButton(
-            bar, text="路径配置", width=96, command=self._open_path_config,
-            font=ctk.CTkFont(size=13), fg_color=COLOR_BLUE, hover_color="#007aff",
-            text_color="#ffffff", corner_radius=6, height=30,
-        )
-        bind_text_hover(self._path_btn)
-
+        bar = ctk.CTkFrame(self, fg_color=BG_SECONDARY, corner_radius=0, height=52)
+        bar.pack(fill="x"); bar.pack_propagate(False)
+        left = ctk.CTkFrame(bar, fg_color="transparent"); left.pack(side="left", padx=18, pady=8)
+        ctk.CTkLabel(left, text="航空气象统一服务启动器", font=ctk.CTkFont(size=15, weight="bold"),
+                     text_color=COLOR_LABEL).pack(side="left")
+        ctk.CTkLabel(left, text="统一入口 8000 · MTWS 8001 · OMICS 8002 · IWBP 8787", font=ctk.CTkFont(size=11),
+                     text_color="#636366").pack(side="left", padx=(8, 0), pady=(2, 0))
+        # 按钮直接钉在标题栏右边缘，窗口缩小时优先保证可见与可点击。
+        ctk.CTkButton(bar, text="退出服务", width=80, command=self._quit_app,
+                      font=ctk.CTkFont(size=12), fg_color="#3a1f1f", hover_color="#5a2a2a",
+                      text_color="#ff6b6b", corner_radius=8, height=32).pack(side="right", padx=(8, 18))
+        ctk.CTkButton(bar, text="⚙ 路径配置", width=92, command=self._open_path_config,
+                      font=ctk.CTkFont(size=12), fg_color=BG_TERTIARY, hover_color=BG_GROUPED,
+                      text_color=COLOR_LABEL2, corner_radius=8, height=32).pack(side="right", padx=(8, 0))
+        ctk.CTkButton(bar, text="全部启动", width=80, command=self._start_all,
+                      font=ctk.CTkFont(size=12), fg_color=COLOR_GREEN, hover_color="#27a846",
+                      text_color="#fff", corner_radius=8, height=32).pack(side="right", padx=(8, 0))
+        # 登录状态标签紧贴按钮左侧；窗口缩小时从它的右侧开始被逐渐遮挡，不影响按钮。
         self.auth_info_label = ctk.CTkLabel(
             bar,
             text="登录状态：未登录｜请在 MTWS / OMICS / IWBP 页面扫码",
-            font=ctk.CTkFont(size=12, weight="bold"),
-            text_color=COLOR_MUTED,
-            anchor="center",
+            font=ctk.CTkFont(size=12),
+            text_color=COLOR_LABEL2,
+            fg_color=BG_TERTIARY,
+            corner_radius=8,
+            padx=12,
+            height=32,
+            anchor="w",
         )
+        self.auth_info_label.pack(side="right", padx=(8, 0))
         ctk.CTkFrame(self, fg_color=COLOR_SEPARATOR, height=1, corner_radius=0).pack(fill="x")
 
-    def _build_sidebar(self, parent):
-        side = ctk.CTkFrame(parent, fg_color=BG_SECONDARY, corner_radius=10, width=SIDEBAR_WIDTH)
-        side.pack(side="left", fill="y")
-        side.pack_propagate(False)
+    def _build_service_column(self, parent, svc, col_index, col_count=2):
+        col = ctk.CTkFrame(parent, fg_color=BG_SECONDARY, corner_radius=12)
+        if col_index == 0:
+            padx = (0, 6)
+        elif col_index == col_count - 1:
+            padx = (6, 0)
+        else:
+            padx = (6, 6)
+        col.grid(row=0, column=col_index, sticky="nsew", padx=padx)
 
-        self.nav_all_btn = ctk.CTkButton(
-            side, text="全部", height=28, corner_radius=6,
-            font=ctk.CTkFont(size=12, weight="bold"),
-            fg_color=BG_TERTIARY, hover_color=BG_GROUPED, text_color=COLOR_LABEL,
-            command=lambda: self._select_log_view("all"),
-        )
-        self.nav_all_btn.pack(fill="x", padx=6, pady=(8, 6))
+        # 头部：服务名 + 状态灯
+        header = ctk.CTkFrame(col, fg_color="transparent"); header.pack(fill="x", padx=14, pady=(12, 6))
+        name_box = ctk.CTkFrame(header, fg_color="transparent"); name_box.pack(side="left")
+        ctk.CTkLabel(name_box, text=svc.cfg["name"], font=ctk.CTkFont(size=14, weight="bold"),
+                     text_color=COLOR_LABEL).pack(side="left")
+        ctk.CTkLabel(name_box, text=f"  :{svc.port}", font=ctk.CTkFont(size=11),
+                     text_color="#636366").pack(side="left")
+        stat = ctk.CTkFrame(header, fg_color="transparent"); stat.pack(side="right")
+        svc.status_dot = ctk.CTkLabel(stat, text="●", font=ctk.CTkFont(size=13), text_color=COLOR_RED)
+        svc.status_dot.pack(side="right", padx=(4, 0))
+        svc.status_label = ctk.CTkLabel(stat, text="服务未启动", font=ctk.CTkFont(size=12),
+                                        text_color="#636366")
+        svc.status_label.pack(side="right")
 
-        for svc in (self.mtws, self.omics, self.iwbp):
-            self._build_service_nav(side, svc)
+        # 服务器信息卡片（补齐 server_gui 的地址/端口/协议）
+        info = ctk.CTkFrame(col, fg_color=BG_TERTIARY, corner_radius=10)
+        info.pack(fill="x", padx=14, pady=(0, 8))
+        self._info_row(info, "地址", svc.address_label)
+        self._info_divider(info)
+        self._info_row(info, "端口", str(svc.port))
+        self._info_divider(info)
+        self._info_row(info, "协议", svc.protocol_label)
 
-        ctk.CTkButton(
-            side, text="切换为用户模式", height=28, corner_radius=6,
-            font=ctk.CTkFont(size=12),
-            fg_color=BG_TERTIARY, hover_color=BG_GROUPED, text_color=COLOR_LABEL2,
-            command=lambda: self._set_ui_mode("user"),
-        ).pack(side="bottom", fill="x", padx=6, pady=8)
-
-    def _build_service_nav(self, parent, svc):
-        card = ctk.CTkFrame(parent, fg_color=BG_TERTIARY, corner_radius=8)
-        card.pack(fill="x", padx=6, pady=(0, 6))
-        svc.nav_card = card
-
-        blurb, abbr = SERVICE_LABELS.get(svc.key, ("", svc.key.upper()))
-        ctk.CTkLabel(
-            card, text=blurb,
-            font=ctk.CTkFont(size=12, weight="bold"),
-            text_color=COLOR_LABEL,
-            anchor="center",
-            wraplength=0,
-        ).pack(fill="x", padx=6, pady=(6, 0))
-
-        head = ctk.CTkFrame(card, fg_color="transparent")
-        head.pack(fill="x", padx=6, pady=(2, 4))
-        ctk.CTkLabel(
-            head, text=abbr, font=ctk.CTkFont(size=12, weight="bold"),
-            text_color=COLOR_LABEL,
-        ).pack(side="left")
-        sw = MiniSwitch(head, command=svc.on_power_switch)
-        sw.pack(side="right")
-        svc.power_switch = sw
-        svc.power_switches.append(sw)
-
-        def muted_btn(text, command, extra_pady=(0, 3)):
-            btn = ctk.CTkButton(
-                card, text=text, height=24, corner_radius=5,
-                font=ctk.CTkFont(size=11),
-                fg_color=BG_SECONDARY, hover_color=BG_GROUPED,
-                text_color=COLOR_LABEL2, command=command,
-            )
-            btn.pack(fill="x", padx=6, pady=extra_pady)
-            return btn
-
-        muted_btn("打开主页", svc.open_home)
-        muted_btn("详细日志", lambda key=svc.key: self._select_log_view(key))
-        muted_btn("清空", svc.clear_log, extra_pady=(0, 6 if svc.key != "mtws" else 3))
+        # 操作按钮行
+        btns = ctk.CTkFrame(col, fg_color="transparent"); btns.pack(fill="x", padx=14, pady=(0, 8))
+        svc.toggle_btn = ctk.CTkButton(btns, text="启动", width=70, command=svc.toggle,
+                                       font=ctk.CTkFont(size=12), fg_color=COLOR_GREEN,
+                                       hover_color="#27a846", text_color="#fff", corner_radius=8, height=32)
+        svc.toggle_btn.pack(side="left")
+        ctk.CTkButton(btns, text="打开主页", width=80, command=svc.open_home,
+                      font=ctk.CTkFont(size=12), fg_color=COLOR_BLUE, hover_color="#007aff",
+                      text_color="#fff", corner_radius=8, height=32).pack(side="left", padx=(8, 0))
         if svc.key == "mtws":
-            muted_btn("D.B.M.S", svc.open_db_tool, extra_pady=(0, 6))
+            ctk.CTkButton(btns, text="数据库管理工具", width=118, command=svc.open_db_tool,
+                          font=ctk.CTkFont(size=12), fg_color=BG_TERTIARY, hover_color=BG_GROUPED,
+                          text_color=COLOR_LABEL2, corner_radius=8, height=32).pack(side="left", padx=(8, 0))
+        ctk.CTkButton(btns, text="清空", width=56, command=svc.clear_log,
+                      font=ctk.CTkFont(size=12), fg_color=BG_TERTIARY, hover_color=BG_GROUPED,
+                      text_color="#636366", corner_radius=8, height=32).pack(side="right")
 
-    def _build_log_pane(self, parent):
-        pane = ctk.CTkFrame(parent, fg_color=BG_SECONDARY, corner_radius=10)
-        pane.pack(side="left", fill="both", expand=True, padx=(12, 0))
+        ctk.CTkFrame(col, fg_color=COLOR_SEPARATOR, height=1).pack(fill="x", padx=12)
 
-        head = ctk.CTkFrame(pane, fg_color="transparent")
-        head.pack(fill="x", padx=16, pady=(10, 6))
-        self.log_head = head
-        self.log_title_label = ctk.CTkLabel(
-            head, text="运行日志", font=ctk.CTkFont(size=13, weight="bold"),
-            text_color=COLOR_LABEL,
-        )
-        self.log_title_label.pack(side="left")
-        self.log_time_label = ctk.CTkLabel(
-            head, text="", font=ctk.CTkFont(size=11), text_color="#636366",
-        )
-        self.log_time_label.pack(side="right")
+        # 日志面板
+        log_head = ctk.CTkFrame(col, fg_color="transparent"); log_head.pack(fill="x", padx=14, pady=(8, 4))
+        ctk.CTkLabel(log_head, text="运行日志", font=ctk.CTkFont(size=12, weight="bold"),
+                     text_color=COLOR_LABEL).pack(side="left")
+        svc.log_time_label = ctk.CTkLabel(log_head, text="", font=ctk.CTkFont(size=10),
+                                          text_color="#48484a")
+        svc.log_time_label.pack(side="right")
+        svc.log_text = ctk.CTkTextbox(col, font=ctk.CTkFont(family="Consolas", size=12),
+                                      fg_color="#141416", text_color="#d1d1d6", corner_radius=8,
+                                      wrap="word", state="disabled",
+                                      scrollbar_button_color=BG_TERTIARY,
+                                      scrollbar_button_hover_color=BG_GROUPED)
+        svc.log_text.pack(fill="both", expand=True, padx=12, pady=(0, 12))
 
-        self.filter_bar = ctk.CTkFrame(head, fg_color="transparent")
-        self.filter_bar.pack(side="left", padx=(14, 8))
-        for text, var, accent in (
-            ("错误", self.filter_error, "#6b3030"),
-            ("告警", self.filter_warn, "#6b5420"),
-            ("信息", self.filter_info, "#2d4a6b"),
-            ("调试", self.filter_debug, "#3a4a58"),
-        ):
-            FilterChip(
-                self.filter_bar, text=text, variable=var,
-                command=self._rebuild_log_view, accent=accent,
-            ).pack(side="left", padx=(0, 6))
 
-        self.log_text = ctk.CTkTextbox(
-            pane, font=ctk.CTkFont(family="Consolas", size=12),
-            fg_color="#141416", text_color="#d1d1d6", corner_radius=8,
-            wrap="word", state="disabled",
-            scrollbar_button_color=BG_TERTIARY,
-            scrollbar_button_hover_color=BG_GROUPED,
-        )
-        self.log_text.pack(fill="both", expand=True, padx=12, pady=(0, 12))
+    def _info_row(self, parent, label, value):
+        row = ctk.CTkFrame(parent, fg_color="transparent")
+        row.pack(fill="x", padx=12, pady=5)
+        ctk.CTkLabel(row, text=label, font=ctk.CTkFont(size=11),
+                     text_color="#8e8e93", width=42).pack(side="left")
+        ctk.CTkLabel(row, text=str(value), font=ctk.CTkFont(size=12, weight="bold"),
+                     text_color=COLOR_BLUE).pack(side="right")
 
-    def _build_user_mode(self, parent):
-        wrap = ctk.CTkFrame(parent, fg_color="transparent")
-        wrap.pack(expand=True)
-        row = ctk.CTkFrame(wrap, fg_color="transparent")
-        row.pack()
-        for index, svc in enumerate((self.mtws, self.omics, self.iwbp)):
-            self._build_user_card(row, svc, index)
-        ctk.CTkButton(
-            wrap, text="切换为开发者模式", height=32, corner_radius=6,
-            font=ctk.CTkFont(size=13),
-            fg_color=BG_SECONDARY, hover_color=BG_GROUPED, text_color=COLOR_LABEL,
-            command=lambda: self._set_ui_mode("dev"),
-        ).pack(fill="x", pady=(8, 0))
+    def _info_divider(self, parent):
+        ctk.CTkFrame(parent, fg_color=BG_GROUPED, height=1, corner_radius=0).pack(fill="x", padx=8)
 
-    def _build_user_card(self, parent, svc, index):
-        card = ctk.CTkFrame(parent, fg_color=BG_SECONDARY, corner_radius=10, width=250, height=232)
-        card.pack(side="left", padx=(0, 10) if index < 2 else (0, 0), pady=4)
-        card.pack_propagate(False)
-        inner = ctk.CTkFrame(card, fg_color="transparent")
-        inner.pack(fill="both", expand=True, padx=14, pady=16)
-        blurb, abbr = SERVICE_LABELS.get(svc.key, ("", svc.key.upper()))
-        ctk.CTkLabel(
-            inner, text=blurb,
-            font=ctk.CTkFont(size=14, weight="bold"),
-            text_color=COLOR_LABEL, anchor="center", wraplength=0,
-        ).pack(fill="x", pady=(0, 4))
-        ctk.CTkLabel(
-            inner, text=abbr, font=ctk.CTkFont(size=13, weight="bold"),
-            text_color=COLOR_LABEL, anchor="center",
-        ).pack(fill="x", pady=(0, 8))
-        sw = MiniSwitch(inner, command=svc.on_power_switch, labeled=True)
-        sw.pack(anchor="center", pady=(0, 12))
-        svc.power_switches.append(sw)
-        ctk.CTkButton(
-            inner, text="打开主页", height=28, corner_radius=6,
-            font=ctk.CTkFont(size=12),
-            fg_color=COLOR_BLUE, hover_color="#007aff", text_color="#ffffff",
-            command=svc.open_home,
-        ).pack(fill="x", pady=(0, 6))
-        url_row = ctk.CTkFrame(inner, fg_color="transparent")
-        url_row.pack(fill="x")
-        url = svc.public_home_url
-        ctk.CTkLabel(
-            url_row, text=url, font=ctk.CTkFont(size=10),
-            text_color=COLOR_MUTED, anchor="w",
-        ).pack(side="left", fill="x", expand=True, padx=(0, 4))
-        copy_btn = ctk.CTkButton(
-            url_row, text="复制", width=44, height=22, corner_radius=5,
-            font=ctk.CTkFont(size=11),
-            fg_color=BG_TERTIARY, hover_color=BG_GROUPED, text_color=COLOR_LABEL2,
-        )
-        copy_btn.configure(command=lambda u=url, b=copy_btn: self._copy_home_url(u, b))
-        copy_btn.pack(side="right")
-
-    def _copy_home_url(self, url, btn):
-        try:
-            self.clipboard_clear()
-            self.clipboard_append(url)
-            self.update()
-        except Exception:
+    def _configure_log_tags(self, svc):
+        if not svc.log_text:
             return
-        if btn:
-            btn.configure(text="已复制")
-            self.after(1200, lambda: btn.configure(text="复制"))
-
-    def _apply_window_size(self, mode):
-        if mode == "user":
-            w, h = USER_WIN_SIZE
-            self.minsize(*USER_WIN_MIN)
-        else:
-            w, h = DEV_WIN_SIZE
-            self.minsize(*DEV_WIN_MIN)
-        self.update_idletasks()
-        old_w = self.winfo_width()
-        old_h = self.winfo_height()
-        if old_w <= 1 or old_h <= 1:
-            self.geometry(f"{w}x{h}")
-            return
-        match = re.match(r"\d+x\d+([+-]\d+)([+-]\d+)", self.geometry())
-        if match:
-            old_x = int(match.group(1))
-            old_y = int(match.group(2))
-        else:
-            old_x, old_y = self.winfo_x(), self.winfo_y()
-        new_x = old_x + (old_w - w) // 2
-        new_y = old_y + (old_h - h) // 2
-        screen_w = self.winfo_screenwidth()
-        screen_h = self.winfo_screenheight()
-        new_x = max(0, min(new_x, max(0, screen_w - w)))
-        new_y = max(0, min(new_y, max(0, screen_h - h)))
-        self.geometry(f"{w}x{h}+{new_x}+{new_y}")
-
-    def _sync_titlebar_mode(self, mode):
-        for w in (
-            getattr(self, "_port_box", None),
-            getattr(self, "_path_btn", None),
-            getattr(self, "_quit_btn", None),
-            getattr(self, "auth_info_label", None),
-        ):
-            if w:
-                w.pack_forget()
-        if mode == "user":
-            if self.auth_info_label:
-                self.auth_info_label.configure(anchor="center")
-                self.auth_info_label.pack(side="left", fill="x", expand=True, padx=(16, 10))
-            if getattr(self, "_quit_btn", None):
-                self._quit_btn.pack(side="right", padx=(8, 16), pady=7)
-            return
-        if getattr(self, "_port_box", None):
-            self._port_box.pack(side="left", padx=16, pady=6)
-        if getattr(self, "_quit_btn", None):
-            self._quit_btn.pack(side="right", padx=(8, 16), pady=7)
-        if getattr(self, "_path_btn", None):
-            self._path_btn.pack(side="right", padx=(8, 0), pady=7)
-        if self.auth_info_label:
-            self.auth_info_label.configure(anchor="center")
-            self.auth_info_label.pack(side="left", fill="x", expand=True, padx=(10, 10))
-
-    def _set_ui_mode(self, mode):
-        self._ui_mode = mode
-        self._sync_titlebar_mode(mode)
-        if mode == "user":
-            if self._dev_body:
-                self._dev_body.pack_forget()
-            if self._user_body:
-                self._user_body.pack(fill="both", expand=True, padx=16, pady=16)
-        else:
-            if self._user_body:
-                self._user_body.pack_forget()
-            if self._dev_body:
-                self._dev_body.pack(fill="both", expand=True, padx=16, pady=16)
-            self._refresh_nav_styles()
-            self._rebuild_log_view()
-        self._apply_window_size(mode)
-
-    def _select_log_view(self, key):
-        if self._log_view == key:
-            return
-        self._log_view = key
-        titles = {
-            "all": "运行日志",
-            "mtws": "MTWS 详细日志",
-            "omics": "OMICS 详细日志",
-            "iwbp": "IWBP 详细日志",
-        }
-        if self.log_title_label:
-            self.log_title_label.configure(text=titles.get(key, "运行日志"))
-        if self.filter_bar:
-            if key == "all":
-                self.filter_bar.pack(side="left", padx=(14, 8), after=self.log_title_label)
-            else:
-                self.filter_bar.pack_forget()
-        self._refresh_nav_styles()
-        self._rebuild_log_view()
-
-    def _request_clear_log(self, svc):
-        names = {"mtws": "MTWS", "omics": "OMICS", "iwbp": "IWBP"}
-        name = names.get(svc.key, svc.key.upper())
-        self._select_log_view(svc.key)
-        ClearLogConfirmDialog(self, name, on_confirm=lambda: self._clear_log_display(svc))
-
-    def _clear_log_display(self, svc):
-        svc.log_entries.clear()
-        self._rebuild_log_view()
-
-    def _refresh_nav_styles(self):
-        if self.nav_all_btn:
-            if self._log_view == "all":
-                self.nav_all_btn.configure(fg_color=BG_GROUPED, text_color=COLOR_LABEL)
-            else:
-                self.nav_all_btn.configure(fg_color=BG_TERTIARY, text_color=COLOR_LABEL2)
-        for svc in (self.mtws, self.omics, self.iwbp):
-            if not svc.nav_card:
-                continue
-            if self._log_view == svc.key:
-                svc.nav_card.configure(fg_color="#3f3f42")
-            else:
-                svc.nav_card.configure(fg_color=BG_TERTIARY)
-
-    def _passes_filter(self, entry):
-        if self._log_view != "all":
-            return True
-        level = entry.get("level") or "normal"
-        if level in LOG_FILTER_GROUPS["error"]:
-            return bool(self.filter_error.get())
-        if level in LOG_FILTER_GROUPS["warn"]:
-            return bool(self.filter_warn.get())
-        if level in LOG_FILTER_GROUPS["debug"]:
-            return bool(self.filter_debug.get())
-        return bool(self.filter_info.get())
-
-    def _visible_entries(self):
-        sources = ("mtws", "omics", "iwbp")
-        if self._log_view == "all":
-            merged = []
-            for key in sources:
-                merged.extend(getattr(self, key).log_entries)
-            merged.sort(key=lambda e: e.get("seq", 0))
-            return [e for e in merged if self._passes_filter(e)]
-        svc = getattr(self, self._log_view, None)
-        return list(svc.log_entries) if svc else []
-
-    def _on_log_entry(self, entry):
-        if getattr(self, "_ui_mode", "dev") != "dev":
-            return
-        source = entry.get("source")
-        if source not in ("mtws", "omics", "iwbp"):
-            return
-        if self._log_view not in ("all", source):
-            return
-        if not self._passes_filter(entry):
-            return
-        self._insert_log_line(entry)
-        if self.log_time_label:
-            self.log_time_label.configure(text="更新 " + entry.get("ts", ""))
-
-    def _rebuild_log_view(self):
-        if not self.log_text or getattr(self, "_ui_mode", "dev") != "dev":
-            return
-        tb = self.log_text._textbox
-        tb.configure(state="normal")
-        tb.delete("1.0", "end")
-        last_ts = ""
-        for entry in self._visible_entries():
-            self._insert_log_line(entry, already_enabled=True)
-            last_ts = entry.get("ts") or last_ts
-        tb.configure(state="disabled")
-        tb.see("end")
-        if self.log_time_label:
-            self.log_time_label.configure(text=("更新 " + last_ts) if last_ts else "")
-
-    def _insert_log_line(self, entry, already_enabled=False):
-        if not self.log_text:
-            return
-        tb = self.log_text._textbox
-        if not already_enabled:
-            tb.configure(state="normal")
-        start = tb.index("end-1c")
-        source = entry.get("source")
-        photo = self._badge_photos.get(source)
-        if photo:
-            tb.image_create("end", image=photo, pady=1)
-            tb.insert("end", " ")
-        elif source in BADGE_STYLE:
-            tb.insert("end", f" {BADGE_STYLE[source]['text']:^5} ", f"badge_{source}")
-            tb.insert("end", " ")
-        tb.insert("end", f"{entry.get('ts', '')}  ", "dim")
-        level = entry.get("level") or "normal"
-        tb.insert("end", entry.get("text", "") + "\n", level)
-        tb.tag_add("logline", start, "end-1c")
-        if not already_enabled:
-            self._trim_log_widget(tb)
-            tb.configure(state="disabled")
-            tb.see("end")
-
-    def _trim_log_widget(self, tb):
-        cap = MAX_LOG_ENTRIES if self._log_view != "all" else MAX_LOG_ENTRIES * 3
-        last_line = int(tb.index("end-1c").split(".")[0])
-        extra = last_line - cap
-        if extra > 200:
-            tb.delete("1.0", f"{extra + 1}.0")
-
-    def _make_badge_photo(self, text, bg, fg):
-        if not PIL_AVAILABLE:
-            return None
-        scale = 3
-        w, h, r = BADGE_W * scale, BADGE_H * scale, BADGE_RADIUS * scale
-        img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(img)
-        draw.rounded_rectangle([0, 0, w - 1, h - 1], radius=r, fill=_hex_rgb(bg) + (255,))
-        font_path = next((
-            p for p in (
-                "C:/Windows/Fonts/consolab.ttf",
-                "C:/Windows/Fonts/consola.ttf",
-                "C:/Windows/Fonts/arialbd.ttf",
-                "C:/Windows/Fonts/msyhbd.ttc",
-            ) if Path(p).exists()
-        ), None)
-        pad_x, pad_y = 3 * scale, 1 * scale
-        font = ImageFont.load_default()
-        if font_path:
-            for size in range(h - pad_y * 2, 10, -1):
-                try:
-                    trial = ImageFont.truetype(font_path, size)
-                except Exception:
-                    continue
-                bbox = draw.textbbox((0, 0), text, font=trial)
-                if bbox[2] - bbox[0] <= w - pad_x * 2 and bbox[3] - bbox[1] <= h - pad_y * 2:
-                    font = trial
-                    break
-        bbox = draw.textbbox((0, 0), text, font=font)
-        tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
-        draw.text(
-            ((w - tw) / 2 - bbox[0], (h - th) / 2 - bbox[1] - scale),
-            text,
-            font=font,
-            fill=_hex_rgb(fg) + (255,),
-        )
-        img = img.resize((BADGE_W, BADGE_H), Image.LANCZOS)
-        return ImageTk.PhotoImage(img, master=self)
-
-    def _configure_log_tags(self):
-        if not self.log_text:
-            return
-        tb = self.log_text._textbox
-        body_font = tkfont.Font(font=tb.cget("font"))
-        self._log_body_indent = BADGE_W + 6 + body_font.measure("88:88:88  ")
-        tb.configure(spacing1=3, spacing3=5)
+        tb = svc.log_text._textbox
         tb.tag_configure("info", foreground=COLOR_BLUE)
         tb.tag_configure("success", foreground=COLOR_GREEN)
         tb.tag_configure("warn", foreground=COLOR_ORANGE)
         tb.tag_configure("error", foreground=COLOR_RED)
-        tb.tag_configure("debug", foreground=COLOR_DEBUG)
         tb.tag_configure("normal", foreground="#d1d1d6")
         tb.tag_configure("dim", foreground="#636366")
-        tb.tag_configure(
-            "logline",
-            lmargin2=self._log_body_indent,
-            spacing1=3,
-            spacing3=5,
-        )
-        self._badge_photos = {}
-        for key, style in BADGE_STYLE.items():
-            photo = self._make_badge_photo(style["text"], style["bg"], style["fg"])
-            if photo:
-                self._badge_photos[key] = photo
-            tb.tag_configure(
-                f"badge_{key}",
-                background=style["bg"],
-                foreground=style["fg"],
-                font=("Consolas", 11, "bold"),
-            )
 
     # ── 日志轮询 ──────────────────────────────────────────────────────────
     def _poll_logs(self):
@@ -1963,23 +1408,16 @@ class LauncherApp(ctk.CTk):
             self.auth_info_label.configure(
                 text=f"当前登录：{name}｜来源：{source}｜{login_time}",
                 text_color=COLOR_GREEN,
-                fg_color="transparent",
-                font=ctk.CTkFont(size=12, weight="bold"),
             )
         elif state.get("expired"):
             self.auth_info_label.configure(
                 text="登录已过期｜请在 MTWS / OMICS / IWBP 页面重新扫码登录",
-                text_color="#5c3a14",
-                fg_color=COLOR_APRICOT,
-                corner_radius=8,
-                font=ctk.CTkFont(size=12, weight="bold"),
+                text_color=COLOR_ORANGE,
             )
         else:
             self.auth_info_label.configure(
                 text="登录状态：未登录｜请在 MTWS / OMICS / IWBP 页面扫码",
-                text_color=COLOR_MUTED,
-                fg_color="transparent",
-                font=ctk.CTkFont(size=12, weight="bold"),
+                text_color=COLOR_LABEL2,
             )
 
     def _monitor_auth(self):
@@ -2126,62 +1564,6 @@ class LauncherApp(ctk.CTk):
                 continue
             except Exception:
                 break
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  清空显示日志确认
-# ══════════════════════════════════════════════════════════════════════════════
-class ClearLogConfirmDialog(ctk.CTkToplevel):
-    def __init__(self, app, project_name, on_confirm):
-        super().__init__(app)
-        self._on_confirm = on_confirm
-        self.title("清空日志")
-        self.resizable(False, False)
-        self.configure(fg_color=BG_SECONDARY)
-        self.transient(app)
-        self.withdraw()
-
-        ctk.CTkLabel(
-            self, text=f"是否确认清除{project_name}的全部日志信息？",
-            font=ctk.CTkFont(size=14), text_color=COLOR_LABEL, anchor="w",
-        ).pack(fill="x", padx=24, pady=(22, 6))
-        ctk.CTkLabel(
-            self, text="（清空日志信息不影响本地运行日志写入）",
-            font=ctk.CTkFont(size=11), text_color=COLOR_MUTED, anchor="w",
-        ).pack(fill="x", padx=24, pady=(0, 16))
-
-        btn_row = ctk.CTkFrame(self, fg_color="transparent")
-        btn_row.pack(fill="x", padx=24, pady=(0, 20))
-        ctk.CTkButton(
-            btn_row, text="取消", command=self.destroy,
-            fg_color=BG_TERTIARY, hover_color=BG_GROUPED,
-            text_color=COLOR_LABEL2, corner_radius=8, height=32, width=110,
-        ).pack(side="left")
-        ctk.CTkButton(
-            btn_row, text="确认清空", command=self._confirm,
-            fg_color=COLOR_RED, hover_color="#e03a32",
-            text_color="#ffffff", corner_radius=8, height=32, width=110,
-        ).pack(side="right")
-
-        self.update_idletasks()
-        width, height = 420, 168
-        px = app.winfo_rootx()
-        py = app.winfo_rooty()
-        pw = max(app.winfo_width(), 1)
-        ph = max(app.winfo_height(), 1)
-        x = px + (pw - width) // 2
-        y = py + (ph - height) // 2
-        self.geometry(f"{width}x{height}+{x}+{y}")
-        self.deiconify()
-        self.grab_set()
-        self.lift()
-        self.focus_force()
-
-    def _confirm(self):
-        callback = self._on_confirm
-        self.destroy()
-        if callback:
-            callback()
 
 
 # ══════════════════════════════════════════════════════════════════════════════

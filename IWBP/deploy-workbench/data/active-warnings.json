@@ -1,0 +1,37 @@
+{
+  "version": 5,
+  "source": "工作台·机场警报",
+  "updatedAt": "2026-07-01T04:45:31.086Z",
+  "items": [
+    {
+      "id": "wa-1782881131086-s5s2w",
+      "station": "ZGSZ",
+      "airportName": "深圳/宝安机场",
+      "phenomena": [
+        "雷暴",
+        "强降水"
+      ],
+      "type": "雷暴、强降水",
+      "text": "预计1日16:00-20:00机场/终端区有弱到短时中雷雨。",
+      "time": "12:45",
+      "isRevision": false,
+      "publishedAt": "2026-07-01T04:45:31.085Z",
+      "publishedBy": "值班员-甲"
+    },
+    {
+      "id": "wa-1782878291689-vpdcy",
+      "station": "ZGGG",
+      "airportName": "广州/白云机场",
+      "phenomena": [
+        "雷暴",
+        "强降水"
+      ],
+      "type": "雷暴、强降水",
+      "text": "预计1日16:00-20:00机场/终端区有弱到短时中雷雨。",
+      "time": "11:58",
+      "isRevision": false,
+      "publishedAt": "2026-07-01T03:58:11.689Z",
+      "publishedBy": "值班员-甲"
+    }
+  ]
+}
