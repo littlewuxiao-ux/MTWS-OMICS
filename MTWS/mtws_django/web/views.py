@@ -3,8 +3,10 @@ Web应用视图
 提供前端页面渲染
 """
 
+from pathlib import Path
+
 from django.shortcuts import render
-from django.http import HttpResponse
+from django.http import FileResponse, Http404, HttpResponse
 import json
 from core.models import Carrier
 from utils.time_manager import TimeManager
@@ -120,3 +122,21 @@ def parsing_status(request, time_mode='current'):
         'time_mode': time_mode,
         'page_title': '解析状态检查 - MTWS'
     })
+
+
+def access_admin(request, time_mode='current'):
+    """超级用户管理独立页"""
+    return render(request, 'web/access_admin.html', {'time_mode': time_mode})
+
+
+def system_reference_pdf(request):
+    """在浏览器新标签中打开 docs/MTWS System Reference.pdf。"""
+    pdf_path = Path(django_settings.BASE_DIR).parent / 'docs' / 'MTWS System Reference.pdf'
+    if not pdf_path.is_file():
+        raise Http404('未找到说明文档：docs/MTWS System Reference.pdf')
+    return FileResponse(
+        pdf_path.open('rb'),
+        content_type='application/pdf',
+        as_attachment=False,
+        filename='MTWS System Reference.pdf',
+    )

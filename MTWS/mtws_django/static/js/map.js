@@ -507,11 +507,14 @@ function _buildMarkers() {
             itemStyle: { color: _mapColor(tafLevel), opacity: 0.92 }
         });
 
-        // ── 外圈：METAR 告警色，metar.popup ≠ N 时闪烁 ──
+        // ── 外圈：METAR 告警色；运行/停场任一为 Y 或 I 时闪烁（与主页弹窗开关无关）
         const metar       = airport.metar_data && airport.metar_data[0];
         const metarLevel  = (metar && metar.metar_warning) || 'N';
         const ringColor   = _mapColor(metarLevel);
-        const shouldFlash = !!(metar && metar.popup && metar.popup !== 'N');
+        const shouldFlash = !!(metar && (
+            metar.operation_popup === 'Y' || metar.operation_popup === 'I'
+            || metar.parking_popup === 'Y' || metar.parking_popup === 'I'
+        ));
 
         if (shouldFlash) {
             outerFlash.push({

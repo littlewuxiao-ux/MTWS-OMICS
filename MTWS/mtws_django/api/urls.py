@@ -20,6 +20,13 @@ from .settings_views import (
     settings_weather_alert, settings_weather_alert_detail,
     settings_airport_location, settings_airport_location_detail,
 )
+from .access_views import (
+    access_bootstrap, access_session_status, access_select_role,
+    access_complete_qr_login, access_seat_logout,
+    access_admin_unlock, access_admin_lock, access_admin_change_password,
+    access_admin_groups, access_admin_group_detail,
+    access_admin_blacklist, access_admin_blacklist_detail,
+)
 
 app_name = 'api'
 
@@ -43,6 +50,7 @@ urlpatterns = [
     path('auth/get-qrcode/', views.get_qrcode, name='get_qrcode'),
     path('auth/check-login/', views.check_login_status, name='check_login_status'),
     path('auth/logout/', views.logout, name='logout'),
+    path('seat-identity/', views.seat_identity, name='seat_identity'),
     
     
     # Token验证API
@@ -56,8 +64,6 @@ urlpatterns = [
     path('popup-received/', views.handle_popup_received, name='handle_popup_received'),
     path('popup-batch-ignore/', views.handle_popup_batch_ignore, name='handle_popup_batch_ignore'),
     path('popup-batch-received/', views.handle_popup_batch_received, name='handle_popup_batch_received'),
-    path('popup-settings/', views.get_popup_settings, name='get_popup_settings'),
-    path('popup-settings/update/', views.update_popup_settings, name='update_popup_settings'),
 
     # 实况入库告警API
     path('import-alerts/', views.get_import_alerts, name='get_import_alerts'),
@@ -97,4 +103,18 @@ urlpatterns = [
     path('settings/weather-alert/<int:alert_id>/', settings_weather_alert_detail, name='settings_weather_alert_detail'),
     path('settings/airport-location/', settings_airport_location, name='settings_airport_location'),
     path('settings/airport-location/<str:airport_4code>/', settings_airport_location_detail, name='settings_airport_location_detail'),
+
+    # 访问控制 / 超级用户
+    path('access/bootstrap/', access_bootstrap, name='access_bootstrap'),
+    path('access/session/', access_session_status, name='access_session_status'),
+    path('access/select-role/', access_select_role, name='access_select_role'),
+    path('access/complete-qr-login/', access_complete_qr_login, name='access_complete_qr_login'),
+    path('access/seat-logout/', access_seat_logout, name='access_seat_logout'),
+    path('access/admin/unlock/', access_admin_unlock, name='access_admin_unlock'),
+    path('access/admin/lock/', access_admin_lock, name='access_admin_lock'),
+    path('access/admin/change-password/', access_admin_change_password, name='access_admin_change_password'),
+    path('access/admin/groups/', access_admin_groups, name='access_admin_groups'),
+    path('access/admin/groups/<int:group_id>/', access_admin_group_detail, name='access_admin_group_detail'),
+    path('access/admin/blacklist/', access_admin_blacklist, name='access_admin_blacklist'),
+    path('access/admin/blacklist/<int:item_id>/', access_admin_blacklist_detail, name='access_admin_blacklist_detail'),
 ] 

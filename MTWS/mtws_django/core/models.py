@@ -256,41 +256,19 @@ class AircraftParkingInfo(models.Model):
 
 
 class PopupSettings(models.Model):
-    """弹窗设置表"""
-    
+    """弹窗全站规则（等级/余量）。席位开关不落此表。"""
+
     user_code = models.CharField(max_length=12, unique=True, verbose_name='用户代码')
-    
-    # 运行区弹窗开关（布尔值）
-    operation_metar_popup = models.BooleanField(default=False, verbose_name='运行区METAR弹窗')
-    operation_taf_popup = models.BooleanField(default=False, verbose_name='运行区TAF弹窗')
-    operation_NWP_popup = models.BooleanField(default=False, verbose_name='运行区NWP弹窗')
-    
-    # 停场区弹窗开关（布尔值）
-    parking_metar_popup = models.BooleanField(default=False, verbose_name='停场METAR弹窗')
-    parking_taf_popup_other = models.BooleanField(default=False, verbose_name='停场TAF弹窗其他')
-    parking_NWP_popup = models.BooleanField(default=False, verbose_name='停场NWP弹窗')
-    
-    # 运行区告警余量（2位整数）
     operation_metar_popup_leeway = models.IntegerField(blank=True, null=True, verbose_name='运行区METAR弹窗余量')
-    operation_taf_popup_leeway = models.IntegerField(blank=True, null=True, verbose_name='运行区TAF弹窗余量')
-    operation_NWP_popup_leeway = models.IntegerField(blank=True, null=True, verbose_name='运行区NWP弹窗余量')
-    
-    # 弹窗级别（1位英文字符）
     operation_metar_popup_level = models.CharField(max_length=1, blank=True, null=True, verbose_name='运行区METAR弹窗级别')
-    operation_taf_popup_level = models.CharField(max_length=1, blank=True, null=True, verbose_name='运行区TAF弹窗级别')
-    operation_NWP_popup_level = models.CharField(max_length=1, blank=True, null=True, verbose_name='运行区NWP弹窗级别')
     parking_metar_popup_level = models.CharField(max_length=1, blank=True, null=True, verbose_name='停场METAR弹窗级别')
-    parking_taf_popup_level = models.CharField(max_length=1, blank=True, null=True, verbose_name='停场TAF弹窗级别')
-    parking_NWP_popup_level = models.CharField(max_length=1, blank=True, null=True, verbose_name='停场NWP弹窗级别')
-    
-    # 拦截标识（1位英文字符）
-    intercept = models.CharField(max_length=1, blank=True, null=True, verbose_name='拦截标识')
-    
+    trace_time = models.PositiveSmallIntegerField(default=6, verbose_name='弹窗追溯时间（小时）')
+
     class Meta:
         db_table = 'popup_settings'
         verbose_name = '弹窗设置'
         verbose_name_plural = '弹窗设置'
-    
+
     def __str__(self):
         return f"{self.user_code} - 弹窗设置"
 
@@ -354,3 +332,81 @@ class WxmsgImportAlert(models.Model):
     
     def __str__(self):
         return f"{self.airport_4code} - {self.msg_type} - {self.alert_time}"
+
+
+class AccessGroup(models.Model):
+    """访问用户组（本机一组 + 可自定义非本机类型）"""
+
+    code = models.CharField(max_length=64, unique=True, verbose_name='组代码')
+    name = models.CharField(max_length=100, verbose_name='组名称')
+    is_local = models.BooleanField(default=False, verbose_name='是否本机组')
+    require_qr = models.BooleanField(default=False, verbose_name='是否需要扫码')
+    is_builtin = models.BooleanField(default=False, verbose_name='是否内置')
+    sort_order = models.PositiveIntegerField(default=100, verbose_name='排序')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
+
+    class Meta:
+        db_table = 'access_group'
+        verbose_name = '访问用户组'
+        verbose_name_plural = '访问用户组'
+        ordering = ['sort_order', 'id']
+
+    def __str__(self):
+        return self.name
+
+
+class AccessGroupPermission(models.Model):
+    """用户组模块权限（显示/激活/写入）"""
+
+    group = models.ForeignKey(
+        AccessGroup, on_delete=models.CASCADE, related_name='permissions', verbose_name='用户组'
+    )
+    module_code = models.CharField(max_length=64, verbose_name='模块代码')
+    can_display = models.BooleanField(default=False, verbose_name='显示')
+    can_activate = models.BooleanField(default=False, verbose_name='激活后台')
+    can_write = models.BooleanField(default=False, verbose_name='写入')
+
+    class Meta:
+        db_table = 'access_group_permission'
+        verbose_name = '用户组模块权限'
+        verbose_name_plural = '用户组模块权限'
+        unique_together = [['group', 'module_code']]
+
+    def __str__(self):
+        return f'{self.group_id}:{self.module_code}'
+
+
+class NonLocalQrAuthLoginRecord(models.Model):
+    """非本机扫码认证成功记录"""
+
+    user_id = models.CharField(max_length=32, verbose_name='用户ID')
+    role_name = models.CharField(max_length=100, verbose_name='登录角色')
+    group_id = models.IntegerField(blank=True, null=True, verbose_name='用户组ID')
+    auth_success_time = models.DateTimeField(auto_now_add=True, verbose_name='认证成功时间')
+
+    class Meta:
+        db_table = 'non_local_qr_auth_login_record'
+        verbose_name = '非本机扫码登录记录'
+        verbose_name_plural = '非本机扫码登录记录'
+        ordering = ['-auth_success_time']
+
+    def __str__(self):
+        return f'{self.user_id} - {self.role_name}'
+
+
+class NonLocalQrBlacklist(models.Model):
+    """非本机扫码黑名单（仅校验 user_id）"""
+
+    user_id = models.CharField(max_length=32, unique=True, verbose_name='用户ID')
+    remark = models.CharField(max_length=200, blank=True, null=True, verbose_name='备注')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
+
+    class Meta:
+        db_table = 'non_local_qr_blacklist'
+        verbose_name = '非本机扫码黑名单'
+        verbose_name_plural = '非本机扫码黑名单'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return self.user_id

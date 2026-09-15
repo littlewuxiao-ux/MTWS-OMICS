@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>超级用户管理</title>
+  {% load static %}
+  <link rel="icon" type="image/svg+xml" href="{% static 'svg/mtws-favicon.svg' %}" id="mtws-favicon">
+  <link rel="stylesheet" href="{% static 'css/main.css' %}">
+  <link rel="stylesheet" href="{% static 'css/access_admin.css' %}">
+</head>
+<body class="access-admin-body">
+  <script>window.timeMode = '{{ time_mode }}';</script>
+
+  <div id="access-admin-page">
+    <div id="access-admin-unlock-pane" class="access-unlock-screen">
+      <div class="access-unlock-card">
+        <h1>超级用户</h1>
+        <p class="access-unlock-hint">请输入口令后进入用户组权限管理</p>
+        <input type="password" id="access-admin-password" placeholder="口令" autocomplete="current-password">
+        <button type="button" id="access-admin-unlock-btn" class="action-btn">解锁</button>
+        <p id="access-admin-unlock-msg"></p>
+        <a class="access-back-link access-home-link" href="/{{ time_mode }}/">关闭并返回主页</a>
+      </div>
+    </div>
+
+    <div id="access-admin-main" class="access-admin-shell" style="display:none;">
+      <header class="access-admin-top">
+        <h1>用户组权限管理</h1>
+        <a class="access-back-link access-home-link" href="/{{ time_mode }}/">关闭并返回主页</a>
+      </header>
+
+      <div class="access-admin-toolbar">
+        <div class="access-admin-group-row">
+          <button type="button" id="access-admin-del-group" class="action-btn">删除当前非本机组</button>
+          <select id="access-admin-group-select"></select>
+          <button type="button" id="access-admin-add-group" class="action-btn">新增非本机组</button>
+        </div>
+        <label id="access-admin-qr-label">
+          <input type="checkbox" id="access-admin-require-qr"> 非本机：选角后需扫码认证
+        </label>
+      </div>
+
+      <div id="access-admin-perm-table" class="access-admin-table-wrap"></div>
+
+      <footer class="access-admin-footer">
+        <button type="button" id="access-admin-bl-title" class="access-bl-title">扫码黑名单</button>
+        <div class="access-admin-footer-right">
+          <button type="button" id="access-admin-chg-pw" class="action-btn">修改口令</button>
+          <button type="button" id="access-admin-save" class="action-btn">保存权限</button>
+        </div>
+      </footer>
+    </div>
+  </div>
+
+  <div id="access-bl-modal" class="access-bl-modal" hidden>
+    <div class="access-bl-backdrop" id="access-bl-backdrop"></div>
+    <div class="access-bl-dialog" role="dialog" aria-labelledby="access-bl-heading">
+      <div class="access-bl-dialog-head">
+        <h2 id="access-bl-heading">扫码黑名单</h2>
+        <button type="button" id="access-bl-close" class="action-btn">关闭</button>
+      </div>
+      <div class="access-bl-form">
+        <input id="bl-user-id" placeholder="user_id">
+        <input id="bl-remark" placeholder="备注">
+        <button type="button" id="bl-add" class="action-btn">添加</button>
+      </div>
+      <div id="access-admin-blacklist"></div>
+    </div>
+  </div>
+
+  <script src="{% static 'js/access.js' %}"></script>
+</body>
+</html>

@@ -10,6 +10,7 @@ from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 from django.views.generic import RedirectView
+from web.views import system_reference_pdf
 
 urlpatterns = [
     # 管理后台
@@ -17,6 +18,7 @@ urlpatterns = [
     
     # 根路径重定向到当前时间模式
     path('', RedirectView.as_view(url='/current/', permanent=False)),
+    path('docs/MTWS-System-Reference.pdf', system_reference_pdf, name='system_reference_pdf'),
     
     # 当前时间模式路由
     path('current/', include([

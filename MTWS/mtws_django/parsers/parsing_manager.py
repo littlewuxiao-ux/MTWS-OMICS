@@ -21,7 +21,7 @@ logger = logging.getLogger('mtws.parsers')
 class ParsingManager:
     """解析管理器"""
     
-    def __init__(self, time_mode='current', token=None, user_code=None):
+    def __init__(self, time_mode='current', token=None, user_code=None, activator_ip=None):
         """
         初始化解析管理器
         
@@ -29,19 +29,34 @@ class ParsingManager:
             time_mode: 时间模式，'current' 或 'test'
             token: current模式下的认证token
             user_code: 用户代码
+            activator_ip: 手动激活时的客户端 IP
         """
         self.time_mode = time_mode
         self.token = token
         self.user_code = user_code
+        self.activator_ip = activator_ip
         self.flight_parser = FlightParser(time_mode, token)
         self.metar_parser = MetarParser(time_mode, token, user_code)
         self.taf_parser = TafParser(time_mode, token)  # 已实现
         self.aircraft_parking_parser = AircraftParkingParser(time_mode, token)
         
-        logger.info(f"解析管理器初始化完成，时间模式: {time_mode}")
+        if activator_ip and user_code:
+            logger.info(f"解析管理器初始化完成，时间模式: {time_mode} user_id={user_code} IP={activator_ip}")
+        elif activator_ip:
+            logger.info(f"解析管理器初始化完成，时间模式: {time_mode} IP={activator_ip}")
+        else:
+            logger.info(f"解析管理器初始化完成，时间模式: {time_mode} user_id={user_code or '-'}")
+
+    def _cas_log_context(self):
+        omit = bool(self.activator_ip) and not self.user_code
+        return cas_user_context(
+            self.user_code,
+            client_ip=self.activator_ip,
+            omit_user_fallback=omit,
+        )
 
     def run_all_parsers(self, time_mode=None) -> Dict[str, Any]:
-        with cas_user_context(self.user_code):
+        with self._cas_log_context():
             return self._run_all_parsers_impl(time_mode)
 
     def _run_all_parsers_impl(self, time_mode=None) -> Dict[str, Any]:
@@ -140,7 +155,7 @@ class ParsingManager:
         return results
     
     def run_sequential_parsing(self, time_mode=None) -> Dict[str, Any]:
-        with cas_user_context(self.user_code):
+        with self._cas_log_context():
             return self._run_sequential_parsing_impl(time_mode)
 
     def _run_sequential_parsing_impl(self, time_mode=None) -> Dict[str, Any]:
@@ -360,7 +375,7 @@ class ParsingManager:
         return results
     
     def run_single_parser(self, parser_type: str) -> Dict[str, Any]:
-        with cas_user_context(self.user_code):
+        with self._cas_log_context():
             return self._run_single_parser_impl(parser_type)
 
     def _run_single_parser_impl(self, parser_type: str) -> Dict[str, Any]:
@@ -403,10 +418,15 @@ class ParsingManager:
         try:
             status = 'success' if result.get('success', False) else 'error'
             
+            extra = ''
+            if self.activator_ip and self.user_code:
+                extra = f" [激活 IP={self.activator_ip} user_id={self.user_code}]"
+            elif self.activator_ip:
+                extra = f" [激活 IP={self.activator_ip}]"
             ParseLog.objects.create(
                 parse_type=parser_type,
                 status=status,
-                message=result.get('message', ''),
+                message=(result.get('message', '') or '') + extra,
                 record_count=result.get('record_count', 0),
                 error_count=result.get('error_count', 0),
                 execution_time=result.get('execution_time', 0)
@@ -465,7 +485,7 @@ class ParsingManager:
             }
     
     def run_selective_parsing(self, update_types: list, time_mode=None) -> Dict[str, Any]:
-        with cas_user_context(self.user_code):
+        with self._cas_log_context():
             return self._run_selective_parsing_impl(update_types, time_mode)
 
     def _run_selective_parsing_impl(self, update_types: list, time_mode=None) -> Dict[str, Any]:

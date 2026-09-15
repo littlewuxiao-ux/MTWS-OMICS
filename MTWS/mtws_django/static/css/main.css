@@ -71,6 +71,18 @@ body {
   margin: 0;
   letter-spacing: 1px;
   flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.system-title-logo {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  flex-shrink: 0;
+  display: block;
 }
 
 /* 用户信息区域 */
@@ -2338,6 +2350,11 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
 }
 
 /* 登出确认弹窗样式 */
+/* 登出确认须高于实况弹窗(30000) */
+#logout-confirm-modal {
+  z-index: 40000;
+}
+
 .logout-confirm-content {
   width: 300px;
   margin-top: 140px;
@@ -3390,6 +3407,14 @@ body.map-mode #international-button-group .filter-btn {
   color: #888;
   font-weight: normal;
   margin-left: 4px;
+}
+p.settings-hint {
+  margin: 0 0 12px 0;
+  line-height: 1.5;
+}
+.settings-subheading {
+  margin: 16px 0 8px;
+  font-size: 14px;
 }
 .settings-input {
   width: 100%;

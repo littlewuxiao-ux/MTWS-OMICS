@@ -32,12 +32,10 @@ let lastRefreshTime = 0;
 const REFRESH_COOLDOWN = 30000; // 30秒冷却时间（仅用于自动更新节流）
 let _parserStatusTimer = null;  // 后端解析状态轮询计时器
 
-// 弹窗开关按钮请求锁（防止请求进行中重复点击）
-const toggleCooldowns = {
-    'operation-toggle': { inCooldown: false },
-    'parking-toggle':   { inCooldown: false },
-    'intercept-toggle': { inCooldown: false }
-};
+// 弹窗开关为席位本地状态，无需请求锁
+const POPUP_PREFS_KEY = 'mtws_popup_display_prefs';
+const POPUP_SEAT_READY_KEY = 'mtws_popup_seat_ready';
+const POPUP_DISMISSED_KEY = 'mtws_popup_dismissed_sqc';
 
 // 数据更新时间记录
 let dataUpdateTimes = {
@@ -293,6 +291,17 @@ function startParserStatusPolling() {
 
 // 刷新按钮点击：先查后端状态，有解析运行则拦截并提示，否则执行刷新
 function handleRefreshButtonClick() {
+    // 无激活权限：只重拉已解析数据，不触发后端解析
+    if (typeof hasAccess === 'function' && hasAccess('refresh_btn', 'display') && !hasAccess('refresh_btn', 'activate')) {
+        updateRefreshTime();
+        generateTimeline();
+        applyTimeRangeScaling();
+        if (typeof loadInitialData === 'function') {
+            showLoading();
+            loadInitialData();
+        }
+        return;
+    }
     checkRunningParsers((err, data) => {
         if (err) {
             // 接口异常时放行（乐观策略）
@@ -353,16 +362,35 @@ document.addEventListener('DOMContentLoaded', function () {
     // 恢复地图告警状态（map.js 已在此事件前执行完毕）
     if (typeof initMapAlertState === 'function') initMapAlertState();
 
-    // 检查浏览器刷新限制
-    const canLoad = checkBrowserRefresh();
-
-    if (canLoad) {
-        // 根据时间模式进行不同的初始化
+    const startApp = () => {
+        const canLoad = checkBrowserRefresh();
+        if (!canLoad) return;
         if (currentTimeMode === 'current') {
+            const id = window.__accessIdentity;
+            if (id && !id.is_local) {
+                // 非本机：不走本机 CAS 登录墙，直接加载主数据（使用服务端已有解析结果）
+                if (id.needs_role_select) return;
+                showUserInfo();
+                loadInitialData();
+                if (hasAccess('metar_popup', 'display')) {
+                    setTimeout(() => { if (typeof startPopupCheck === 'function') startPopupCheck(); }, 2000);
+                }
+                return;
+            }
             initCurrentModeAuth();
         } else {
             loadInitialData();
         }
+    };
+
+    if (typeof bootstrapAccess === 'function') {
+        bootstrapAccess().then(() => {
+            window.onAccessReady = startApp;
+            const id = window.__accessIdentity;
+            if (!id || !id.needs_role_select) startApp();
+        }).catch(() => startApp());
+    } else {
+        startApp();
     }
 
     loadCarrierData();
@@ -654,6 +682,7 @@ function getCurrentTime() {
 // 加载初始数据
 function loadInitialData() {
     showLoading();
+    if (typeof ensurePopupSeatSession === 'function') ensurePopupSeatSession();
     initializePopupSettings();
     triggerParsingAndLoadData();
 }
@@ -812,6 +841,10 @@ function triggerParsingAndLoadData() {
                 updateCarrierDisplay();
                 applyFilters();
                 updateStatusFromPollResult(data.data.parsing_status || {}, true);
+                if (data.data.seat_identity) {
+                    window.__seatIdentity = data.data.seat_identity;
+                    paintSeatUserInfo();
+                }
                 if (maybeHandleAuthExpired(data)) {
                     return;
                 }
@@ -1256,7 +1289,12 @@ function bindEvents() {
     if (logoutConfirmBtn) {
         logoutConfirmBtn.addEventListener('click', function () {
             hideModal('logout-confirm-modal');
-            logout();
+            const logoutBtn = document.getElementById('logout-btn');
+            if (logoutBtn && logoutBtn.dataset.seatLogout === '1' && typeof accessSeatLogout === 'function') {
+                accessSeatLogout();
+            } else {
+                logout();
+            }
         });
     }
 
@@ -1272,46 +1310,110 @@ function bindEvents() {
     if (currentTimeMode === 'current') {
         setupAutoLogout();
     }
-
-    // 弹窗开关点击事件
-    document.querySelectorAll('.popup-toggle-btn').forEach(toggle => {
-        toggle.addEventListener('click', function () {
-            handleToggleClick(this);
-        });
-    });
 }
 
-// 初始化弹窗设置
-async function initializePopupSettings() {
+// 初始化弹窗设置（席位本地）
+function loadPopupDisplayPrefs() {
+    const defaults = {
+        operation: false,
+        parking: false,
+        intercept: true,
+        operationSince: 0,
+        parkingSince: 0
+    };
     try {
-        const headers = {
-            'Content-Type': 'application/json'
-        };
-
-        if (currentToken) {
-            headers['Authorization'] = `Bearer ${currentToken}`;
-        }
-        if (currentUserCode) {
-            headers['X-User-Code'] = currentUserCode;
-        }
-
-        const response = await fetch(`/${currentTimeMode}/api/popup-settings/`, {
-            method: 'GET',
-            headers: headers
-        });
-
-        if (response.ok) {
-            const result = await response.json();
-            if (result.success && result.data) {
-                updateToggleState('operation-toggle', result.data.operation_metar_popup);
-                updateToggleState('parking-toggle', result.data.parking_metar_popup);
-                updateToggleState('intercept-toggle', result.data.intercept);
-            }
-        }
-    } catch (error) {
-        console.error('初始化弹窗设置失败:', error);
+        const raw = sessionStorage.getItem(POPUP_PREFS_KEY);
+        if (!raw) return defaults;
+        return { ...defaults, ...JSON.parse(raw) };
+    } catch (e) {
+        return defaults;
     }
 }
+
+function savePopupDisplayPrefs(prefs) {
+    sessionStorage.setItem(POPUP_PREFS_KEY, JSON.stringify(prefs));
+}
+
+function ensurePopupSeatSession() {
+    if (typeof hasAccess === 'function' && window.__accessIdentity
+        && !hasAccess('metar_popup', 'display')) {
+        return;
+    }
+    if (sessionStorage.getItem(POPUP_SEAT_READY_KEY) === '1') return;
+    const now = Date.now();
+    savePopupDisplayPrefs({
+        operation: true,
+        parking: true,
+        intercept: true,
+        operationSince: now,
+        parkingSince: now
+    });
+    sessionStorage.setItem(POPUP_SEAT_READY_KEY, '1');
+}
+
+function clearPopupSeatSession() {
+    try { sessionStorage.removeItem(POPUP_PREFS_KEY); } catch (e) { /* ignore */ }
+    try { sessionStorage.removeItem(POPUP_SEAT_READY_KEY); } catch (e) { /* ignore */ }
+    try { localStorage.removeItem(POPUP_DISMISSED_KEY); } catch (e) { /* ignore */ }
+    try { localStorage.removeItem(POPUP_PREFS_KEY); } catch (e) { /* ignore */ }
+}
+window.ensurePopupSeatSession = ensurePopupSeatSession;
+window.clearPopupSeatSession = clearPopupSeatSession;
+
+function getDismissedPopupSqcSet() {
+    try {
+        const raw = localStorage.getItem(POPUP_DISMISSED_KEY);
+        const list = raw ? JSON.parse(raw) : [];
+        return new Set(Array.isArray(list) ? list.map(String) : []);
+    } catch (e) {
+        return new Set();
+    }
+}
+
+function markPopupsDismissedLocally(sqcList) {
+    const set = getDismissedPopupSqcSet();
+    (sqcList || []).forEach(sqc => set.add(String(sqc)));
+    const list = Array.from(set);
+    if (list.length > 3000) {
+        list.splice(0, list.length - 3000);
+    }
+    localStorage.setItem(POPUP_DISMISSED_KEY, JSON.stringify(list));
+}
+
+function popupMatchesLocalPrefs(popup) {
+    const prefs = loadPopupDisplayPrefs();
+    if (getDismissedPopupSqcSet().has(String(popup.sqc))) {
+        return false;
+    }
+    const allowed = prefs.intercept ? ['Y'] : ['Y', 'I'];
+    const traceHours = Number(window.__popupTraceHours);
+    const Tms = (Number.isFinite(traceHours) ? Math.max(0, Math.min(9, traceHours)) : 6) * 3600000;
+    const now = Date.now();
+    const inTraceWindow = (since) => {
+        if (!since) return false;
+        const pt = popup.popup_time || 0;
+        return pt >= (since - Tms) && pt <= now;
+    };
+    const opOk = prefs.operation
+        && allowed.includes(popup.operation_popup)
+        && inTraceWindow(prefs.operationSince);
+    const pkOk = prefs.parking
+        && allowed.includes(popup.parking_popup)
+        && inTraceWindow(prefs.parkingSince);
+    return opOk || pkOk;
+}
+
+function initializePopupSettings() {
+    const prefs = loadPopupDisplayPrefs();
+    updateToggleState('operation-toggle', prefs.operation);
+    updateToggleState('parking-toggle', prefs.parking);
+    updateToggleState('intercept-toggle', prefs.intercept);
+}
+
+window.updateToggleState = updateToggleState;
+window.loadPopupDisplayPrefs = loadPopupDisplayPrefs;
+window.popupMatchesLocalPrefs = popupMatchesLocalPrefs;
+window.markPopupsDismissedLocally = markPopupsDismissedLocally;
 
 // 更新开关状态
 function updateToggleState(toggleId, isActive) {
@@ -1325,78 +1427,27 @@ function updateToggleState(toggleId, isActive) {
     }
 }
 
-// 处理开关点击
-async function handleToggleClick(toggle) {
-    const toggleId = toggle.id;
-    const cooldown = toggleCooldowns[toggleId];
-
-    // 请求进行中时忽略重复点击
-    if (cooldown && cooldown.inCooldown) {
-        return;
-    }
-
+// 处理开关点击（仅本机，不写库）
+function handleToggleClick(toggle) {
     const field = toggle.getAttribute('data-field');
-    const currentState = toggle.classList.contains('selected');
-    const newState = !currentState;
+    const prefs = loadPopupDisplayPrefs();
+    const nowOn = !toggle.classList.contains('selected');
+    const now = Date.now();
 
-    if (cooldown) {
-        cooldown.inCooldown = true;
-        toggle.style.opacity = '0.6';
-        toggle.style.cursor = 'not-allowed';
+    if (field === 'operation') {
+        prefs.operation = nowOn;
+        prefs.operationSince = nowOn ? now : 0;
+    } else if (field === 'parking') {
+        prefs.parking = nowOn;
+        prefs.parkingSince = nowOn ? now : 0;
+    } else if (field === 'intercept') {
+        prefs.intercept = nowOn;
     }
 
-    try {
-        const headers = {
-            'Content-Type': 'application/json'
-        };
-
-        if (currentToken) {
-            headers['Authorization'] = `Bearer ${currentToken}`;
-        }
-        if (currentUserCode) {
-            headers['X-User-Code'] = currentUserCode;
-        }
-
-        const response = await fetch(`/${currentTimeMode}/api/popup-settings/update/`, {
-            method: 'POST',
-            headers: headers,
-            body: JSON.stringify({
-                field: field,
-                value: newState
-            })
-        });
-
-        if (response.ok) {
-            const result = await response.json();
-            if (result.success) {
-                if (newState) {
-                    toggle.classList.add('selected');
-                } else {
-                    toggle.classList.remove('selected');
-                }
-            } else {
-                console.error('更新弹窗设置失败:', result.error);
-            }
-        } else {
-            console.error('更新弹窗设置失败, 状态码:', response.status);
-        }
-
-        // 5秒后解除冷却
-        setTimeout(() => {
-            if (cooldown) {
-                cooldown.inCooldown = false;
-                toggle.style.opacity = '';
-                toggle.style.cursor = '';
-            }
-        }, 5000);
-
-    } catch (error) {
-        console.error('更新弹窗设置出错:', error);
-        if (cooldown) {
-            cooldown.inCooldown = false;
-            toggle.style.opacity = '';
-            toggle.style.cursor = '';
-        }
+    savePopupDisplayPrefs(prefs);
+    updateToggleState(toggle.id, nowOn);
+    if (typeof checkAndShowPopups === 'function') {
+        checkAndShowPopups();
     }
 }
 
@@ -2407,6 +2458,14 @@ function parseIcaoCodes(input) {
  */
 function handleSearchClick(searchValue) {
     if (!searchValue) return;
+    if (typeof hasAccess === 'function' && !hasAccess('search', 'display')) return;
+
+    // 无激活权限时仍允许搜索读数，但不因解析占用而强拦（后端外呼可能仍受限）
+    const needActivateGate = typeof hasAccess !== 'function' || hasAccess('search', 'activate');
+    if (!needActivateGate) {
+        performSearch(searchValue);
+        return;
+    }
     checkRunningParsers((err, data) => {
         if (err) {
             performSearch(searchValue);
@@ -3183,6 +3242,10 @@ function startAutoRefresh() {
         .then(data => {
             if (data.success && data.data) {
                 updateStatusFromPollResult(data.data.parsing_status || {}, true);
+                if (data.data.seat_identity) {
+                    window.__seatIdentity = data.data.seat_identity;
+                    paintSeatUserInfo();
+                }
                 if (maybeHandleAuthExpired(data)) {
                     return;
                 }
@@ -3898,6 +3961,11 @@ function updateAirportGridForModal(airportElement) {
 
 // ============== 鉴权相关函数 ==============
 
+function isLocalBrowserHost() {
+    const h = String(location.hostname || "").toLowerCase();
+    return h === "127.0.0.1" || h === "localhost" || h === "::1";
+}
+
 const UNIFIED_AUTH_STATUS_URL = '/auth/status';
 const UNIFIED_AUTH_UPDATE_URL = '/auth/update';
 const UNIFIED_AUTH_CLEAR_URL = '/auth/clear';
@@ -4275,10 +4343,55 @@ function hideLoginModal() {
 // 显示用户信息
 function showUserInfo() {
     const userInfoSection = document.getElementById('user-info-section');
-    const userCodeSpan = document.getElementById('user-code');
+    if (userInfoSection) userInfoSection.style.display = 'flex';
+    paintSeatUserInfo();
+    refreshSeatIdentity();
+}
 
-    userCodeSpan.textContent = currentUserCode || '未知用户';
-    userInfoSection.style.display = 'flex';
+function paintSeatUserInfo() {
+    const userCodeSpan = document.getElementById('user-code');
+    const logoutBtn = document.getElementById('logout-btn');
+    const ident = window.__seatIdentity || window.__accessIdentity;
+    let role = ident && ident.role;
+    if (!role) role = isLocalBrowserHost() ? 'local' : 'guest';
+
+    if (role === 'local' || (ident && ident.is_local)) {
+        if (userCodeSpan) userCodeSpan.textContent = currentUserCode || '未知用户';
+        if (logoutBtn) {
+            logoutBtn.style.display = '';
+            delete logoutBtn.dataset.seatLogout;
+        }
+        return;
+    }
+
+    if (role === 'non_local' || (ident && !ident.is_local && !ident.needs_role_select)) {
+        if (userCodeSpan) {
+            userCodeSpan.textContent = (ident && ident.label) || (ident && ident.group_name) || '';
+        }
+        if (logoutBtn) {
+            logoutBtn.style.display = (ident && ident.show_logout) ? '' : 'none';
+            logoutBtn.dataset.seatLogout = '1';
+        }
+        return;
+    }
+
+    if (logoutBtn) logoutBtn.style.display = 'none';
+    if (userCodeSpan) {
+        userCodeSpan.textContent = role === 'authorized' ? '授权用户' : '共享用户';
+    }
+}
+
+async function refreshSeatIdentity() {
+    try {
+        const res = await fetch(`/${currentTimeMode}/api/seat-identity/`, { cache: 'no-store' });
+        const data = await res.json();
+        if (data && data.success && data.data) {
+            window.__seatIdentity = data.data;
+            paintSeatUserInfo();
+        }
+    } catch (_) {
+        /* 接口不可用时按本机/共享兜底 */
+    }
 }
 
 // 隐藏用户信息
@@ -4346,6 +4459,7 @@ function clearAuthState() {
     localStorage.removeItem('sf_userId');
 
     hideUserInfo();
+    if (typeof clearPopupSeatSession === 'function') clearPopupSeatSession();
 }
 
 // 自动登出处理
