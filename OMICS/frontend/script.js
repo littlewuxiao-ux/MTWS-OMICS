@@ -7,6 +7,20 @@ function mergeManualForecastCell(existingValue, nextValue) {
     return `${existing} ${next}`;
 }
 
+// OMICS can be opened directly on port 8002 or through IWMS at /omics/.
+// Keep API requests under the current deployment prefix in both modes.
+window.OMICS_API_URL = function(path) {
+    const clean = String(path || '').replace(/^\/+/, '');
+    return `${window.location.pathname.startsWith('/omics') ? '/omics/api' : '/api'}/${clean}`;
+};
+const _omicsNativeFetch = window.fetch.bind(window);
+window.fetch = function(input, init) {
+    if (typeof input === 'string' && input.startsWith('/api/')) {
+        input = window.OMICS_API_URL(input);
+    }
+    return _omicsNativeFetch(input, init);
+};
+
 window.OMICS_mergeManualForecastCell = mergeManualForecastCell;
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -109,6 +123,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         return {
             taf_excel_path: localStorage.getItem('taf_excel_path') || s.taf_excel_path || '',
             manual_excel_path: localStorage.getItem('manual_excel_path') || s.manual_excel_path || '',
+            manual_forecast_path: localStorage.getItem('manual_forecast_path') || s.manual_forecast_path || '',
             backup_save_path: localStorage.getItem('backup_save_path') || s.backup_save_path || ''
         };
     }
@@ -485,10 +500,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     const evalPersonSelect = document.getElementById('eval-person-select');
     const tafExcelPathInput = document.getElementById('taf-excel-path');
     const manualExcelPathInput = document.getElementById('manual-excel-path');
+    const manualForecastPathInput = document.getElementById('manual-forecast-path');
     const backupSavePathInput = document.getElementById('backup-save-path');
 
     if (tafExcelPathInput) tafExcelPathInput.value = localStorage.getItem('taf_excel_path') || '';
     if (manualExcelPathInput) manualExcelPathInput.value = localStorage.getItem('manual_excel_path') || '';
+    if (manualForecastPathInput) manualForecastPathInput.value = localStorage.getItem('manual_forecast_path') || '';
     if (backupSavePathInput) backupSavePathInput.value = localStorage.getItem('backup_save_path') || '';
 
     document.getElementById('browse-taf-btn')?.addEventListener('click', async (e) => {
@@ -503,6 +520,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         try {
             const res = await fetch('/api/select_folder'); const data = await res.json();
             if (data.success) { manualExcelPathInput.value = data.path; localStorage.setItem('manual_excel_path', data.path); patchSettingsConfig({ paths: buildPathsBlock() }); }
+        } catch (err) {} e.target.textContent = "浏览";
+    });
+    document.getElementById('browse-manual-forecast-btn')?.addEventListener('click', async (e) => {
+        e.target.textContent = "打开中...";
+        try {
+            const res = await fetch('/api/select_folder'); const data = await res.json();
+            if (data.success && manualForecastPathInput) {
+                manualForecastPathInput.value = data.path;
+                localStorage.setItem('manual_forecast_path', data.path);
+                patchSettingsConfig({ paths: buildPathsBlock() });
+            }
         } catch (err) {} e.target.textContent = "浏览";
     });
     document.getElementById('browse-backup-btn')?.addEventListener('click', async (e) => {
@@ -1253,10 +1281,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         const btn = (currentMode === 'manual') ? fetchManualBtn : ((types.includes('SA') && currentMode === 'taf') ? importTafMetarBtn : fetchTafListBtn);
         const originalText = btn.textContent; btn.textContent = "下载中..."; btn.disabled = true;
         try {
-            const res = await fetch('/api/fetch_data', {
+            const res = await fetch(window.OMICS_API_URL('fetch_data'), {
                 method: 'POST', headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({ token: apiToken, start_time: s, end_time: e, airports: airports, wtypes: types })
             });
+            const contentType = res.headers.get('content-type') || '';
+            if (!contentType.includes('application/json')) {
+                const preview = (await res.text()).replace(/\s+/g, ' ').slice(0, 160);
+                throw new Error(`服务返回了非 JSON 响应（HTTP ${res.status}）：${preview}`);
+            }
             const result = await res.json();
             if (result.success && result.data) { callback(result.data); } else { alert(result.message || "未下载到数据"); }
         } catch(err) { console.error(err); alert("下载出错: " + err.message); }
@@ -1525,6 +1558,53 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
             });
         } catch (e) { alert("无法访问剪贴板"); }
+    });
+
+    document.getElementById('extract-forecast-table-btn')?.addEventListener('click', async (event) => {
+        const btn = event.currentTarget;
+        const root = document.getElementById('manual-forecast-path')?.value.trim();
+        const evaluationDate = document.getElementById('base-date-picker')?.value || '';
+        if (!root) return alert('请先在高级设置中配置“席位预报24小时预报路径”。');
+        if (!evaluationDate) return alert('请先选择评定日期。');
+        btn.disabled = true; const oldText = btn.textContent; btn.textContent = '提取中...';
+        try {
+            const form = new FormData();
+            form.append('manual_forecast_path', root);
+            form.append('evaluation_date', evaluationDate);
+            const response = await fetch((window.OMICS_API_URL || (path => `/api/${path}`))('import_publish_excel'), { method: 'POST', body: form });
+            const result = await response.json();
+            if (!result.success) throw new Error(result.error || '读取预报表格失败');
+            const data = result.data || {};
+            const entries = data.airports || [];
+            if (!entries.length) throw new Error('表格中没有可提取的机场预报');
+            const airports = entries.map(entry => entry.airport_name).filter(Boolean);
+            downloadAirports.value = airports.join(' ');
+            generateGridBtn.click();
+            const gridRows = document.querySelectorAll('#manual-grid tbody tr');
+            const byName = new Map(entries.map(entry => [String(entry.airport_name).trim().toUpperCase(), entry]));
+            gridRows.forEach(tr => {
+                const entry = byName.get(String(tr.dataset.airport || '').trim().toUpperCase());
+                if (!entry) return;
+                const inputs = tr.querySelectorAll('input[data-col]');
+                const merged = [];
+                (entry.rows || []).forEach(row => row.forEach((value, index) => {
+                    merged[index] = mergeManualForecastCell(merged[index], value);
+                }));
+                inputs.forEach((input, index) => { input.value = merged[index] || ''; });
+            });
+            if (data.eval_person) {
+                const person = document.getElementById('eval-person-select');
+                if (person && !Array.from(person.options).some(option => option.value === data.eval_person)) {
+                    person.add(new Option(data.eval_person, data.eval_person));
+                }
+                if (person) person.value = data.eval_person;
+            }
+            alert(`已从 ${data.source || '预报表格'} 提取 ${entries.length} 个机场${data.eval_person ? `，评定对象：${data.eval_person}` : ''}。`);
+        } catch (error) {
+            alert(`从预报表格提取失败：${error.message}`);
+        } finally {
+            btn.disabled = false; btn.textContent = oldText;
+        }
     });
 
     function renderAirportTags() {
@@ -1801,7 +1881,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 throw new Error("实况数据为空!请先在左上方点击【下载实况】,或在框内手动粘贴实况报文。");
             }
 
-            const response = await fetch('/api/score', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+            const response = await fetch(window.OMICS_API_URL('score'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
             const result = await response.json();
             if (!result.success) throw new Error(result.error);
             if (Object.keys(result.data).length === 0) {

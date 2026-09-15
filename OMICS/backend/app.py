@@ -73,6 +73,7 @@ DEFAULT_SETTINGS_CONFIG = {
     "paths": {
         "taf_excel_path": "",
         "manual_excel_path": "",
+        "manual_forecast_path": "",
         "backup_save_path": ""
     },
     "default_airports": {
@@ -1582,12 +1583,29 @@ def import_publish_excel_api():
         from datetime import date as date_type, time as time_type
 
         upload = request.files.get('file')
+        # 席位预报可按评定日期自动读取前一天的 24 小时预报表。
+        auto_root = (request.form.get('manual_forecast_path') or '').strip()
+        evaluation_date = (request.form.get('evaluation_date') or '').strip()
         if upload and upload.filename:
             workbook_source = upload.stream
             source_name = os.path.basename(upload.filename)
         else:
-            source_name = '未来24小时天气预报20260725.xlsm'
-            workbook_source = os.path.join(_PERSIST_DIR, source_name)
+            if auto_root and evaluation_date:
+                try:
+                    eval_day = datetime.strptime(evaluation_date, '%Y-%m-%d').date()
+                    target_day = eval_day - timedelta(days=1)
+                    folder = os.path.join(auto_root, f'{target_day.year}年', f'{target_day.month}月')
+                    stem = f'未来24小时天气预报{target_day:%Y%m%d}'
+                    candidates = [os.path.join(folder, stem + ext) for ext in ('.xlsm', '.xlsx', '.xls')]
+                    workbook_source = next((p for p in candidates if os.path.isfile(p)), '')
+                    if not workbook_source:
+                        return jsonify({"success": False, "error": f"未找到席位预报表：{os.path.join(folder, stem + '.xlsm')}"}), 200
+                    source_name = os.path.basename(workbook_source)
+                except ValueError:
+                    return jsonify({"success": False, "error": "评定日期格式无效，应为 YYYY-MM-DD"}), 200
+            else:
+                source_name = '未来24小时天气预报20260725.xlsm'
+                workbook_source = os.path.join(_PERSIST_DIR, source_name)
             if not os.path.exists(workbook_source):
                 return jsonify({"success": False, "error": f"未找到根目录模板：{source_name}"}), 200
 
@@ -1618,8 +1636,15 @@ def import_publish_excel_api():
 
             forecast_date = None
             start_hour_bjt = None
+            eval_person = ''
             for row_idx in range(1, header_row + 1):
                 label = str(ws.cell(row_idx, 1).value or '').strip()
+                if label in ('评定对象', '预报员', '预报人员', '姓名', '制作人'):
+                    for col_idx in range(2, min(ws.max_column, 8) + 1):
+                        candidate = cell_text(ws.cell(row_idx, col_idx).value) if 'cell_text' in locals() else str(ws.cell(row_idx, col_idx).value or '').strip()
+                        if candidate:
+                            eval_person = candidate
+                            break
                 if label.startswith('日期'):
                     for col_idx in range(2, min(ws.max_column, 8) + 1):
                         value = ws.cell(row_idx, col_idx).value
@@ -1673,6 +1698,7 @@ def import_publish_excel_api():
                     "forecast_date": forecast_date,
                     "start_hour_bjt": start_hour_bjt,
                     "validity_hours": max(0, len(hour_columns) - 1),
+                    "eval_person": eval_person,
                     "airports": entries
                 }
             })

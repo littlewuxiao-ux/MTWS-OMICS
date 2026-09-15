@@ -208,6 +208,11 @@
                                     <input type="text" id="manual-excel-path" readonly style="flex:1; padding:4px; border:1px solid #ccc; border-radius:4px;">
                                     <button id="browse-manual-btn" class="admin-pill-btn" style="background: #005A9C;">浏览</button>
                                 </div>
+                                <div style="display:flex; align-items:center; margin-bottom: 10px; gap: 10px;">
+                                    <label style="font-size: 12px; color: #333; width:80px; text-align:right;">席位24小时预报:</label>
+                                    <input type="text" id="manual-forecast-path" readonly placeholder="配置所在位置" style="flex:1; padding:4px; border:1px solid #ccc; border-radius:4px;">
+                                    <button id="browse-manual-forecast-btn" class="admin-pill-btn" style="background: #005A9C;">浏览</button>
+                                </div>
                                 <div style="display:flex; align-items:center; margin-bottom: 15px; gap: 10px;">
                                     <label style="font-size: 12px; color: #333; width:80px; text-align:right;">JSON 备份:</label>
                                     <input type="text" id="backup-save-path" readonly style="flex:1; padding:4px; border:1px solid #ccc; border-radius:4px;">
@@ -495,7 +500,10 @@
                             <div id="manual-forecast-input-area">
                                 <div class="grid-actions" style="margin-top: 10px;">
                                     <button id="generate-grid-btn" class="mini-btn">生成预报表格</button>
-                                    <button id="paste-excel-btn" class="mini-btn hidden">从 Excel 粘贴</button>
+                                    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                                        <button id="paste-excel-btn" class="mini-btn hidden">从 Excel 粘贴</button>
+                                        <button id="extract-forecast-table-btn" class="mini-btn hidden">从预报表格提取</button>
+                                    </div>
                                 </div>
                                 <div id="manual-forecast-grid-container" class="manual-grid-wrapper"></div>
                             </div>

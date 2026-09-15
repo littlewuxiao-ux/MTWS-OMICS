@@ -12,6 +12,7 @@
   "paths": {
     "taf_excel_path": "",
     "manual_excel_path": "",
+    "manual_forecast_path": "",
     "backup_save_path": ""
   },
   "default_airports": {
