@@ -2404,6 +2404,13 @@ function createAirportRowForDetail(airport) {
     const weatherBox = isPlain
         ? ''
         : buildWeatherInfoDiv(airport.airport_4code, latestMetar);
+    const rowLabels = isPlain
+        ? `<div class="plain-row-labels">
+            <div class="plain-row-label">长效预报</div>
+            <div class="plain-row-label">短时变化</div>
+            <div class="plain-row-label">航班信息</div>
+          </div>`
+        : '';
     const rowClass = isPlain
         ? 'airport-row airport-row-detail airport-row-plain'
         : 'airport-row airport-row-detail';
@@ -2411,6 +2418,7 @@ function createAirportRowForDetail(airport) {
     return `
         <div class="${rowClass}">
             ${weatherBox}
+            ${rowLabels}
             <div class="forecast-timeline">
                 ${noTafData ? '<div class="no-taf-data">没有有效的TAF数据</div>' : ''}
                 <div class="forecast-row main-forecast${tafAlertClass}">
@@ -3894,7 +3902,8 @@ function updateAirportGridForModal(airportElement) {
     const forecastTimeline = airportElement.querySelector('.forecast-timeline');
     const hasAirportInfo = airportElement.querySelector('.airport-info') !== null;
     const hasWeather = airportElement.querySelector('.weather-info') !== null;
-    const leftOffset = hasAirportInfo ? 280 : (hasWeather ? 200 : 0);
+    const labelCol = airportElement.querySelector('.plain-row-labels');
+    const leftOffset = hasAirportInfo ? 280 : (hasWeather ? 200 : (labelCol ? labelCol.offsetWidth : 0));
     const airportHeight = forecastTimeline
         ? forecastTimeline.offsetHeight
         : airportElement.scrollHeight;
