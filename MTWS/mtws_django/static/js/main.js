@@ -2397,12 +2397,20 @@ function createAirportRowForDetail(airport) {
     const noTafData = (!tafData || tafData.length === 0) || (tafData[0].data_status === 'C');
     const tafAlertClass = (tafData && tafData.length > 0 && tafData[0].import_alert === 'Y') ? ' taf-import-alerted' : '';
 
-    const weatherBox = (window._viewMode === 'plain' && typeof plainWeatherInfoDiv === 'function')
-        ? plainWeatherInfoDiv(airport)
+    const isPlain = window._viewMode === 'plain';
+    const weatherBox = isPlain
+        ? ''
         : buildWeatherInfoDiv(airport.airport_4code, latestMetar);
+    const metarRow = (isPlain && typeof plainDetailMetarRow === 'function')
+        ? plainDetailMetarRow(airport)
+        : '';
+    const rowClass = isPlain
+        ? 'airport-row airport-row-detail airport-row-plain'
+        : 'airport-row airport-row-detail';
 
     return `
-        <div class="airport-row airport-row-detail">
+        <div class="${rowClass}">
+            ${metarRow}
             ${weatherBox}
             <div class="forecast-timeline">
                 ${noTafData ? '<div class="no-taf-data">没有有效的TAF数据</div>' : ''}
@@ -3881,12 +3889,17 @@ function updateAirportGridForModal(airportElement) {
     // 避免把上一轮网格线的绝对定位偏移计入尺寸测量，形成越刷新越往下/往右偏移的累积误差
     airportElement.querySelectorAll('.grid-vertical-line, .grid-horizontal-line').forEach(line => line.remove());
 
-    const airportHeight = airportElement.scrollHeight;
-
-    // 使用与主页相同的方法：获取原始宽度
     const forecastTimeline = airportElement.querySelector('.forecast-timeline');
-    let horizontalWidth;
+    const metarRow = airportElement.querySelector('.plain-detail-metar');
+    const hasAirportInfo = airportElement.querySelector('.airport-info') !== null;
+    const hasWeather = airportElement.querySelector('.weather-info') !== null;
+    const leftOffset = hasAirportInfo ? 280 : (hasWeather ? 200 : 0);
+    const topOffset = metarRow ? metarRow.offsetHeight : 0;
+    const airportHeight = forecastTimeline
+        ? forecastTimeline.offsetHeight
+        : Math.max(0, airportElement.scrollHeight - topOffset);
 
+    let horizontalWidth;
     if (forecastTimeline) {
         horizontalWidth = forecastTimeline.scrollWidth;
     } else {
@@ -3894,8 +3907,6 @@ function updateAirportGridForModal(airportElement) {
     }
 
     const timeSlots = currentTimeRange;
-    const hasAirportInfo = airportElement.querySelector('.airport-info') !== null;
-    const leftOffset = hasAirportInfo ? 280 : 200;
 
     // 创建竖线 - 使用原始宽度平分
     const positions = calculateVerticalLinePositions(horizontalWidth, timeSlots);
@@ -3910,7 +3921,7 @@ function updateAirportGridForModal(airportElement) {
         line.style.cssText = `
             position: absolute;
             left: ${leftOffset + position}px;
-            top: 0;
+            top: ${topOffset}px;
             width: ${isMidnightLine ? '3px' : '1px'};
             height: ${airportHeight}px;
             background-color: ${isMidnightLine ? '#ffffff' : 'rgba(255, 255, 255, 0.3)'};
@@ -3938,7 +3949,7 @@ function updateAirportGridForModal(airportElement) {
         line.style.cssText = `
             position: absolute;
             left: ${leftOffset}px;
-            top: ${data.position}px;
+            top: ${topOffset + data.position}px;
             width: ${horizontalWidth}px;
             height: 1px;
             background-color: rgba(255, 255, 255, 0.3);

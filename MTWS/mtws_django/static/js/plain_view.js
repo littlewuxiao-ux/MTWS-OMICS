@@ -278,19 +278,22 @@ function _refreshPlainDetailWeather() {
   _repaintAirportRow(currentDetailAirportCode);
 }
 
-function plainWeatherInfoDiv(airport) {
+function plainDetailMetarRow(airport) {
   const code = airport && airport.airport_4code;
   const latestMetar = airport && airport.metar_data && airport.metar_data[0];
   const cached = code ? _plainMetars[code] : null;
-  const inner = (cached && cached.translation && cached.translation.compact_html)
-    ? `<div class="weather-info-container weather-info-plain">${cached.translation.compact_html}</div>`
+  const inner = (cached && cached.translation && cached.translation.html)
+    ? cached.translation.html
     : (latestMetar
-      ? '<div class="weather-info-container weather-info-plain"><span class="plain-empty">翻译中...</span></div>'
-      : '<div class="no-data">无METAR数据</div>');
+      ? '<span class="plain-empty">翻译中...</span>'
+      : '<span class="plain-empty">无METAR数据</span>');
   const isAlerted = typeof alertedAirports !== 'undefined' && alertedAirports.has(code);
   const alertClass = isAlerted ? ' import-alerted' : '';
   const alertTitle = isAlerted ? ' title="【过期实况数据，注意提醒】"' : '';
-  return `<div class="weather-info${alertClass}"${alertTitle}>${inner}</div>`;
+  return `<div class="plain-detail-metar${alertClass}"${alertTitle}>
+    <span class="plain-detail-metar-tag">实况</span>
+    <div class="plain-detail-metar-body">${inner}</div>
+  </div>`;
 }
 
 /**
@@ -310,7 +313,7 @@ window.startPlainView = startPlainView;
 window.stopPlainView = stopPlainView;
 window.renderPlainView = renderPlainView;
 window.plainGanttText = plainGanttText;
-window.plainWeatherInfoDiv = plainWeatherInfoDiv;
+window.plainDetailMetarRow = plainDetailMetarRow;
 window.fetchPlainMetars = fetchPlainMetars;
 window.fetchPlainTranslations = fetchPlainTranslations;
 window.ensurePlainForAirports = ensurePlainForAirports;

@@ -180,8 +180,13 @@ function showAirportDetailModal(airportData, source) {
   collapseAirportChartSection();
   bindChartTimeSelectorForDetail(airport.airport_4code);
 
-  // 加载实况和预报报文
-  loadHistoryReports(airport.airport_4code);
+  const reportsSection = document.querySelector('#airport-detail-modal .airport-reports-section');
+  if (window._viewMode === 'plain') {
+    if (reportsSection) reportsSection.style.display = 'none';
+  } else {
+    if (reportsSection) reportsSection.style.display = '';
+    loadHistoryReports(airport.airport_4code);
+  }
 }
 
 /**
