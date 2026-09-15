@@ -585,25 +585,56 @@
                 const runningMode = useRunning ? (document.querySelector('input[name="import-running-mode"]:checked')?.value || 'filtered') : null;
                 const orderMode = document.querySelector('input[name="import-order-mode"]:checked')?.value || 'default';
                 window.configurePublishAirportSources?.({ runningMode, residentGroups, orderMode });
-                let imported = 0;
+                const operationSources = {
+                    text: new Set(), table: new Set(), resident: new Set(), running: new Set()
+                };
                 let needsNetwork = useRunning || residentGroups.length > 0;
                 if (useText) {
                     const result = importTextToForecast(importText.value, true);
-                    imported += result.count;
+                    (result.icaos || []).forEach(icao => operationSources.text.add(icao));
                     needsNetwork = needsNetwork || result.displayOnly > 0;
                 }
                 if (useTable) {
                     const result = await importPublishWorkbook();
-                    imported += result.count;
+                    (result.icaos || []).forEach(icao => operationSources.table.add(icao));
                 }
+                // Record the selected resident-group airports explicitly; the
+                // source set may also contain airports from an earlier import.
+                const groups = typeof window.getPublishAirportGroups === 'function' ? window.getPublishAirportGroups() : [];
+                residentGroups.forEach(index => (groups[Number(index)]?.airports || []).forEach(icao => operationSources.resident.add(icao)));
                 if (needsNetwork) {
                     await window.loadForecastData?.(true);
                 } else {
                     window.renderPublishTable?.();
                 }
+                if (useRunning) {
+                    (window.pbState?.runningAllAirports || []).forEach(icao => operationSources.running.add(icao));
+                    (window.pbState?.sourceAirports?.running || []).forEach(icao => operationSources.running.add(icao));
+                }
                 window.saveConfirmedDataToLocal?.();
                 importModal.style.display = 'none';
-                alert(`导入完成，共加入 ${imported} 个明确机场${useRunning ? '，运行机场已按所选模式加载' : ''}。`);
+                // Use the authoritative source registry after loading.  Some
+                // sources (notably running airports and workbook imports) are
+                // populated asynchronously and are not reliably represented
+                // by the direct import return value.
+                const sourceCounts = typeof window.getPublishAirportSourceCounts === 'function'
+                    ? window.getPublishAirportSourceCounts()
+                    : Object.fromEntries(Object.entries(operationSources).map(([key, set]) => [key, set.size]));
+                const allImported = new Set();
+                const sourceRegistry = window.pbState?.sourceAirports || {};
+                Object.values(sourceRegistry).forEach(source => {
+                    if (source instanceof Set) source.forEach(icao => allImported.add(icao));
+                });
+                Object.values(operationSources).forEach(set => set.forEach(icao => allImported.add(icao)));
+                const reportLines = [
+                    `导入完成，共涉及 ${allImported.size} 个机场。`,
+                    `文字预报：${sourceCounts.text || 0} 个`,
+                    `预报表格：${sourceCounts.table || 0} 个`,
+                    `常驻分组：${sourceCounts.resident || 0} 个`,
+                    `运行机场：${sourceCounts.running || 0} 个`,
+                    `手动新增：${sourceCounts.custom || 0} 个`
+                ];
+                alert(reportLines.join('\n'));
             } catch (error) {
                 alert('导入失败：' + error.message);
             } finally {
@@ -948,7 +979,7 @@
         const formData = new FormData();
         const file = document.getElementById('import-publish-excel-file')?.files?.[0];
         if (file) formData.append('file', file);
-        const response = await fetch('/api/import_publish_excel', { method: 'POST', body: formData });
+        const response = await fetch((window.OMICS_API_URL || (path => apiBase() + '/' + path))('import_publish_excel'), { method: 'POST', body: formData });
         const result = await response.json();
         if (!result.success) throw new Error(result.error || '无法读取预报表格');
         const data = result.data || {};
@@ -995,7 +1026,7 @@
         const checked = validateImportText(text, false);
         if (!checked.ok) {
             renderValidationPanel(checked);
-            return { count: 0, displayOnly: 0 };
+            return { count: 0, displayOnly: 0, icaos: [] };
         }
         const importedIcaos = [];
         let imported = 0;
@@ -1034,7 +1065,7 @@
                 if (window.renderPublishTable) window.renderPublishTable();
             }
         }
-        return { count: imported, displayOnly: displayOnlyCount };
+        return { count: imported, displayOnly: displayOnlyCount, icaos: Array.from(new Set(importedIcaos)) };
     }
 
     window.OMICSExport = { openPreview, importTextToForecast, importPublishWorkbook };

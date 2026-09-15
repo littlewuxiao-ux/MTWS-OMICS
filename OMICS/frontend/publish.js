@@ -205,6 +205,19 @@ function registerSourceAirports(source, icaos, { replace = false } = {}) {
 
 window.registerPublishSourceAirports = registerSourceAirports;
 
+// Return a stable snapshot for import reports and other UI consumers.  The
+// values are copied because the underlying source sets are updated while
+// forecast data is being loaded.
+window.getPublishAirportSourceCounts = function() {
+    const labels = { text: 'text', table: 'table', resident: 'resident', running: 'running', custom: 'custom' };
+    const result = {};
+    Object.entries(labels).forEach(([source, key]) => {
+        const values = pbState.sourceAirports[source];
+        result[key] = new Set(values instanceof Set ? values : []).size;
+    });
+    return result;
+};
+
 function getAirportRegion(icao) {
     for (const scope of ['domestic', 'international']) {
         for (const [region, airports] of Object.entries(AIRPORT_CFG[scope])) {
@@ -922,7 +935,7 @@ function buildPublishExportText(timezone = 'auto') {
             // 不改变表格单元格和发布数据，只优化最终导出文本。
             if (isWindDescription) {
                 const windInfo = value => {
-                    const m = String(value || '').match(/((?:偏?[东南西北]{1,3}|风向不定)风)\s*(\d+(?:\.\d+)?)(?:\s*[-至]\s*(\d+(?:\.\d+)?))?\s*米\/秒/);
+                    const m = String(value || '').match(/((?:(?:偏?[东南西北]{1,3})|(?:[东南西北]{2}偏[东南西北])|风向不定)风)\s*(\d+(?:\.\d+)?)(?:\s*[-至]\s*(\d+(?:\.\d+)?))?\s*米\/秒/);
                     return m ? { dir: m[1], min: Number(m[2]), max: Number(m[3] || m[2]) } : null;
                 };
                 const windRuns = [];
@@ -989,49 +1002,48 @@ function buildPublishExportText(timezone = 'auto') {
                 return cell ? [formatCellValue(cell)] : [];
             }).filter(value => value && value !== '—' && value !== '适航')
         );
-        const weatherForHour = values => values.filter(value =>
-            /雨|雷暴|雪|冻雨|雾|霾|沙|尘|烟/.test(value)
-        );
-        const windForHour = values => values.map(value => {
-            const match = String(value).match(/((?:偏?[东南西北]{1,3}|风向不定)风)\s*(\d+(?:\.\d+)?)(?:\s*[-至]\s*(\d+(?:\.\d+)?))?\s*米\/秒/);
-            return match ? { dir: match[1], min: Number(match[2]), max: Number(match[3] || match[2]) } : null;
-        }).filter(Boolean);
-        const visibilityForHour = values => values.map(value => {
-            const match = String(value).match(/能见度\s*(\d+(?:\.\d+)?)\s*米/);
-            return match ? Number(match[1]) : null;
+        // A selected cell may contain several elements (for example
+        // "中阵雨 弱雷雨"). Split them before aggregating so the export does
+        // not treat the complete cell as one indivisible weather value.
+        const weatherTokenPattern = /(?:短时)?(?:弱|小|中|大|强|暴)?(?:阵)?雷雨|(?:短时)?雷暴|干雷|雨夹雪|(?:弱|小|中|大|强|暴)?(?:阵)?冻雨|(?:弱|小|中|大|强|暴)?(?:阵)?雨|(?:弱|小|中|大|强|暴)?(?:阵)?雪|雾|霾|浮尘|沙暴|扬沙|烟/g;
+        const weatherForHour = values => values.flatMap(value => String(value).match(weatherTokenPattern) || []);
+        const windPattern = /((?:(?:偏?[东南西北]{1,3})|(?:[东南西北]{2}偏[东南西北])|风向不定)风)\s*(\d+(?:\.\d+)?)(?:\s*[-至]\s*(\d+(?:\.\d+)?))?\s*米\/秒/g;
+        const windForHour = values => values.flatMap(value => Array.from(String(value).matchAll(windPattern), match => ({
+            dir: match[1], min: Number(match[2]), max: Number(match[3] || match[2])
+        })));
+        const visibilityForHour = values => values.flatMap(value => {
+            const text = String(value);
+            const named = Array.from(text.matchAll(/能见度\s*(\d{2,4}(?:\.\d+)?)(?:\s*(?:米|m))?/gi), match => Number(match[1]));
+            const standalone = Array.from(
+                text.matchAll(/(?:^|[\s,，;；])(\d{2,4}(?:\.\d+)?)\s*(?:米|m)(?!\s*(?:\/|每)\s*秒)/gi),
+                match => Number(match[1])
+            );
+            return [...new Set([...named, ...standalone])];
         }).filter(value => Number.isFinite(value));
+        const weatherIntensityRank = { '弱': 1, '小': 1, '中': 2, '大': 3, '强': 3, '暴': 4 };
+        const weatherIntensityName = ['小', '中', '大', '暴'];
+        const summarizeWeather = weatherItems => {
+            const thunder = weatherItems.some(value => /雷雨|雷暴/.test(value));
+            const rain = weatherItems.some(value => /(?:阵)?雨/.test(value) && !/雷雨/.test(value));
+            if (!thunder || !rain) return Array.from(new Set(weatherItems)).join('、');
+            const levels = weatherItems
+                .map(value => (value.match(/(弱|小|中|大|强|暴)(?:阵)?(?:雨|雷雨)/) || [])[1])
+                .filter(Boolean)
+                .map(value => weatherIntensityRank[value] || 2);
+            const lo = levels.length ? Math.min(...levels) : 2;
+            const hi = levels.length ? Math.max(...levels) : lo;
+            return `${lo === hi ? weatherIntensityName[lo - 1] : `${weatherIntensityName[lo - 1]}到${weatherIntensityName[hi - 1]}`}阵雨，伴雷暴`;
+        };
         const weatherPhrases = hourlyValues.map(values => {
             const weather = weatherForHour(values);
             if (!weather.length) return '';
-            const thunder = weather.some(value => /雷雨|雷暴/.test(value));
-            const rain = weather.some(value => /雨/.test(value) && !/雷雨/.test(value));
-            if (thunder && rain) {
-                const rank = { '小': 1, '中': 2, '大': 3, '暴': 4 };
-                const names = Object.keys(rank);
-                const levels = weather.map(value => (value.match(/(小|中|大|暴)(?:阵)?(?:雨|雷雨)/) || [])[1]).filter(Boolean).map(value => rank[value] || 2);
-                const lo = levels.length ? Math.min(...levels) : 2;
-                const hi = levels.length ? Math.max(...levels) : lo;
-                return `${lo === hi ? names[lo - 1] : `${names[lo - 1]}到${names[hi - 1]}`}阵雨，伴雷暴`;
-            }
-            return Array.from(new Set(weather)).join('、');
+            return summarizeWeather(weather);
         });
         const mergedWeatherRanges = [];
         let weatherStart = null, weatherItems = [];
         const flushWeather = end => {
             if (weatherStart === null || !weatherItems.length) return;
-            const thunder = weatherItems.some(value => /雷雨|雷暴/.test(value));
-            const rain = weatherItems.some(value => /雨/.test(value) && !/雷雨/.test(value));
-            let phrase;
-            if (thunder && rain) {
-                const rank = { '小': 1, '中': 2, '大': 3, '暴': 4 };
-                const names = Object.keys(rank);
-                const levels = weatherItems.map(value => (value.match(/(小|中|大|暴)(?:阵)?(?:雨|雷雨)/) || [])[1]).filter(Boolean).map(value => rank[value] || 2);
-                const lo = levels.length ? Math.min(...levels) : 2;
-                const hi = levels.length ? Math.max(...levels) : lo;
-                phrase = `${lo === hi ? names[lo - 1] : `${names[lo - 1]}到${names[hi - 1]}`}阵雨，伴雷暴`;
-            } else {
-                phrase = Array.from(new Set(weatherItems)).join('、');
-            }
+            const phrase = summarizeWeather(weatherItems);
             mergedWeatherRanges.push(`${formatRange(weatherStart, end)}${phrase}`);
             weatherStart = null; weatherItems = [];
         };
@@ -1043,7 +1055,7 @@ function buildPublishExportText(timezone = 'auto') {
         flushWeather(weatherPhrases.length - 1);
         const visibilityValues = hourlyValues.map(values => {
             const list = visibilityForHour(values);
-            return list.length ? list[0] : null;
+            return list.length ? { min: Math.min(...list), max: Math.max(...list) } : null;
         });
         const mergedVisibilityRanges = [];
         let visStart = null, visValues = [];
@@ -1056,7 +1068,7 @@ function buildPublishExportText(timezone = 'auto') {
                 visStart = null; visValues = [];
             } else {
                 if (visStart === null) visStart = index;
-                visValues.push(value);
+                visValues.push(value.min, value.max);
             }
         });
         if (visStart !== null) {
@@ -1783,7 +1795,7 @@ async function fetchActiveFlightAirports(startMs, endMs, setProgress) {
     const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 
     try {
-        const res = await fetch('/api/fetch_flights', {
+        const res = await fetch((window.OMICS_API_URL || (path => `/api/${path}`))('fetch_flights'), {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ token: token, flight_date: dateStr })
         });
@@ -1820,7 +1832,7 @@ async function fetchTafDataForAirports(airports, startMs, endMs, setProgress) {
 
     try {
         if(setProgress) setProgress(`正在极速拉取并解析 TAF 报文，请稍候...`);
-        const res = await fetch('/api/fetch_data', {
+        const res = await fetch((window.OMICS_API_URL || (path => `/api/${path}`))('fetch_data'), {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ token: token, start_time: sStr, end_time: eStr, airports: airports.join(' '), wtypes: ["FC", "FT"] })
         });

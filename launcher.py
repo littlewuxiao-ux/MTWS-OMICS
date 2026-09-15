@@ -343,6 +343,15 @@ def load_config():
     if cfg["omics"].get("run_server") and not cfg["omics"].get("work_dir"):
         cfg["omics"]["work_dir"] = str(Path(cfg["omics"]["run_server"]).parent)
     cfg["omics"].pop("run_server", None)
+    # When IWMS is moved or cloned, a stale absolute path (or a duplicated
+    # ``OMICS\\OMICS`` path) must not shadow the repository's bundled project.
+    configured_omics = str(cfg["omics"].get("work_dir") or "").strip().strip('"')
+    configured_omics_path = Path(configured_omics).expanduser() if configured_omics else None
+    if configured_omics_path and not (
+        (configured_omics_path / "frontend").is_dir()
+        and (configured_omics_path / "backend").is_dir()
+    ) and (DEFAULT_OMICS_DIR / "frontend").is_dir() and (DEFAULT_OMICS_DIR / "backend").is_dir():
+        cfg["omics"]["work_dir"] = str(DEFAULT_OMICS_DIR.resolve())
     return cfg
 
 
@@ -811,6 +820,12 @@ class ServicePanel:
         # 端口已被占用 → 接管模式
         if is_port_in_use(self.port):
             self.log(f"检测到端口 {self.port} 已有服务，直接接管。", "warn")
+            if self.key == "omics":
+                configured_frontend = Path(self.target_path()) / "frontend" / "publish.js"
+                self.log(
+                    f"当前不会重新加载源码；请确认已停止旧 OMICS 服务后再启动。配置前端资源：{configured_frontend}",
+                    "warn",
+                )
             self.log(f"服务已就绪 → {self.home_url}", "success")
             self.running = True
             self.attached = True
@@ -826,6 +841,18 @@ class ServicePanel:
             valid_path = bool(resolve_iwbp_root(path) and find_node_exe())
         else:
             valid_path = bool(path and os.path.isdir(os.path.join(path, "backend")) and os.path.isdir(os.path.join(path, "frontend")))
+        # Older seat-local configs sometimes resolve OMICS as
+        # ``...\\OMICS\\OMICS`` after the repository was moved.  IWMS is
+        # launched from this repository, so recover to its bundled project
+        # root when that configured path is invalid.
+        if self.key == "omics" and not valid_path:
+            fallback = str(DEFAULT_OMICS_DIR.resolve())
+            fallback_valid = os.path.isdir(os.path.join(fallback, "backend")) and os.path.isdir(os.path.join(fallback, "frontend"))
+            if fallback_valid:
+                self.log(f"OMICS 配置目录无效，已回退到启动器目录：{fallback}", "warn")
+                self.cfg["work_dir"] = fallback
+                path = fallback
+                valid_path = True
         if not valid_path:
             if self.key == "nginx":
                 self.log("未找到 nginx.exe。请将 portable Nginx 放到 tools\\nginx\\nginx.exe，或在「路径配置」中指定。", "error")
@@ -887,6 +914,15 @@ class ServicePanel:
             return [str(node), "tools/dev-server-proxy.cjs"], actual
         # OMICS: 内联启动 Flask+Waitress，不再依赖 run_server.py
         wd = str(Path(path))
+        frontend_file = Path(wd) / "frontend" / "publish.js"
+        if frontend_file.is_file():
+            try:
+                modified = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(frontend_file.stat().st_mtime))
+                self.log(f"OMICS 前端资源：{frontend_file}（修改时间 {modified}）", "info")
+            except OSError:
+                self.log(f"OMICS 前端资源：{frontend_file}", "info")
+        else:
+            self.log(f"OMICS 前端资源缺失：{frontend_file}", "warn")
         return ([sys.executable, "-u", "-c", OMICS_INLINE_CODE, "--host", self.host,
                  "--port", str(self.port), "--work-dir", wd], wd)
 
@@ -2346,6 +2382,3 @@ if __name__ == "__main__":
         sys.exit(0)
     app = LauncherApp(ipc_sock)
     app.mainloop()
-
-
-
