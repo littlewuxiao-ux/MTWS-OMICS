@@ -2516,7 +2516,7 @@ function performSearch(searchValue) {
         const existing = (typeof airportData !== 'undefined') &&
             airportData.find(a => a.airport_4code === codes[0]);
         if (existing) {
-            showAirportDetailModal(existing);
+            showAirportDetailModal(existing, 'search');
             return;
         }
         // 不在已加载数据中，需要从后端获取
@@ -3862,8 +3862,8 @@ function displayAirportDetailData(airportData) {
 
     detailMain.innerHTML = airportDataHTML;
 
-    if (window._viewMode === 'plain' && typeof fetchPlainMetars === 'function' && airportData.airport_4code) {
-        fetchPlainMetars([airportData.airport_4code]);
+    if (window._viewMode === 'plain' && typeof ensurePlainForAirports === 'function') {
+        ensurePlainForAirports([airportData]);
     }
 
     // 等待DOM渲染和缩放完成后应用网格线

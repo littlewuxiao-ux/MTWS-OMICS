@@ -118,6 +118,64 @@ function paintPlainForecasts(airports) {
   });
 }
 
+function _airportByCode(code) {
+  if (typeof searchAirportCache !== 'undefined' && searchAirportCache && searchAirportCache[code]) {
+    return searchAirportCache[code];
+  }
+  if (typeof airportData !== 'undefined' && airportData) {
+    return airportData.find((a) => a.airport_4code === code) || null;
+  }
+  return null;
+}
+
+function ensurePlainForAirports(airports) {
+  if (window._viewMode !== 'plain' || !airports || !airports.length) return;
+  const staleTaf = [];
+  const staleMetar = [];
+  airports.forEach((airport) => {
+    if (!airport || !airport.airport_4code) return;
+    const code = airport.airport_4code;
+    const tafCached = _plainTranslations[code];
+    if (!tafCached || tafCached.key !== _tafKeyOf(airport)) staleTaf.push(code);
+    const metarCached = _plainMetars[code];
+    if (!metarCached || metarCached.key !== _metarKeyOf(airport)) staleMetar.push(code);
+  });
+  if (staleTaf.length) fetchPlainTranslations(staleTaf);
+  if (staleMetar.length) fetchPlainMetars(staleMetar);
+}
+
+function _repaintAirportRow(code) {
+  if (window._viewMode !== 'plain' || typeof createAirportRowForDetail !== 'function') return;
+  const airport = _airportByCode(code);
+  if (!airport) return;
+
+  const detailMain = document.getElementById('airport-detail-main');
+  const detailModal = document.getElementById('airport-detail-modal');
+  if (detailMain && detailModal && detailModal.style.display === 'block'
+      && typeof currentDetailAirportCode !== 'undefined' && currentDetailAirportCode === code) {
+    detailMain.innerHTML = createAirportRowForDetail(airport);
+    const airportRow = detailMain.querySelector('.airport-row');
+    if (airportRow && typeof updateAirportGridForModal === 'function') {
+      updateAirportGridForModal(airportRow);
+    }
+    if (typeof renderNwpOverlayForAirportDetail === 'function') {
+      renderNwpOverlayForAirportDetail();
+    }
+  }
+
+  const searchMain = document.getElementById(`search-block-main-${code}`);
+  if (searchMain) {
+    searchMain.innerHTML = createAirportRowForDetail(airport);
+    const airportRow = searchMain.querySelector('.airport-row');
+    if (airportRow && typeof updateAirportGridForModal === 'function') {
+      updateAirportGridForModal(airportRow);
+    }
+    if (typeof renderNwpOverlayForAirportSearch === 'function') {
+      renderNwpOverlayForAirportSearch(code);
+    }
+  }
+}
+
 async function fetchPlainTranslations(wanted) {
   const codes = (wanted || []).filter((code) => !_plainInflight.has(code));
   if (!codes.length) return;
@@ -133,8 +191,7 @@ async function fetchPlainTranslations(wanted) {
     }
     const data = payload.data || {};
     codes.forEach((code) => {
-      const airport = (typeof airportData !== 'undefined' && airportData)
-        ? airportData.find((a) => a.airport_4code === code) : null;
+      const airport = _airportByCode(code);
       _plainTranslations[code] = {
         key: airport ? _tafKeyOf(airport) : '',
         translation: data[code] || null,
@@ -143,12 +200,20 @@ async function fetchPlainTranslations(wanted) {
     if (_plainActive && typeof filteredAirportData !== 'undefined') {
       paintPlainForecasts(filteredAirportData);
     }
+    codes.forEach((code) => _repaintAirportRow(code));
   } catch (err) {
     console.error('请求预报明语失败:', err);
     _markPlainFailed(codes);
   } finally {
     codes.forEach((code) => _plainInflight.delete(code));
   }
+}
+
+function _markPlainFailed(codes) {
+  (codes || []).forEach((code) => {
+    const cell = document.querySelector(`[data-plain-taf="${code}"]`);
+    if (cell) cell.innerHTML = '<span class="plain-empty">翻译获取失败</span>';
+  });
 }
 
 /** 用缓存里的翻译填充实况行 */
@@ -183,8 +248,7 @@ async function fetchPlainMetars(wanted) {
     }
     const data = payload.data || {};
     codes.forEach((code) => {
-      const airport = (typeof airportData !== 'undefined' && airportData)
-        ? airportData.find((a) => a.airport_4code === code) : null;
+      const airport = _airportByCode(code);
       _plainMetars[code] = {
         key: airport ? _metarKeyOf(airport) : '',
         translation: data[code] || null,
@@ -193,7 +257,7 @@ async function fetchPlainMetars(wanted) {
     if (_plainActive && typeof filteredAirportData !== 'undefined') {
       paintPlainMetars(filteredAirportData);
     }
-    _refreshPlainDetailWeather();
+    codes.forEach((code) => _repaintAirportRow(code));
   } catch (err) {
     console.error('请求实况明语失败:', err);
     _markPlainMetarFailed(codes);
@@ -210,13 +274,8 @@ function _markPlainMetarFailed(codes) {
 }
 
 function _refreshPlainDetailWeather() {
-  if (window._viewMode !== 'plain') return;
-  const detailMain = document.getElementById('airport-detail-main');
-  if (!detailMain || typeof currentDetailAirportCode === 'undefined' || !currentDetailAirportCode) return;
-  const airport = (typeof airportData !== 'undefined' && airportData)
-    ? airportData.find((a) => a.airport_4code === currentDetailAirportCode) : null;
-  if (!airport || typeof createAirportRowForDetail !== 'function') return;
-  detailMain.innerHTML = createAirportRowForDetail(airport);
+  if (typeof currentDetailAirportCode === 'undefined' || !currentDetailAirportCode) return;
+  _repaintAirportRow(currentDetailAirportCode);
 }
 
 function plainWeatherInfoDiv(airport) {
@@ -253,3 +312,5 @@ window.renderPlainView = renderPlainView;
 window.plainGanttText = plainGanttText;
 window.plainWeatherInfoDiv = plainWeatherInfoDiv;
 window.fetchPlainMetars = fetchPlainMetars;
+window.fetchPlainTranslations = fetchPlainTranslations;
+window.ensurePlainForAirports = ensurePlainForAirports;

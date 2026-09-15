@@ -5,9 +5,23 @@
 
 // 搜索结果临时缓存（不写入主页 airportData，关闭弹窗后清除）
 const searchAirportCache = {};
+window.searchAirportCache = searchAirportCache;
 
 // 当前详情弹窗展示中的机场代码（用于温度辅助覆盖层随数据刷新重绘）
 let currentDetailAirportCode = null;
+// 头部信息权限上下文：点四字码进详情为 'detail'；搜索打开（含单机场详情弹窗）为 'search'
+let headerInfoContext = 'detail';
+
+function headerInfoMode() {
+  return window._viewMode === 'plain' ? 'plain' : 'home';
+}
+
+function canShowHeaderInfo(kind) {
+  if (typeof hasAccess !== 'function') return true;
+  if (!window.__accessIdentity) return true;
+  const page = headerInfoContext === 'search' ? 'search' : 'detail';
+  return hasAccess(`${page}_${kind}_${headerInfoMode()}`, 'display');
+}
 
 // 存储图表实例和状态
 const airportDetailChart = {
@@ -25,7 +39,7 @@ async function showAirportDetail(airportCode) {
   // 主页机场：详情直接用已经拉到前端的 airportData，不再请求。
   const airport = airportData.find(a => a.airport_4code === airportCode);
   if (airport) {
-    showAirportDetailModal(airport);
+    showAirportDetailModal(airport, 'detail');
     return;
   }
 
@@ -53,7 +67,8 @@ async function fetchNonHomepageAirportDetail(airportCode) {
       showError('未找到机场信息：' + airportCode);
       return;
     }
-    showAirportSearchSingle(payload.data[0]);
+    searchAirportCache[payload.data[0].airport_4code] = payload.data[0];
+    showAirportDetailModal(payload.data[0], 'detail');
   } catch (err) {
     console.error('非主页机场详情请求失败:', err);
     showError('获取机场详情失败：' + airportCode);
@@ -61,9 +76,10 @@ async function fetchNonHomepageAirportDetail(airportCode) {
 }
 
 // 显示机场详细信息弹窗
-function showAirportDetailModal(airportData) {
+function showAirportDetailModal(airportData, source) {
   // 主页数据是扁平结构，直接使用airportData
   const airport = airportData;
+  headerInfoContext = source === 'search' ? 'search' : 'detail';
 
   // 记录当前展示的机场代码，供温度辅助覆盖层刷新使用
   currentDetailAirportCode = airport.airport_4code;
@@ -73,12 +89,19 @@ function showAirportDetailModal(airportData) {
   document.getElementById('airport-title-name').textContent = airport.airport_name || '';
 
   // 联系方式（使用主页已有的字段）
-  const showContact = typeof hasAccess !== 'function' || hasAccess('detail_contact', 'display');
-  const showSun = typeof hasAccess !== 'function' || hasAccess('detail_sun', 'display');
+  const showContact = canShowHeaderInfo('contact');
+  const showSun = canShowHeaderInfo('sun');
+  const showRunway = canShowHeaderInfo('runway');
   const contactsEl = document.querySelector('#airport-detail-modal .airport-info-contacts');
   const sunLeftEl = document.querySelector('#airport-detail-modal .airport-info-left');
   const dividerEl = document.querySelector('#airport-detail-modal .airport-info-divider');
   const infoRow = document.querySelector('#airport-detail-modal .airport-info-row');
+  const runwayItem = sunLeftEl
+    ? Array.from(sunLeftEl.querySelectorAll('.info-item')).find((item) => {
+        const label = item.querySelector('.info-label');
+        return label && (label.textContent || '').indexOf('跑道') >= 0;
+      })
+    : null;
 
   if (contactsEl) {
     contactsEl.style.display = showContact ? '' : 'none';
@@ -90,7 +113,6 @@ function showAirportDetailModal(airportData) {
     }
   }
   if (sunLeftEl) {
-    // 跑道始终跟着日出日落一侧；无日出日落权限时仍可显示跑道
     const sunItems = sunLeftEl.querySelectorAll('.info-item');
     sunItems.forEach((item) => {
       const label = item.querySelector('.info-label');
@@ -100,28 +122,19 @@ function showAirportDetailModal(airportData) {
         item.style.display = showSun ? '' : 'none';
       }
     });
+    if (runwayItem) runwayItem.style.display = showRunway ? '' : 'none';
+    sunLeftEl.style.display = (showSun || showRunway) ? '' : 'none';
   }
-  if (dividerEl) dividerEl.style.display = (showContact && (showSun || true)) ? '' : 'none';
+  const showLeft = showSun || showRunway;
+  if (dividerEl) dividerEl.style.display = (showLeft && showContact) ? '' : 'none';
   if (infoRow) {
-    if (!showContact && !showSun) {
-      // 仅保留跑道时仍显示左侧；若连跑道也不需要可整行隐藏——此处保留跑道
-      infoRow.style.justifyContent = 'center';
-    } else if (showContact && !showSun) {
-      infoRow.style.justifyContent = 'center';
-      if (dividerEl) dividerEl.style.display = 'none';
-    } else if (!showContact && showSun) {
-      infoRow.style.justifyContent = 'center';
-      if (dividerEl) dividerEl.style.display = 'none';
-    } else {
-      infoRow.style.justifyContent = '';
-    }
+    infoRow.classList.toggle('header-info-only', !(showLeft && showContact));
+    infoRow.style.display = (showLeft || showContact) ? '' : 'none';
+    infoRow.style.justifyContent = '';
   }
 
-  // 加载机场额外信息（日出日落、跑道）
-  if (showSun) {
+  if (showSun || showRunway) {
     loadAirportExtraInfo(airport.airport_4code);
-  } else {
-    loadAirportExtraInfo(airport.airport_4code); // 仍拉跑道
   }
 
   const chartSection = document.getElementById('airport-chart-section');
@@ -1032,7 +1045,7 @@ function showAirportSearchSingle(airportData) {
   searchAirportCache[code] = airportData;
 
   // 复用现有完整详情页弹窗
-  showAirportDetailModal(airportData);
+  showAirportDetailModal(airportData, 'search');
 }
 
 /**
@@ -1042,7 +1055,7 @@ function showAirportSearchSingle(airportData) {
 function openAirportDetailFromSearchResult(code) {
   const airport = searchAirportCache[code];
   if (!airport) return;
-  showAirportDetailModal(airport);
+  showAirportDetailModal(airport, 'detail');
 }
 
 /**
@@ -1054,19 +1067,12 @@ function _buildSearchAirportHeader(airport) {
   const areaCode = airport.area_code || 'N/A';
   const forecastPhone = airport.forecast_phone || 'N/A';
   const obsPhone = airport.observation_phone || 'N/A';
+  const otherPhone = airport.other_phone || 'N/A';
+  const showSun = canShowHeaderInfo('sun');
+  const showRunway = canShowHeaderInfo('runway');
+  const showContact = canShowHeaderInfo('contact');
 
-  return `
-    <div class="airport-detail-header airport-search-header">
-      <div class="airport-title-inline">
-        <h2 class="airport-code-clickable" onclick="openAirportDetailFromSearchResult('${code}')"
-          title="点击查看机场详情">${code}</h2>
-      </div>
-      <div class="airport-code-divider"></div>
-      <div class="airport-info-row airport-info-row-compact">
-        <div class="info-item airport-name-item">
-          <span class="info-value">${name}</span>
-        </div>
-        <div class="airport-info-left">
+  const sunHtml = showSun ? `
           <div class="info-item">
             <span class="info-label">日出:</span>
             <span class="info-value" id="search-sunrise-${code}">--:--</span>
@@ -1074,8 +1080,16 @@ function _buildSearchAirportHeader(airport) {
           <div class="info-item">
             <span class="info-label">日落:</span>
             <span class="info-value" id="search-sunset-${code}">--:--</span>
-          </div>
-        </div>
+          </div>` : '';
+  const runwayHtml = showRunway ? `
+          <div class="info-item">
+            <span class="info-label">跑道:</span>
+            <span class="info-value" id="search-runway-${code}">--</span>
+          </div>` : '';
+  const leftHtml = (showSun || showRunway)
+    ? `<div class="airport-info-left">${sunHtml}${runwayHtml}</div>`
+    : '';
+  const contactHtml = showContact ? `
         <div class="airport-info-contacts">
           <div class="contact-item">
             <span class="contact-label">区号:</span>
@@ -1089,7 +1103,25 @@ function _buildSearchAirportHeader(airport) {
             <span class="contact-label">观测:</span>
             <span class="contact-value">${obsPhone}</span>
           </div>
+          <div class="contact-item">
+            <span class="contact-label">其他:</span>
+            <span class="contact-value">${otherPhone}</span>
+          </div>
+        </div>` : '';
+
+  return `
+    <div class="airport-detail-header airport-search-header">
+      <div class="airport-title-inline">
+        <h2 class="airport-code-clickable" onclick="openAirportDetailFromSearchResult('${code}')"
+          title="点击查看机场详情">${code}</h2>
+      </div>
+      <div class="airport-code-divider"></div>
+      <div class="airport-info-row airport-info-row-compact">
+        <div class="info-item airport-name-item">
+          <span class="info-value">${name}</span>
         </div>
+        ${leftHtml}
+        ${contactHtml}
       </div>
     </div>
   `;
@@ -1133,6 +1165,8 @@ function showAirportSearchMulti(airports) {
   const container = document.getElementById('airport-search-list');
   if (!container) return;
 
+  headerInfoContext = 'search';
+
   // 写入缓存
   airports.forEach(a => { searchAirportCache[a.airport_4code] = a; });
 
@@ -1175,6 +1209,9 @@ function showAirportSearchMulti(airports) {
       // 异步加载日出日落/跑道信息
       _loadSearchExtraInfo(code);
     });
+    if (window._viewMode === 'plain' && typeof ensurePlainForAirports === 'function') {
+      ensurePlainForAirports(airports);
+    }
   });
 }
 
