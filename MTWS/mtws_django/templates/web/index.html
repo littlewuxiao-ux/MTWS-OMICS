@@ -1,6 +1,10 @@
 {% extends 'base.html' %}
 {% load static %}
 
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/views.css' %}">
+{% endblock %}
+
 {% block content %}
 <!-- 服务器断连提示横幅（轮询失败时显示，恢复后自动隐藏） -->
 <div id="server-offline-banner">⚠ 服务器连接已断开，正在等待重连...</div>
@@ -154,15 +158,6 @@
         </div>
       </label>
 
-      <label class="timezone-toggle-label" title="显示模式切换开关" style="margin-left: 8px;">
-        <input type="checkbox" id="view-mode-toggle-input" />
-        <div class="timezone-toggle-track view-mode-toggle-track">
-          <span class="timezone-track-label left">列表模式</span>
-          <span class="timezone-track-label right">地图模式</span>
-          <div class="timezone-toggle-thumb"></div>
-        </div>
-      </label>
-
       <div class="search-input-wrap margin-left">
         <input type="text" class="search-input" id="search-input" placeholder="输入机场四字代码">
         <button class="search-clear-btn" id="search-clear-btn" title="清除输入" aria-label="清除">&#x2716;</button>
@@ -224,6 +219,11 @@
   </div>
   <div id="map-world" class="map-chart-pane"></div>
 </div>
+
+<!-- 中文（明语）模式面板：替换机场行 / 实况信息标题 / 时间轴及以下内容，功能区不变 -->
+<section id="plain-panel" style="display:none;">
+  <div class="plain-loading">正在加载数据...</div>
+</section>
 
 <!-- 设置弹窗 -->
 <div id="settings-modal" class="modal">
@@ -910,7 +910,8 @@
 <script src="{% static 'js/airport_detail.js' %}"></script>
 <script src="{% static 'js/popup.js' %}"></script>
 <script src="{% static 'js/import_alert.js' %}"></script>
-<script src="{% static 'js/map.js' %}"></script>
+<!-- 视图导航常驻；地图与中文模式脚本由导航按需注入 -->
+<script src="{% static 'js/views_nav.js' %}"></script>
 <script>
 document.getElementById('help-btn').addEventListener('click', function () {
   window.open('{% url "system_reference_pdf" %}', '_blank');

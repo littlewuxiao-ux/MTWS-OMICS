@@ -1,7 +1,7 @@
 {
   "version": 1,
   "source": "工作台·发布存档",
-  "updatedAt": "2026-09-15T09:51:25.787Z",
+  "updatedAt": "2026-09-15T11:13:28.247Z",
   "items": [
     {
       "id": "po-1788724936200-v5li6m",
@@ -18004,101 +18004,6 @@
       "recalledBy": "",
       "recallOf": "",
       "publishDeadlineAt": "2026-08-15T11:28:28.869Z"
-    },
-    {
-      "id": "po-1786792339414-lk6rfl",
-      "type": "alert",
-      "text": "解除【雷暴、强降水】ZSHC杭州/萧山天气警报：以上天气对公司运行影响结束，解除天气警报。",
-      "savedAt": "2026-08-15T11:12:19.414Z",
-      "savedBy": "值班员-甲",
-      "station": "ZSHC",
-      "phenomena": [
-        "雷暴",
-        "强降水"
-      ],
-      "periodSlotId": "",
-      "anchorYmd": "2026-08-15",
-      "pushedToNext": true,
-      "pushedAt": "2026-08-15T11:13:26.946Z",
-      "pushedBy": "本地机器人",
-      "warningId": "",
-      "isCancel": true,
-      "recalled": false,
-      "recalledAt": null,
-      "recalledBy": "",
-      "recallOf": "",
-      "publishDeadlineAt": "2026-08-15T11:27:19.414Z"
-    },
-    {
-      "id": "po-1786792245638-38mpfv",
-      "type": "alert",
-      "text": "解除【炎热天气】ZUUU成都/双流天气警报：以上天气对公司运行影响结束，解除天气警报。",
-      "savedAt": "2026-08-15T11:10:45.638Z",
-      "savedBy": "值班员-甲",
-      "station": "ZUUU",
-      "phenomena": [
-        "炎热天气"
-      ],
-      "periodSlotId": "",
-      "anchorYmd": "2026-08-15",
-      "pushedToNext": true,
-      "pushedAt": "2026-08-15T11:11:26.597Z",
-      "pushedBy": "本地机器人",
-      "warningId": "",
-      "isCancel": true,
-      "recalled": false,
-      "recalledAt": null,
-      "recalledBy": "",
-      "recallOf": "",
-      "publishDeadlineAt": "2026-08-15T11:25:45.638Z"
-    },
-    {
-      "id": "po-1786791981113-s4h7q0",
-      "type": "alert",
-      "text": "更新【雷暴、强降水】ZSYW义乌天气警报\n预计义乌机场15日24时前机场/终端区维持小到中阵雨伴零星雷暴天气。",
-      "savedAt": "2026-08-15T11:06:21.113Z",
-      "savedBy": "值班员-甲",
-      "station": "ZSYW",
-      "phenomena": [
-        "雷暴",
-        "强降水"
-      ],
-      "periodSlotId": "",
-      "anchorYmd": "2026-08-15",
-      "pushedToNext": true,
-      "pushedAt": "2026-08-15T11:07:26.186Z",
-      "pushedBy": "本地机器人",
-      "warningId": "wa-1786791980961-3opoq",
-      "isCancel": false,
-      "recalled": false,
-      "recalledAt": null,
-      "recalledBy": "",
-      "recallOf": "",
-      "publishDeadlineAt": "2026-08-15T11:21:21.113Z"
-    },
-    {
-      "id": "po-1786790921685-3xbh67",
-      "type": "alert",
-      "text": "更新【雷暴、强降水】ZGSZ深圳/宝安天气警报\n目前在深圳机场偏西20-60公里处有中等偏强分散、局部成片的对流云团，机场目前已经出现干雷天气，云团顶高8-14千米，以20-30公里/小时的速度，向东北偏东移动，强度维持。预计北京时间15日19:20到20:20本场有中-强阵雨伴雷暴天气，20：20-21：00为中阵雨，机场周边有雷暴。15日19:20至20:20期间机场附近区域预计有风切变。",
-      "savedAt": "2026-08-15T10:48:41.685Z",
-      "savedBy": "值班员-甲",
-      "station": "ZGSZ",
-      "phenomena": [
-        "雷暴",
-        "强降水"
-      ],
-      "periodSlotId": "",
-      "anchorYmd": "2026-08-15",
-      "pushedToNext": true,
-      "pushedAt": "2026-08-15T10:49:25.455Z",
-      "pushedBy": "本地机器人",
-      "warningId": "wa-1786790921569-qyfv8",
-      "isCancel": false,
-      "recalled": false,
-      "recalledAt": null,
-      "recalledBy": "",
-      "recallOf": "",
-      "publishDeadlineAt": "2026-08-15T11:03:41.685Z"
     }
   ]
 }

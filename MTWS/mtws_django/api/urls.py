@@ -20,6 +20,7 @@ from .settings_views import (
     settings_weather_alert, settings_weather_alert_detail,
     settings_airport_location, settings_airport_location_detail,
 )
+from .plain_views import plain_taf_batch, plain_metar_batch, plain_report_text
 from .access_views import (
     access_bootstrap, access_session_status, access_select_role,
     access_complete_qr_login, access_seat_logout,
@@ -103,6 +104,11 @@ urlpatterns = [
     path('settings/weather-alert/<int:alert_id>/', settings_weather_alert_detail, name='settings_weather_alert_detail'),
     path('settings/airport-location/', settings_airport_location, name='settings_airport_location'),
     path('settings/airport-location/<str:airport_4code>/', settings_airport_location_detail, name='settings_airport_location_detail'),
+
+    # 中文（明语）模式
+    path('plain/taf-batch/', plain_taf_batch, name='plain_taf_batch'),
+    path('plain/metar-batch/', plain_metar_batch, name='plain_metar_batch'),
+    path('plain/airport/<str:airport_code>/report-text/', plain_report_text, name='plain_report_text'),
 
     # 访问控制 / 超级用户
     path('access/bootstrap/', access_bootstrap, name='access_bootstrap'),

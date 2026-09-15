@@ -262,7 +262,12 @@ function loadHistoryReports(airportCode) {
     headers['X-User-Code'] = 'test';
   }
 
-  fetch(`/${currentTimeMode}/api/airport/${airportCode}/report-text/`, {
+  // 中文模式下详情页的实况/预报区一并中文化（实况趋势不变）
+  const url = (window._viewMode === 'plain')
+    ? `/${currentTimeMode}/api/plain/airport/${airportCode}/report-text/`
+    : `/${currentTimeMode}/api/airport/${airportCode}/report-text/`;
+
+  fetch(url, {
     headers: headers
   })
     .then(response => response.json())

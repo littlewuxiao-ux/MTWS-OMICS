@@ -6,7 +6,8 @@
 // ========================================
 
 // 全局视图模式：'list' | 'map'，由 switchViewMode 维护，main.js 读取
-window._viewMode   = 'list';
+// 本模块按需注入，注入时视图导航可能已经定了模式，不要覆盖
+window._viewMode   = window._viewMode || 'list';
 
 let _mapView       = 'china';   // 'china' | 'world'
 let _mapCoordCache = null;      // null = 未获取；{} = 已获取（可能为空）
@@ -633,23 +634,13 @@ if (_tzToggle) {
 // 页面加载时恢复状态
 // ─────────────────────────────────────────────────────────────────
 
+/**
+ * 恢复中国/世界子视图。列表↔地图的主模式已由左侧视图导航（views_nav.js）接管，
+ * 本函数只负责本模块自己的状态，供导航在按需注入 map.js 后调用一次。
+ */
 function initMapAlertState() {
-    const savedMode = localStorage.getItem('mtws_view_mode') || 'list';
-    window._viewMode = savedMode;
-
-    const viewToggle = document.getElementById('view-mode-toggle-input');
-    if (viewToggle) viewToggle.checked = (savedMode === 'map');
-
     const savedView = localStorage.getItem('mtws_map_view');
     _mapView = savedView === 'world' ? 'world' : 'china';
     const mapViewToggle = document.getElementById('map-view-toggle-input');
     if (mapViewToggle) mapViewToggle.checked = (_mapView === 'world');
-
-    if (savedMode === 'map') {
-        document.body.classList.add('map-mode');
-        const panel = document.getElementById('map-alert-panel');
-        if (panel) panel.style.display = 'flex';
-        setTimeout(_syncPanelPosition, 100);
-        _initMapCharts();
-    }
 }
