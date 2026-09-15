@@ -106,6 +106,7 @@ class Metar(models.Model):
                                        verbose_name='风切变告警')
     metar_content = models.TextField(blank=True, null=True, verbose_name='metar原文')
     metar_observation_time = models.BigIntegerField(blank=True, null=True, verbose_name='发布时间')
+    metar_elements = models.JSONField(blank=True, null=True, verbose_name='METAR最小单元要素')
     metar_ice_flag = models.CharField(max_length=10, blank=True, null=True, verbose_name='积冰条件标签')
     metar_warning = models.CharField(max_length=1, blank=True, null=True, default='N',
                                    choices=[('R', '红色'), ('Y', '黄色'), ('G', '绿色'), ('N', '无告警')],
@@ -171,6 +172,7 @@ class Taf(models.Model):
     taf_observation_time = models.BigIntegerField(blank=True, null=True, verbose_name='发布时间')
     taf_type = models.CharField(max_length=10, blank=True, null=True, verbose_name='taf报文类型')
     taf_content = models.TextField(blank=True, null=True, verbose_name='taf原文')
+    taf_elements = models.JSONField(blank=True, null=True, verbose_name='TAF最小单元要素')
     
     # 主预报字段
     subject_validity_period_start = models.CharField(max_length=10, blank=True, null=True, verbose_name='主预报起始时间')

@@ -253,12 +253,22 @@ class MetarParser:
 
         return success_count, error_count
 
+    def _skip_import_alert(self) -> bool:
+        """
+        test 模式取的是固定历史快照，用真实时钟判定会把全部报文判成过期，
+        故整套入库告警（占位行、超时标记、滞留清理）在该模式下不执行。
+        """
+        return self.time_mode == 'test'
+
     def _clear_stale_metar_import_alerts(self, now_ms: int):
         """
         清理滞留的METAR入库告警：
         若某机场的 import_alert=Y 且 import_alert_handle_time 为空，
         且既无航班也无停场飞机，则视为滞留告警，自动结案。
         """
+        if self._skip_import_alert():
+            return
+
         try:
             from utils.airport_scope import get_import_alert_keep_airport_codes
             keep_airports = get_import_alert_keep_airport_codes()
@@ -282,7 +292,7 @@ class MetarParser:
         满足时间条件（created_at 和 metar_observation_time 均超时）则批量标记 import_alert=Y。
         占位行（data_status=C）已由主循环创建，此处不再处理。
         """
-        if not airport_codes:
+        if not airport_codes or self._skip_import_alert():
             return
 
         from collections import Counter
@@ -421,6 +431,9 @@ class MetarParser:
         """
         情况2子分支：API无数据且DB无N行时，创建 data_status=C 占位行并直接标记 import_alert=Y。
         """
+        if self._skip_import_alert():
+            return
+
         sqc = f"C_{airport_code}_{now_ms}"
         user_code = self.user_code or 'system'
 
@@ -622,6 +635,18 @@ class MetarParser:
             # 计算实况综合告警级别
             metar_warning = self._calculate_metar_overall_warning(parsed_data)
             parsed_data['metar_warning'] = metar_warning
+
+            try:
+                from parsers.metar_elements import build_metar_elements
+                parsed_data['metar_elements'] = build_metar_elements(
+                    metar_content,
+                    airport_4code,
+                    self,
+                    observation_ms=parsed_data.get('metar_observation_time'),
+                )
+            except Exception as exc:
+                logger.error(f'构建 metar_elements 失败 [{airport_4code}]: {exc}')
+                parsed_data['metar_elements'] = None
             
         except Exception as e:
             logger.warning(f"解析METAR内容失败: {str(e)}")

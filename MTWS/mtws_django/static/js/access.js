@@ -75,6 +75,12 @@
 
     paintAccessUserInfo();
     updateHostLoginBanner();
+
+    // 超管改权限后席位轮询会带回新权限，重新校验当前视图；
+    // 首次进入由 main.js 在加载数据前触发，此处只做后续复核
+    if (window.__viewNavReady && !id.needs_role_select && typeof initViewNav === 'function') {
+      initViewNav();
+    }
   }
   window.applyAccessUi = applyAccessUi;
 
@@ -493,8 +499,9 @@
     document.getElementById('access-admin-require-qr').checked = !!g.require_qr;
     document.getElementById('access-admin-del-group').style.display = g.is_local ? 'none' : '';
 
-    const catOrder = ['home', 'airport_detail', 'import_alert', 'metar_popup', 'settings', 'other'];
+    const catOrder = ['views', 'home', 'airport_detail', 'import_alert', 'metar_popup', 'settings', 'other'];
     const catNames = {
+      views: '显示视图',
       home: '主页',
       airport_detail: '机场详情',
       import_alert: '入库告警',
@@ -559,6 +566,13 @@
             return;
           }
         }
+        if (VIEW_MODULES.includes(mod) && k === 'display' && !cb.checked) {
+          if (!countCheckedViews(wrap)) {
+            alert('主页、地图模式、中文模式至少选中一个');
+            cb.checked = true;
+            return;
+          }
+        }
         if (k === 'display' && !cb.checked) {
           wrap.querySelectorAll(`input[data-mod="${mod}"]`).forEach((x) => {
             if (x !== cb) x.checked = false;
@@ -566,6 +580,15 @@
         }
       });
     });
+  }
+
+  const VIEW_MODULES = ['view_home', 'view_map', 'view_plain'];
+
+  function countCheckedViews(wrap) {
+    return VIEW_MODULES.filter((code) => {
+      const cb = wrap.querySelector(`input[data-mod="${code}"][data-k="display"]`);
+      return cb && cb.checked;
+    }).length;
   }
 
   async function saveAdminGroup() {
@@ -582,6 +605,10 @@
       if (!permissions[mod]) permissions[mod] = {};
       permissions[mod][k] = cb.checked;
     });
+    if (!VIEW_MODULES.some((code) => (permissions[code] || {}).display)) {
+      alert('主页、地图模式、中文模式至少选中一个');
+      return;
+    }
     const require_qr = g.is_local ? false : document.getElementById('access-admin-require-qr').checked;
     const anyWrite = Object.values(permissions).some((p) => p.write);
     if (!g.is_local && anyWrite && !require_qr) {

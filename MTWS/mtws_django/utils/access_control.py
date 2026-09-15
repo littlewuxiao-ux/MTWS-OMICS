@@ -17,6 +17,12 @@ from utils.popup_utils import get_client_ip, is_loopback_ip
 
 # 模块定义（与《MTWS权限列表》对齐）
 ACCESS_MODULES: List[Dict[str, Any]] = [
+    {'code': 'view_home', 'name': '视图：当前主页', 'category': 'views', 'has_activate': False, 'has_write': False,
+     'hint_display': '导航栏显示并可进入列表主页'},
+    {'code': 'view_map', 'name': '视图：地图模式', 'category': 'views', 'has_activate': False, 'has_write': False,
+     'hint_display': '导航栏显示并可进入地图模式'},
+    {'code': 'view_plain', 'name': '视图：中文模式', 'category': 'views', 'has_activate': True, 'has_write': False,
+     'hint_display': '导航栏显示并可进入中文模式', 'hint_activate': '允许中文模式触发后台解析'},
     {'code': 'login_user', 'name': '登录的用户/登出按钮', 'category': 'home', 'has_activate': True, 'has_write': False,
      'hint_display': '显示右上角用户与登出', 'hint_activate': '允许点击登出'},
     {'code': 'nwp', 'name': '温度辅助', 'category': 'home', 'has_activate': True, 'has_write': False,
@@ -62,6 +68,7 @@ ACCESS_MODULES: List[Dict[str, Any]] = [
 ]
 
 MODULE_CATEGORIES = [
+    {'code': 'views', 'name': '显示视图'},
     {'code': 'home', 'name': '主页'},
     {'code': 'airport_detail', 'name': '机场详情'},
     {'code': 'import_alert', 'name': '入库告警'},
@@ -72,6 +79,9 @@ MODULE_CATEGORIES = [
 
 MODULE_BY_CODE = {m['code']: m for m in ACCESS_MODULES}
 SETTINGS_WRITE_EXCLUSIVE = {m['code'] for m in ACCESS_MODULES if m.get('settings_write_exclusive')}
+
+# 三个显示视图，顺序即导航栏顺序，也是无权限回落的优先级
+VIEW_MODULE_CODES = ('view_home', 'view_map', 'view_plain')
 
 LOCAL_GROUP_CODE = 'local'
 SUPERUSER_CONFIG_TYPE = 'access_control'
@@ -437,6 +447,10 @@ def validate_group_permission_payload(group, perms_payload: dict, is_local_group
             'can_activate': can_activate,
             'can_write': can_write,
         })
+
+    # 三个显示视图不得全部关闭，否则该组登录后无处可去
+    if not any(r['can_display'] for r in rows if r['module_code'] in VIEW_MODULE_CODES):
+        return False, '主页、地图模式、中文模式至少需要保留一个显示权限', []
 
     require_qr = bool(getattr(group, 'require_qr', False)) if group else False
     # 写入强制扫码（非本机）

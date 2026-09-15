@@ -220,6 +220,8 @@ class TafParser:
         
         # 变化组字段
         self.change_groups = {}
+        self._subject_line = None
+        self._own_elements = {}
     
     def kt_to_mps(self, speed_kt: float) -> float:
         """节转米/秒"""
@@ -563,6 +565,7 @@ class TafParser:
             # 解析主预报
             if data.forecast:
                 main_forecast = data.forecast[0]
+                self._subject_line = main_forecast
                 self.parse_forecast_line(main_forecast, is_subject=True)
             
             # 解析变化组
@@ -571,6 +574,8 @@ class TafParser:
             
             # 处理温度信息
             self.parse_temperature_info(data)
+
+            self._snapshot_own_elements()
             
             # 处理BECMG继承逻辑（同时处理CAVOK逻辑）
             self.process_becmg_inheritance()
@@ -721,6 +726,7 @@ class TafParser:
             
             group_info = {
                 'type': actual_type,
+                '_line': forecast_line,
                 'content': '',
                 'validity_period_start': '',
                 'validity_period_end': '',
@@ -785,6 +791,26 @@ class TafParser:
             group_info['content_all'] = ' '.join(content_all_parts)
             
             self.change_groups[change_index] = group_info
+
+    def _snapshot_own_elements(self) -> None:
+        """BECMG 继承前记录各组自身写出的要素，供 taf_elements 打 inherited。"""
+        self._own_elements = {}
+        for index, group in self.change_groups.items():
+            vis = (group.get('visibility') or '').strip()
+            weather = (group.get('weather') or '').strip()
+            cloud = (group.get('cloud') or '').strip()
+            line = group.get('_line')
+            others = []
+            if line is not None:
+                others = [str(item).upper() for item in (getattr(line, 'other', None) or [])]
+            self._own_elements[index] = {
+                'wind': bool(group.get('wind')),
+                'visibility': bool(vis),
+                'weather': bool(weather),
+                'cloud': bool(cloud) or any(token in others for token in ('NSC', 'SKC', 'CLR')),
+                'cavok': vis.upper() == 'CAVOK',
+                'vis_raw': vis,
+            }
     
     def inherit_element(self, element_name: str, change_index: int) -> str:
         """为BECMG变化组继承要素"""
@@ -969,6 +995,7 @@ class TafParser:
                 # 更新能见度字段
                 group['visibility'] = new_visibility
                 group['visibility_m'] = new_visibility_m
+                group['_vis_from_cavok'] = True
 
     def generate_becmg_content_all(self):
         """为BECMG变化组生成完整的content_all"""
@@ -1444,6 +1471,13 @@ class TafParser:
         
         # 修订报/更正报标识
         data_dict['amd_or_cor'] = self.amd_or_cor
+
+        from parsers.taf_elements import build_taf_elements
+        try:
+            data_dict['taf_elements'] = build_taf_elements(self)
+        except Exception as exc:
+            logger.error(f'构建 taf_elements 失败: {exc}')
+            data_dict['taf_elements'] = None
         
         return data_dict
     
@@ -1802,12 +1836,22 @@ class TafParser:
         
         return result
     
+    def _skip_import_alert(self) -> bool:
+        """
+        test 模式取的是固定历史快照，用真实时钟判定会把全部报文判成过期，
+        故整套入库告警（占位行、过期标记、滞留清理）在该模式下不执行。
+        """
+        return self.time_mode == 'test'
+
     def _clear_stale_taf_import_alerts(self, now_ms: int):
         """
         清理滞留的TAF入库告警：
         若某机场的 import_alert=Y 且 import_alert_handle_time 为空，
         且既无航班也无停场飞机，则视为滞留告警，自动结案。
         """
+        if self._skip_import_alert():
+            return
+
         try:
             from utils.airport_scope import get_import_alert_keep_airport_codes
             keep_airports = get_import_alert_keep_airport_codes()
@@ -1831,7 +1875,7 @@ class TafParser:
         有 data_status=N 且 import_alert≠Y 的行 → 按公式判断是否过期，过期则批量标记 Y。
         占位行（data_status=C）已由主循环创建，此处不再处理。
         """
-        if not airport_codes:
+        if not airport_codes or self._skip_import_alert():
             return
         try:
             m = settings.MTWS_CONFIG['TAF_IMPORT_ALERT']['TAF_ISSUE_LEEWAY_MINUTES']
@@ -1926,6 +1970,9 @@ class TafParser:
         为无任何有效数据的机场创建 data_status=C 的占位行，并直接标记 import_alert=Y。
         SQC 格式与 METAR 占位行保持一致：C_{airport_4code}_{now_ms}
         """
+        if self._skip_import_alert():
+            return
+
         try:
             sqc = f"C_{airport_code}_{now_ms}"
             Taf.objects.create(

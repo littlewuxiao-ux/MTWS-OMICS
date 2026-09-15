@@ -24,6 +24,23 @@ function createTafForecastRow(tafData, rowType) {
     return `<div class="taf-row-container" style="position: relative; height: 100%;">${html}${ganttBars}</div>`;
 }
 
+/**
+ * 甘特条带文本：中文模式下取明语翻译，其余视图仍用报文原文。
+ * key 为 'SUBJECT' 或 '变化组类型|开始时次'，与 taf_elements 侧的键一致。
+ */
+function ganttBarContent(taf, key, raw) {
+    const fallback = raw || '';
+    if (window._viewMode !== 'plain') return fallback;
+    if (typeof plainGanttText !== 'function') return fallback;
+    return plainGanttText(taf, key) || fallback;
+}
+
+function ganttChangeKey(changeType, startTime) {
+    const type = String(changeType || '').trim().toUpperCase();
+    if (!type || !startTime) return '';
+    return `${type}|${startTime}`;
+}
+
 // 创建TAF甘特图条带
 function createTafGanttBars(taf, rowType) {
     let ganttBars = '';
@@ -34,7 +51,7 @@ function createTafGanttBars(taf, rowType) {
             ganttBars += createSingleGanttBar(
                 taf.subject_validity_period_start,
                 taf.subject_validity_period_end,
-                taf.subject_content || '',
+                ganttBarContent(taf, 'SUBJECT', taf.subject_content),
                 taf.subject_warning || 'N',
                 'main-forecast'
             );
@@ -53,7 +70,7 @@ function createTafGanttBars(taf, rowType) {
                     ganttBars += createSingleGanttBar(
                         startTime,
                         endTime,
-                        content || '',
+                        ganttBarContent(taf, ganttChangeKey(changeType, startTime), content),
                         warning || 'N',
                         'change-forecast'
                     );
@@ -80,7 +97,7 @@ function createTafGanttBars(taf, rowType) {
                     ganttBars += createSingleGanttBar(
                         startTime,
                         endTime,
-                        content || '',
+                        ganttBarContent(taf, ganttChangeKey(changeType, startTime), content),
                         warning || 'N',
                         'tempo-prob'
                     );
@@ -165,7 +182,11 @@ function createBecmgTransitionBar(taf, becmgIndex) {
             // 时间校验：结束时间必须早于或等于BECMG开始时间
             if (isTimeBeforeOrEqual(prevEndTime, becmgStartTime)) {
                 previousEndTime = prevEndTime;
-                previousContent = taf[`change_${j}_content_all`] || '';
+                previousContent = ganttBarContent(
+                    taf,
+                    ganttChangeKey(prevType, taf[`change_${j}_validity_period_start`]),
+                    taf[`change_${j}_content_all`]
+                );
                 previousWarning = taf[`change_${j}_warning`] || 'N';
                 break;
             }
@@ -176,7 +197,7 @@ function createBecmgTransitionBar(taf, becmgIndex) {
     // 如果没有找到前面的变化组，使用主体预报
     if (!previousEndTime) {
         previousEndTime = taf.subject_validity_period_end;
-        previousContent = taf.subject_content || '';
+        previousContent = ganttBarContent(taf, 'SUBJECT', taf.subject_content);
         previousWarning = taf.subject_warning || 'N';
     }
 
@@ -185,7 +206,11 @@ function createBecmgTransitionBar(taf, becmgIndex) {
     }
 
     // 获取BECMG变化组的信息
-    const becmgContent = taf[`change_${becmgIndex}_content_all`] || '';
+    const becmgContent = ganttBarContent(
+        taf,
+        ganttChangeKey(taf[`change_${becmgIndex}_type`], becmgStartTime),
+        taf[`change_${becmgIndex}_content_all`]
+    );
     const becmgWarning = taf[`change_${becmgIndex}_warning`] || 'N';
 
     // 计算过渡条带的时间范围

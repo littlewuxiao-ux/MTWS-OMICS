@@ -359,10 +359,11 @@ document.addEventListener('DOMContentLoaded', function () {
     initializeSorting(); // 初始化排序功能
     initTimezoneModeToggle(); // 初始化时间模式开关
 
-    // 恢复地图告警状态（map.js 已在此事件前执行完毕）
-    if (typeof initMapAlertState === 'function') initMapAlertState();
-
     const startApp = () => {
+        // 视图导航必须在权限就绪后再定视图：非本机先过角色选择，
+        // 拿到权限才知道地址里的 ?view= 能不能进（见 views_nav.js）
+        if (typeof initViewNav === 'function') initViewNav();
+
         const canLoad = checkBrowserRefresh();
         if (!canLoad) return;
         if (currentTimeMode === 'current') {
@@ -1896,9 +1897,20 @@ function handleMultiSelectFilter(group, value) {
 }
 
 // 应用筛选
+// 按当前视图把筛选结果交给对应渲染器：地图由 updateMapAlert 自行取数，
+// 中文模式走 plain_view.js，其余为列表主页
+function renderCurrentView(airports) {
+    if (window._viewMode === 'map') return;
+    if (window._viewMode === 'plain') {
+        if (typeof renderPlainView === 'function') renderPlainView(airports);
+        return;
+    }
+    displayAirports(airports);
+}
+
 function applyFilters() {
     if (!airportData || airportData.length === 0) {
-        if (window._viewMode !== 'map') displayAirports([]);
+        renderCurrentView([]);
         return;
     }
 
@@ -1929,7 +1941,7 @@ function applyFilters() {
     // 应用排序
     applySorting();
 
-    if (window._viewMode !== 'map') displayAirports(filteredAirportData);
+    renderCurrentView(filteredAirportData);
 
     updateRegionAlertDots();
 
@@ -2385,9 +2397,13 @@ function createAirportRowForDetail(airport) {
     const noTafData = (!tafData || tafData.length === 0) || (tafData[0].data_status === 'C');
     const tafAlertClass = (tafData && tafData.length > 0 && tafData[0].import_alert === 'Y') ? ' taf-import-alerted' : '';
 
+    const weatherBox = (window._viewMode === 'plain' && typeof plainWeatherInfoDiv === 'function')
+        ? plainWeatherInfoDiv(airport)
+        : buildWeatherInfoDiv(airport.airport_4code, latestMetar);
+
     return `
         <div class="airport-row airport-row-detail">
-            ${buildWeatherInfoDiv(airport.airport_4code, latestMetar)}
+            ${weatherBox}
             <div class="forecast-timeline">
                 ${noTafData ? '<div class="no-taf-data">没有有效的TAF数据</div>' : ''}
                 <div class="forecast-row main-forecast${tafAlertClass}">
@@ -3845,6 +3861,10 @@ function displayAirportDetailData(airportData) {
     const airportDataHTML = createAirportRowForDetail(airportData);
 
     detailMain.innerHTML = airportDataHTML;
+
+    if (window._viewMode === 'plain' && typeof fetchPlainMetars === 'function' && airportData.airport_4code) {
+        fetchPlainMetars([airportData.airport_4code]);
+    }
 
     // 等待DOM渲染和缩放完成后应用网格线
     setTimeout(() => {
