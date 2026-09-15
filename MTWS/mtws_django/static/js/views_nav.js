@@ -265,6 +265,9 @@
       localStorage.setItem(STORAGE_KEY, key);
       syncUrl(key);
       paintNav();
+      if (typeof syncAirportDetailTimelineLabel === 'function') {
+        syncAirportDetailTimelineLabel();
+      }
       // 标题行显隐变了，顶边要重算；地图面板异步定位，再补一次
       syncNavTop();
       setTimeout(syncNavTop, 80);

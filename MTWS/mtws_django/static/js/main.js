@@ -154,6 +154,9 @@ function refreshAllTimezoneDisplays() {
     if (typeof refreshPlainTimezone === 'function') {
         refreshPlainTimezone();
     }
+    if (typeof syncAirportDetailTimelineLabel === 'function') {
+        syncAirportDetailTimelineLabel();
+    }
     // 若告警面板已打开，重新渲染以反映新时区
     const alertPanel = document.getElementById('import-alert-panel');
     if (alertPanel && alertPanel.classList.contains('open')) {

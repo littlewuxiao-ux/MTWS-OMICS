@@ -671,8 +671,8 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
   height: 30px;
   min-height: 30px;
   box-sizing: border-box;
-  justify-content: flex-start;
-  padding-left: 8px;
+  justify-content: center;
+  padding-left: 0;
 }
 
 .title-timeline {
