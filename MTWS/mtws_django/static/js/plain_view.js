@@ -353,9 +353,10 @@ function plainDetailMetarRow(airport) {
   const alertClass = isAlerted ? ' import-alerted' : '';
   const alertTitle = isAlerted ? ' title="【过期实况数据，注意提醒】"' : '';
   return `<div class="plain-detail-metar${alertClass}"${alertTitle}>
-    <span class="plain-detail-metar-tag">实况</span>
+    <div class="plain-detail-section-title">实况</div>
     <div class="plain-detail-metar-body">${inner}</div>
-  </div>`;
+  </div>
+  <div class="plain-detail-section-title plain-detail-taf-title">预报</div>`;
 }
 
 /**
