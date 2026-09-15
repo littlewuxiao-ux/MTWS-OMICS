@@ -876,7 +876,7 @@ function buildPublishExportText(timezone = 'auto') {
             return temperatures.length ? Math.max(...temperatures) : null;
         };
 
-        const rowTexts = rows.map((cells, rowIndex) => {
+        const legacyRowTexts = rows.map((cells, rowIndex) => {
             if (!cells?.length) return '';
             const note = String(notes[rowIndex] || '').trim();
             const effectiveNote = (note === '/' || note === '适航' ? '' : note)
@@ -979,6 +979,137 @@ function buildPublishExportText(timezone = 'auto') {
             const combined = [weatherText, ...temperatureRanges].filter(Boolean);
             return combined.length ? combined.join('，') : (effectiveNote || '');
         }).filter(Boolean);
+
+        // Cross-row aggregation: manually edited weather is often split across
+        // several rows. Merge by hour before exporting so thunder/rain,
+        // visibility and wind obey the same time-range rules.
+        const hourlyValues = Array.from({ length: maxCells }, (_, index) =>
+            rows.flatMap(row => {
+                const cell = row?.[index];
+                return cell ? [formatCellValue(cell)] : [];
+            }).filter(value => value && value !== '—' && value !== '适航')
+        );
+        const weatherForHour = values => values.filter(value =>
+            /雨|雷暴|雪|冻雨|雾|霾|沙|尘|烟/.test(value)
+        );
+        const windForHour = values => values.map(value => {
+            const match = String(value).match(/((?:偏?[东南西北]{1,3}|风向不定)风)\s*(\d+(?:\.\d+)?)(?:\s*[-至]\s*(\d+(?:\.\d+)?))?\s*米\/秒/);
+            return match ? { dir: match[1], min: Number(match[2]), max: Number(match[3] || match[2]) } : null;
+        }).filter(Boolean);
+        const visibilityForHour = values => values.map(value => {
+            const match = String(value).match(/能见度\s*(\d+(?:\.\d+)?)\s*米/);
+            return match ? Number(match[1]) : null;
+        }).filter(value => Number.isFinite(value));
+        const weatherPhrases = hourlyValues.map(values => {
+            const weather = weatherForHour(values);
+            if (!weather.length) return '';
+            const thunder = weather.some(value => /雷雨|雷暴/.test(value));
+            const rain = weather.some(value => /雨/.test(value) && !/雷雨/.test(value));
+            if (thunder && rain) {
+                const rank = { '小': 1, '中': 2, '大': 3, '暴': 4 };
+                const names = Object.keys(rank);
+                const levels = weather.map(value => (value.match(/(小|中|大|暴)(?:阵)?(?:雨|雷雨)/) || [])[1]).filter(Boolean).map(value => rank[value] || 2);
+                const lo = levels.length ? Math.min(...levels) : 2;
+                const hi = levels.length ? Math.max(...levels) : lo;
+                return `${lo === hi ? names[lo - 1] : `${names[lo - 1]}到${names[hi - 1]}`}阵雨，伴雷暴`;
+            }
+            return Array.from(new Set(weather)).join('、');
+        });
+        const mergedWeatherRanges = [];
+        let weatherStart = null, weatherItems = [];
+        const flushWeather = end => {
+            if (weatherStart === null || !weatherItems.length) return;
+            const thunder = weatherItems.some(value => /雷雨|雷暴/.test(value));
+            const rain = weatherItems.some(value => /雨/.test(value) && !/雷雨/.test(value));
+            let phrase;
+            if (thunder && rain) {
+                const rank = { '小': 1, '中': 2, '大': 3, '暴': 4 };
+                const names = Object.keys(rank);
+                const levels = weatherItems.map(value => (value.match(/(小|中|大|暴)(?:阵)?(?:雨|雷雨)/) || [])[1]).filter(Boolean).map(value => rank[value] || 2);
+                const lo = levels.length ? Math.min(...levels) : 2;
+                const hi = levels.length ? Math.max(...levels) : lo;
+                phrase = `${lo === hi ? names[lo - 1] : `${names[lo - 1]}到${names[hi - 1]}`}阵雨，伴雷暴`;
+            } else {
+                phrase = Array.from(new Set(weatherItems)).join('、');
+            }
+            mergedWeatherRanges.push(`${formatRange(weatherStart, end)}${phrase}`);
+            weatherStart = null; weatherItems = [];
+        };
+        weatherPhrases.forEach((phrase, index) => {
+            if (!phrase) { flushWeather(index - 1); return; }
+            if (weatherStart === null) weatherStart = index;
+            weatherItems.push(...weatherForHour(hourlyValues[index]));
+        });
+        flushWeather(weatherPhrases.length - 1);
+        const visibilityValues = hourlyValues.map(values => {
+            const list = visibilityForHour(values);
+            return list.length ? list[0] : null;
+        });
+        const mergedVisibilityRanges = [];
+        let visStart = null, visValues = [];
+        visibilityValues.forEach((value, index) => {
+            if (value == null) {
+                if (visStart !== null) {
+                    const min = Math.min(...visValues), max = Math.max(...visValues);
+                    mergedVisibilityRanges.push(`${formatRange(visStart, index - 1)}能见度${min === max ? min : `${min}-${max}`}米`);
+                }
+                visStart = null; visValues = [];
+            } else {
+                if (visStart === null) visStart = index;
+                visValues.push(value);
+            }
+        });
+        if (visStart !== null) {
+            const min = Math.min(...visValues), max = Math.max(...visValues);
+            mergedVisibilityRanges.push(`${formatRange(visStart, visibilityValues.length - 1)}能见度${min === max ? min : `${min}-${max}`}米`);
+        }
+        const windValues = hourlyValues.map(values => windForHour(values));
+        const mergedWindRanges = [];
+        let windStart = null, windItems = [];
+        windValues.forEach((items, index) => {
+            if (!items.length) {
+                if (windStart !== null) {
+                    const dirs = Array.from(new Set(windItems.map(item => item.dir)));
+                    const min = Math.min(...windItems.map(item => item.min));
+                    const max = Math.max(...windItems.map(item => item.max));
+                    mergedWindRanges.push(`${formatRange(windStart, index - 1)}${dirs.join('转')}${min === max ? min : `${min}-${max}`}米/秒`);
+                }
+                windStart = null; windItems = [];
+            } else {
+                if (windStart === null) windStart = index;
+                windItems.push(...items);
+            }
+        });
+        if (windStart !== null) {
+            const dirs = Array.from(new Set(windItems.map(item => item.dir)));
+            const min = Math.min(...windItems.map(item => item.min));
+            const max = Math.max(...windItems.map(item => item.max));
+            mergedWindRanges.push(`${formatRange(windStart, windValues.length - 1)}${dirs.join('转')}${min === max ? min : `${min}-${max}`}米/秒`);
+        }
+        const temperatureValues = hourlyValues.map((_, index) => {
+            const values = rows.map(row => getCellTemperature(row?.[index])).filter(value => value !== null);
+            return values.length ? Math.max(...values) : null;
+        });
+        const mergedTemperatureRanges = [];
+        let tempStart = null, tempValues = [];
+        temperatureValues.forEach((value, index) => {
+            if (value === null) {
+                if (tempStart !== null) {
+                    const min = Math.min(...tempValues), max = Math.max(...tempValues);
+                    mergedTemperatureRanges.push(`${formatRange(tempStart, index - 1)}温度${min === max ? min : `${min}-${max}`}℃`);
+                }
+                tempStart = null; tempValues = [];
+            } else {
+                if (tempStart === null) tempStart = index;
+                tempValues.push(value);
+            }
+        });
+        if (tempStart !== null) {
+            const min = Math.min(...tempValues), max = Math.max(...tempValues);
+            mergedTemperatureRanges.push(`${formatRange(tempStart, temperatureValues.length - 1)}温度${min === max ? min : `${min}-${max}`}℃`);
+        }
+        const noteText = notes.map(note => String(note || '').trim()).filter(note => note && note !== '/' && note !== '适航' && !/风|能见度/.test(note)).join('，');
+        const rowTexts = [...mergedWeatherRanges, ...mergedVisibilityRanges, ...mergedWindRanges, ...mergedTemperatureRanges, noteText].filter(Boolean);
 
         const timeText = rowTexts.length ? rowTexts.join('；') : '预计天气适航';
         const nameMode = document.querySelector('input[name="export-text-name"]:checked')?.value || 'chinese';
