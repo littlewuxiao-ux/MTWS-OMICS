@@ -16,11 +16,31 @@ import html
 import logging
 import re
 import time
+from contextlib import contextmanager
+from contextvars import ContextVar
+from datetime import timedelta
 from typing import Any, Optional
 
 logger = logging.getLogger('mtws.parsers')
 
 ALERT_LEVELS = ('R', 'Y', 'G')
+
+# 报文时刻为世界时。CST 时把显示时刻加 8 小时，与主页时区开关一致。
+_plain_display_tz: ContextVar[str] = ContextVar('plain_display_tz', default='CST')
+
+
+@contextmanager
+def plain_display_timezone(tz: Optional[str]):
+    name = 'UTC' if str(tz or '').strip().upper() == 'UTC' else 'CST'
+    token = _plain_display_tz.set(name)
+    try:
+        yield
+    finally:
+        _plain_display_tz.reset(token)
+
+
+def _tz_offset_hours() -> int:
+    return 0 if _plain_display_tz.get() == 'UTC' else 8
 
 # ── 码表（很少变动，写在代码里） ────────────────────────────────────
 
@@ -227,12 +247,38 @@ def _fmt_num(value) -> str:
     return str(int(num)) if num == int(num) else f'{num:g}'
 
 
+def _shift_clock(day: int, hour: int, minute: int = 0) -> tuple[int, int, int]:
+    """世界时日/时/分 → 当前显示时区的日/时/分（跨日按 31 日循环）。"""
+    total = hour * 60 + minute + _tz_offset_hours() * 60
+    extra, total = divmod(total, 24 * 60)
+    hour, minute = divmod(total, 60)
+    day = ((day - 1 + extra) % 31) + 1
+    return day, hour, minute
+
+
 def _ddhh_zh(ddhh) -> str:
-    """``1006`` → ``10日06时``；``100630`` / 非法值原样返回。"""
-    text = str(ddhh or '').strip()
+    """``1006`` → ``10日06时``（UTC）或换算后的北京时；``100630`` 带分。"""
+    text = str(ddhh or '').strip().upper().rstrip('Z')
     if len(text) == 4 and text.isdigit():
-        return f'{int(text[:2])}日{text[2:]}时'
+        day, hour, _ = _shift_clock(int(text[:2]), int(text[2:4]))
+        return f'{day}日{hour:02d}时'
+    if len(text) == 6 and text.isdigit():
+        day, hour, minute = _shift_clock(int(text[:2]), int(text[2:4]), int(text[4:6]))
+        return f'{day}日{hour:02d}时{minute:02d}分'
     return text
+
+
+def _zulu_clock_zh(value, suffix: str) -> str:
+    """``100630Z`` → ``10日06时30分观测/发布``，随显示时区换算。"""
+    text = str(value or '').strip().upper()
+    if text.endswith('Z'):
+        text = text[:-1]
+    if len(text) == 6 and text.isdigit():
+        day, hour, minute = _shift_clock(int(text[:2]), int(text[2:4]), int(text[4:6]))
+        return f'{day}日{hour:02d}时{minute:02d}分{suffix}'
+    if len(text) == 4 and text.isdigit():
+        return f'{_ddhh_zh(text)}{suffix}'
+    return suffix
 
 
 def _validity_zh(period: str) -> str:
@@ -444,7 +490,7 @@ def translate_taf_elements(elements: Optional[dict]) -> Optional[dict]:
     header_bits = [f'预报 {airport}'.strip()]
     issue = str(elements.get('issue_time_z') or '').strip()
     if len(issue) == 7 and issue.endswith('Z'):
-        header_bits.append(f'{int(issue[:2])}日{issue[2:4]}时{issue[4:6]}分发布')
+        header_bits.append(_zulu_clock_zh(issue, '发布'))
     validity = _validity_zh(elements.get('whole_validity'))
     if validity:
         header_bits.append(f'有效期{validity}')
@@ -548,7 +594,7 @@ def translate_metar_row(row: Any) -> Optional[dict]:
 def _obs_head_zh(elements: dict) -> str:
     issue = str(elements.get('observation_time_z') or '').strip()
     if len(issue) == 7 and issue.endswith('Z'):
-        return f'{int(issue[:2])}日{issue[2:4]}时{issue[4:6]}分观测'
+        return _zulu_clock_zh(issue, '观测')
     return '观测'
 
 
@@ -1034,6 +1080,9 @@ def _metar_head(airport_code: str, data) -> str:
     time_obj = getattr(data, 'time', None)
     dt = getattr(time_obj, 'dt', None) if time_obj is not None else None
     if dt is not None:
+        offset = _tz_offset_hours()
+        if offset:
+            dt = dt + timedelta(hours=offset)
         return f'{dt.day}日{dt.strftime("%H时%M分")}观测'
     return '观测'
 

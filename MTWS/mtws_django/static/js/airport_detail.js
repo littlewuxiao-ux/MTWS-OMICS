@@ -1142,8 +1142,13 @@ function _buildSearchAirportDataSection(airport) {
     ? createAirportRowForDetail(airport)
     : '<div class="airport-search-empty">无法生成数据行</div>';
 
+  const metarHTML = (window._viewMode === 'plain' && typeof plainDetailMetarRow === 'function')
+    ? plainDetailMetarRow(airport)
+    : '';
+
   return `
     <div class="airport-data-section">
+      <div id="search-block-metar-${code}" class="plain-detail-metar-wrap"${window._viewMode === 'plain' ? '' : ' hidden'}>${metarHTML}</div>
       <div class="title-row airport-detail-title-row">
         <div class="title-weather"><span class="title-text">实况信息</span></div>
         <div class="title-timeline">

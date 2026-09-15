@@ -249,16 +249,18 @@ body.plain-mode .airport-detail-title-row .title-weather {
   display: none;
 }
 
-.airport-detail-main .airport-row-plain {
-  flex-direction: column;
-  align-items: stretch;
+.airport-row-plain .forecast-timeline {
+  flex: 1;
+  width: 100%;
+  min-height: 90px;
 }
 
-.airport-row-plain .forecast-timeline {
-  flex: none;
-  width: 100%;
-  height: 90px;
-  min-height: 90px;
+.plain-detail-metar-wrap {
+  flex-shrink: 0;
+}
+
+.plain-detail-metar-wrap[hidden] {
+  display: none;
 }
 
 .plain-detail-metar {

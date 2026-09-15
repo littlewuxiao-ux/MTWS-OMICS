@@ -151,6 +151,9 @@ function refreshAllTimezoneDisplays() {
     if (airportDetailChart.chart && airportDetailChart.airportCode) {
         initAirportDetailChart(airportDetailChart.airportCode, airportDetailChart.hours);
     }
+    if (typeof refreshPlainTimezone === 'function') {
+        refreshPlainTimezone();
+    }
     // 若告警面板已打开，重新渲染以反映新时区
     const alertPanel = document.getElementById('import-alert-panel');
     if (alertPanel && alertPanel.classList.contains('open')) {
@@ -2401,16 +2404,12 @@ function createAirportRowForDetail(airport) {
     const weatherBox = isPlain
         ? ''
         : buildWeatherInfoDiv(airport.airport_4code, latestMetar);
-    const metarRow = (isPlain && typeof plainDetailMetarRow === 'function')
-        ? plainDetailMetarRow(airport)
-        : '';
     const rowClass = isPlain
         ? 'airport-row airport-row-detail airport-row-plain'
         : 'airport-row airport-row-detail';
 
     return `
         <div class="${rowClass}">
-            ${metarRow}
             ${weatherBox}
             <div class="forecast-timeline">
                 ${noTafData ? '<div class="no-taf-data">没有有效的TAF数据</div>' : ''}
@@ -3869,6 +3868,9 @@ function displayAirportDetailData(airportData) {
     const airportDataHTML = createAirportRowForDetail(airportData);
 
     detailMain.innerHTML = airportDataHTML;
+    if (typeof paintPlainDetailMetar === 'function') {
+        paintPlainDetailMetar(airportData);
+    }
 
     if (window._viewMode === 'plain' && typeof ensurePlainForAirports === 'function') {
         ensurePlainForAirports([airportData]);
@@ -3890,14 +3892,12 @@ function updateAirportGridForModal(airportElement) {
     airportElement.querySelectorAll('.grid-vertical-line, .grid-horizontal-line').forEach(line => line.remove());
 
     const forecastTimeline = airportElement.querySelector('.forecast-timeline');
-    const metarRow = airportElement.querySelector('.plain-detail-metar');
     const hasAirportInfo = airportElement.querySelector('.airport-info') !== null;
     const hasWeather = airportElement.querySelector('.weather-info') !== null;
     const leftOffset = hasAirportInfo ? 280 : (hasWeather ? 200 : 0);
-    const topOffset = metarRow ? metarRow.offsetHeight : 0;
     const airportHeight = forecastTimeline
         ? forecastTimeline.offsetHeight
-        : Math.max(0, airportElement.scrollHeight - topOffset);
+        : airportElement.scrollHeight;
 
     let horizontalWidth;
     if (forecastTimeline) {
@@ -3921,7 +3921,7 @@ function updateAirportGridForModal(airportElement) {
         line.style.cssText = `
             position: absolute;
             left: ${leftOffset + position}px;
-            top: ${topOffset}px;
+            top: 0;
             width: ${isMidnightLine ? '3px' : '1px'};
             height: ${airportHeight}px;
             background-color: ${isMidnightLine ? '#ffffff' : 'rgba(255, 255, 255, 0.3)'};
@@ -3949,7 +3949,7 @@ function updateAirportGridForModal(airportElement) {
         line.style.cssText = `
             position: absolute;
             left: ${leftOffset}px;
-            top: ${topOffset + data.position}px;
+            top: ${data.position}px;
             width: ${horizontalWidth}px;
             height: 1px;
             background-color: rgba(255, 255, 255, 0.3);
