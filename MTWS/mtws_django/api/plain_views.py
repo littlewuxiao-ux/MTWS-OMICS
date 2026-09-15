@@ -16,6 +16,11 @@ from utils.access_control import has_perm, resolve_access_identity
 
 logger = logging.getLogger('mtws.api')
 
+
+def _plain_tz_from_request(request) -> str:
+    tz = str(request.GET.get('tz') or '').strip().upper()
+    return 'UTC' if tz == 'UTC' else 'CST'
+
 PLAIN_MODULE = 'view_plain'
 
 
@@ -71,7 +76,9 @@ def plain_taf_batch(request, time_mode='current'):
         return denied
 
     try:
-        from parsers.plain_language import translate_taf_row
+        from parsers.plain_language import plain_display_timezone, translate_taf_row
+
+        tz = _plain_tz_from_request(request)
 
         codes_param = request.GET.get('codes', '').strip()
         if codes_param:
@@ -85,19 +92,20 @@ def plain_taf_batch(request, time_mode='current'):
 
         rows = _latest_taf_elements(codes)
         result = {}
-        for code in codes:
-            row = rows.get(code)
-            if not row:
-                result[code] = None
-                continue
-            if row.get('data_status') == 'C':
-                result[code] = None
-                continue
-            try:
-                result[code] = translate_taf_row(row)
-            except Exception as exc:
-                logger.error(f'预报明语翻译失败 [{code}]: {exc}')
-                result[code] = None
+        with plain_display_timezone(tz):
+            for code in codes:
+                row = rows.get(code)
+                if not row:
+                    result[code] = None
+                    continue
+                if row.get('data_status') == 'C':
+                    result[code] = None
+                    continue
+                try:
+                    result[code] = translate_taf_row(row)
+                except Exception as exc:
+                    logger.error(f'预报明语翻译失败 [{code}]: {exc}')
+                    result[code] = None
         return JsonResponse({'success': True, 'data': result})
     except Exception as exc:
         logger.error(f'批量预报明语失败: {exc}')
@@ -112,7 +120,9 @@ def plain_metar_batch(request, time_mode='current'):
         return denied
 
     try:
-        from parsers.plain_language import translate_metar_row
+        from parsers.plain_language import plain_display_timezone, translate_metar_row
+
+        tz = _plain_tz_from_request(request)
 
         codes_param = request.GET.get('codes', '').strip()
         if codes_param:
@@ -126,16 +136,17 @@ def plain_metar_batch(request, time_mode='current'):
 
         rows = _latest_metar_elements(codes)
         result = {}
-        for code in codes:
-            row = rows.get(code)
-            if not row or row.get('data_status') == 'C':
-                result[code] = None
-                continue
-            try:
-                result[code] = translate_metar_row(row)
-            except Exception as exc:
-                logger.error(f'实况明语翻译失败 [{code}]: {exc}')
-                result[code] = None
+        with plain_display_timezone(tz):
+            for code in codes:
+                row = rows.get(code)
+                if not row or row.get('data_status') == 'C':
+                    result[code] = None
+                    continue
+                try:
+                    result[code] = translate_metar_row(row)
+                except Exception as exc:
+                    logger.error(f'实况明语翻译失败 [{code}]: {exc}')
+                    result[code] = None
         return JsonResponse({'success': True, 'data': result})
     except Exception as exc:
         logger.error(f'批量实况明语失败: {exc}')

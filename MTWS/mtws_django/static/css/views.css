@@ -240,11 +240,135 @@ body.has-view-nav #map-alert-panel {
 .plain-val-Y { color: var(--alert-y); }
 .plain-val-G { color: var(--alert-g); }
 
-/* 详情页实况明语：观测抬头 + 要素两列 */
-.weather-info-plain {
-  font-size: 10px;
-  line-height: 1.45;
-  color: #2c3e50;
+/* 中文详情/搜索：不要历史报文区，时间轴标题不再给左侧实况格留位 */
+body.plain-mode .airport-reports-section {
+  display: none;
+}
+
+/* 中文详情：时间轴左侧留出与三行说明同宽的空位，横线贴着时间轴（与原先标题行一致） */
+body.plain-mode .airport-detail-title-row {
+  border-top: 1px solid rgba(255, 255, 255, 0.45);
+}
+
+body.plain-mode .airport-detail-title-row .title-weather {
+  width: 4.6em;
+  min-width: 4.6em;
+  padding-left: 0;
+  justify-content: center;
+  border-right: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+body.plain-mode .airport-detail-title-row .title-weather .title-text {
+  visibility: hidden;
+}
+
+.airport-row-plain .plain-row-labels {
+  width: 4.6em;
+  min-width: 4.6em;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  border-right: 1px solid rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.plain-row-label {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.15;
+  color: rgba(255, 255, 255, 0.92);
+  padding: 0 2px;
+  white-space: nowrap;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.plain-row-label:last-child {
+  border-bottom: none;
+}
+
+.airport-row-plain .forecast-timeline {
+  flex: 1;
+  min-width: 0;
+  min-height: 90px;
+}
+
+.plain-detail-metar-wrap {
+  flex-shrink: 0;
+}
+
+.plain-detail-metar-wrap[hidden] {
+  display: none;
+}
+
+.plain-detail-metar {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 4px 12px 0;
+  color: #ffffff;
+  font-size: 13px;
+  line-height: 1.55;
+  background: rgba(255, 255, 255, 0.05);
+  position: relative;
+  z-index: 1;
+}
+
+.plain-detail-section-title {
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.35em;
+  color: #ffffff;
+  padding: 4px 0 6px;
+}
+
+.plain-detail-taf-title {
+  padding: 8px 0 6px;
+  background: transparent;
+}
+
+.plain-detail-metar-body {
+  min-width: 0;
+  word-break: break-word;
+  text-align: left;
+  padding: 0 4px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.45);
+}
+
+.plain-detail-metar .plain-metar-head {
+  margin-right: 0.4em;
+}
+
+.plain-detail-metar .plain-empty {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.plain-detail-metar.import-alerted::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    135deg,
+    transparent 0px,
+    transparent 8px,
+    rgba(255, 0, 0, 0.28) 8px,
+    rgba(255, 0, 0, 0.28) 16px
+  );
+  pointer-events: none;
+  z-index: 0;
+}
+
+.plain-detail-metar.import-alerted .plain-detail-section-title,
+.plain-detail-metar.import-alerted .plain-detail-metar-body {
+  position: relative;
+  z-index: 1;
 }
 
 .plain-empty {

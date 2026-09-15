@@ -151,6 +151,9 @@ function refreshAllTimezoneDisplays() {
     if (airportDetailChart.chart && airportDetailChart.airportCode) {
         initAirportDetailChart(airportDetailChart.airportCode, airportDetailChart.hours);
     }
+    if (typeof refreshPlainTimezone === 'function') {
+        refreshPlainTimezone();
+    }
     // 若告警面板已打开，重新渲染以反映新时区
     const alertPanel = document.getElementById('import-alert-panel');
     if (alertPanel && alertPanel.classList.contains('open')) {
@@ -2397,13 +2400,25 @@ function createAirportRowForDetail(airport) {
     const noTafData = (!tafData || tafData.length === 0) || (tafData[0].data_status === 'C');
     const tafAlertClass = (tafData && tafData.length > 0 && tafData[0].import_alert === 'Y') ? ' taf-import-alerted' : '';
 
-    const weatherBox = (window._viewMode === 'plain' && typeof plainWeatherInfoDiv === 'function')
-        ? plainWeatherInfoDiv(airport)
+    const isPlain = window._viewMode === 'plain';
+    const weatherBox = isPlain
+        ? ''
         : buildWeatherInfoDiv(airport.airport_4code, latestMetar);
+    const rowLabels = isPlain
+        ? `<div class="plain-row-labels">
+            <div class="plain-row-label">长效预报</div>
+            <div class="plain-row-label">短时变化</div>
+            <div class="plain-row-label">航班信息</div>
+          </div>`
+        : '';
+    const rowClass = isPlain
+        ? 'airport-row airport-row-detail airport-row-plain'
+        : 'airport-row airport-row-detail';
 
     return `
-        <div class="airport-row airport-row-detail">
+        <div class="${rowClass}">
             ${weatherBox}
+            ${rowLabels}
             <div class="forecast-timeline">
                 ${noTafData ? '<div class="no-taf-data">没有有效的TAF数据</div>' : ''}
                 <div class="forecast-row main-forecast${tafAlertClass}">
@@ -2516,7 +2531,7 @@ function performSearch(searchValue) {
         const existing = (typeof airportData !== 'undefined') &&
             airportData.find(a => a.airport_4code === codes[0]);
         if (existing) {
-            showAirportDetailModal(existing);
+            showAirportDetailModal(existing, 'search');
             return;
         }
         // 不在已加载数据中，需要从后端获取
@@ -3861,9 +3876,12 @@ function displayAirportDetailData(airportData) {
     const airportDataHTML = createAirportRowForDetail(airportData);
 
     detailMain.innerHTML = airportDataHTML;
+    if (typeof paintPlainDetailMetar === 'function') {
+        paintPlainDetailMetar(airportData);
+    }
 
-    if (window._viewMode === 'plain' && typeof fetchPlainMetars === 'function' && airportData.airport_4code) {
-        fetchPlainMetars([airportData.airport_4code]);
+    if (window._viewMode === 'plain' && typeof ensurePlainForAirports === 'function') {
+        ensurePlainForAirports([airportData]);
     }
 
     // 等待DOM渲染和缩放完成后应用网格线
@@ -3881,12 +3899,16 @@ function updateAirportGridForModal(airportElement) {
     // 避免把上一轮网格线的绝对定位偏移计入尺寸测量，形成越刷新越往下/往右偏移的累积误差
     airportElement.querySelectorAll('.grid-vertical-line, .grid-horizontal-line').forEach(line => line.remove());
 
-    const airportHeight = airportElement.scrollHeight;
-
-    // 使用与主页相同的方法：获取原始宽度
     const forecastTimeline = airportElement.querySelector('.forecast-timeline');
-    let horizontalWidth;
+    const hasAirportInfo = airportElement.querySelector('.airport-info') !== null;
+    const hasWeather = airportElement.querySelector('.weather-info') !== null;
+    const labelCol = airportElement.querySelector('.plain-row-labels');
+    const leftOffset = hasAirportInfo ? 280 : (hasWeather ? 200 : (labelCol ? labelCol.offsetWidth : 0));
+    const airportHeight = forecastTimeline
+        ? forecastTimeline.offsetHeight
+        : airportElement.scrollHeight;
 
+    let horizontalWidth;
     if (forecastTimeline) {
         horizontalWidth = forecastTimeline.scrollWidth;
     } else {
@@ -3894,8 +3916,6 @@ function updateAirportGridForModal(airportElement) {
     }
 
     const timeSlots = currentTimeRange;
-    const hasAirportInfo = airportElement.querySelector('.airport-info') !== null;
-    const leftOffset = hasAirportInfo ? 280 : 200;
 
     // 创建竖线 - 使用原始宽度平分
     const positions = calculateVerticalLinePositions(horizontalWidth, timeSlots);

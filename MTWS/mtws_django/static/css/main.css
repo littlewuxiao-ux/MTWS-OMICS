@@ -1193,6 +1193,17 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
   justify-content: flex-start;
 }
 
+/* 详情弹窗（含单机场搜索）只剩一侧信息时，剩余块相对整行居中 */
+.airport-detail-header-main .airport-info-row.header-info-only {
+  justify-content: center;
+}
+
+.airport-detail-header-main .airport-info-row.header-info-only .airport-info-left,
+.airport-detail-header-main .airport-info-row.header-info-only .airport-info-contacts {
+  flex: 0 1 auto;
+  justify-content: center;
+}
+
 /* 基础信息中间的分隔竖线（日出日落跑道 与 联系方式 之间）：保留布局占位，仅隐藏视觉效果 */
 .airport-info-divider {
   width: 1px;

@@ -503,7 +503,7 @@
     const catNames = {
       views: '显示视图',
       home: '主页',
-      airport_detail: '机场详情',
+      airport_detail: '详情与搜索',
       import_alert: '入库告警',
       metar_popup: '实况弹窗',
       settings: '设置',
