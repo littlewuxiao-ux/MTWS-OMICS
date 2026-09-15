@@ -795,7 +795,13 @@ class ServicePanel:
         return self.cfg.get("public_home_url") or self.home_url
 
     def target_path(self):
-        return self.cfg.get("work_dir")
+        raw = str(self.cfg.get("work_dir") or "").strip().strip('"')
+        if not raw:
+            return raw
+        # Resolve configured relative paths from the launcher directory, not
+        # the process cwd (which may be changed by a batch file).
+        p = Path(raw).expanduser()
+        return str((SCRIPT_DIR / p).resolve()) if not p.is_absolute() else str(p.resolve())
 
     # ── 启动 ──────────────────────────────────────────────────────────────
     def start(self):
@@ -2340,7 +2346,6 @@ if __name__ == "__main__":
         sys.exit(0)
     app = LauncherApp(ipc_sock)
     app.mainloop()
-
 
 
 

@@ -149,6 +149,15 @@ window.renderPublishTable = function() { renderPublishTableTriRow(window.current
 
 // 🌟 需求B：全局统一的保存方法（记录打卡人与时间戳）
 window.saveConfirmedDataToLocal = function() {
+    // Capture edits made directly in the table before taking a snapshot.
+    const seen = new Set();
+    document.querySelectorAll('#forecast-table tr[data-icao]').forEach(row => {
+        const icao = row.dataset.icao;
+        if (!icao || icao === 'TEMP_ADD' || seen.has(icao)) return;
+        seen.add(icao);
+        if (pbState.confirmedData[icao]) persistConfirmedAirportFromDom(icao, false);
+        else persistDraftAirportFromDom(icao);
+    });
     const userEl = document.getElementById('user-id-display');
     const curUser = userEl ? userEl.textContent.trim() : 'UNKNOWN';
     const wrapper = { timestamp: Date.now(), user: curUser, data: pbState.confirmedData };
@@ -874,6 +883,26 @@ function buildPublishExportText(timezone = 'auto') {
                 .split(/\s+/).filter(token => token && token !== '高温').join(' ');
             const isModifier = /间歇|短时|偶有|局地|阶段性|阵性/.test(effectiveNote);
             const isWindDescription = /风/.test(effectiveNote) && !isModifier;
+            const normalizedWeather = cells.map(cell => formatCellValue(cell));
+            const relevantWeather = normalizedWeather.filter(value => value && value !== '—' && value !== '适航');
+            const thunderValues = relevantWeather.filter(value => /雷雨|雷暴/.test(value));
+            const rainValues = relevantWeather.filter(value => /雨/.test(value) && !/雷雨/.test(value));
+            const hasIntermittentThunderRain = thunderValues.length > 0 && rainValues.length > 0
+                && relevantWeather.every(value => /雨|雷暴/.test(value));
+            if (hasIntermittentThunderRain) {
+                const intensityRank = { '小': 1, '中': 2, '大': 3, '暴': 4 };
+                const intensities = relevantWeather
+                    .map(value => (value.match(/(小|中|大|暴)(?:阵)?(?:雨|雷雨)/) || [])[1])
+                    .filter(Boolean);
+                const minRank = intensities.length ? Math.min(...intensities.map(value => intensityRank[value] || 2)) : 2;
+                const maxRank = intensities.length ? Math.max(...intensities.map(value => intensityRank[value] || 2)) : minRank;
+                const rankName = rank => Object.keys(intensityRank).find(key => intensityRank[key] === rank) || '中';
+                const rainPhrase = minRank === maxRank ? `${rankName(minRank)}阵雨` : `${rankName(minRank)}到${rankName(maxRank)}阵雨`;
+                const firstWeather = normalizedWeather.findIndex(value => value && value !== '—' && value !== '适航');
+                let lastWeather = normalizedWeather.length - 1;
+                while (lastWeather >= 0 && (!normalizedWeather[lastWeather] || normalizedWeather[lastWeather] === '—' || normalizedWeather[lastWeather] === '适航')) lastWeather--;
+                return `${formatRange(Math.max(0, firstWeather), Math.max(firstWeather, lastWeather))}${effectiveNote && isModifier ? effectiveNote : ''}${rainPhrase}，伴雷暴`;
+            }
             const ranges = [];
             let currentValue = formatCellValue(cells[0]);
             let startIndex = 0;
@@ -1089,13 +1118,21 @@ function setupGlobalToolbar() {
     const renderPublishHistory = () => {
         const bar = document.getElementById('publish-history-bar'); if (!bar) return;
         const history = JSON.parse(localStorage.getItem('sf_publish_history_v1') || '[]');
-        bar.innerHTML = history.slice(0, 4).map((h, i) => `<span class="publish-history-entry" style="position:relative;display:inline-flex;align-items:center;background:#ede9fe;border:1px solid #a78bfa;border-radius:4px;padding:0 2px 0 0;"><button class="mini-btn publish-history-item" data-index="${i}" style="background:transparent;border:0;color:#4c1d95;padding:4px 8px;cursor:pointer;">${new Date(h.timestamp).toLocaleString()} · ${h.hours}小时</button><button class="publish-history-delete" data-index="${i}" title="删除此历史记录" style="border:0;background:transparent;color:#b91c1c;font-size:16px;line-height:1;cursor:pointer;padding:2px 4px;">×</button></span>`).join('') + (history.length > 4 ? '<button class="mini-btn" id="publish-history-more" style="background:#f3f4f6;border:1px solid #cbd5e1;padding:4px 8px;">…</button>' : '');
+        history.sort((a, b) => Number(a.timestamp || 0) - Number(b.timestamp || 0));
+        const visibleStart = Math.max(0, history.length - 4);
+        const visibleHistory = history.slice(visibleStart);
+        bar.innerHTML = visibleHistory.map((h, i) => {
+            const index = visibleStart + i;
+            return `<span class="publish-history-entry" style="position:relative;display:inline-flex;align-items:center;background:#ede9fe;border:1px solid #a78bfa;border-radius:4px;padding:0 2px 0 0;"><button class="mini-btn publish-history-item" data-index="${index}" style="background:transparent;border:0;color:#4c1d95;padding:4px 8px;cursor:pointer;">${new Date(h.timestamp).toLocaleString()} · ${h.hours}小时</button><button class="publish-history-delete" data-index="${index}" title="删除此历史记录" style="border:0;background:transparent;color:#b91c1c;font-size:16px;line-height:1;cursor:pointer;padding:2px 4px;">×</button></span>`;
+        }).join('') + (history.length > 4 ? '<button class="mini-btn" id="publish-history-more" style="background:#f3f4f6;border:1px solid #cbd5e1;padding:4px 8px;">…</button>' : '');
         bar.querySelectorAll('.publish-history-item').forEach(btn => btn.onclick = () => {
             const h = history[Number(btn.dataset.index)];
             if (!h || !confirm('恢复这份历史预报将覆盖当前已编发内容，是否继续？')) return;
             pbState.confirmedData = JSON.parse(JSON.stringify(h.data || {}));
             window.saveConfirmedDataToLocal?.();
             renderPublishTableTriRow(window.currentApAnalysis || []);
+            refreshExportText();
+            loadForecastData(true).catch(error => PBLOG(`恢复历史后刷新失败: ${error}`, 'WARN'));
         });
         bar.querySelectorAll('.publish-history-delete').forEach(btn => btn.onclick = event => {
             event.stopPropagation();
@@ -1111,7 +1148,7 @@ function setupGlobalToolbar() {
             modal.innerHTML = `<div class="modal-content" style="width:560px;max-height:75vh;overflow:auto;padding:20px"><span class="close-button">&times;</span><h3>历史预报</h3><input id="publish-history-search" type="search" placeholder="搜索时间或预报时长" style="width:100%;box-sizing:border-box;padding:8px;margin-bottom:10px"><div id="publish-history-results"></div></div>`;
             document.body.appendChild(modal);
             const results = modal.querySelector('#publish-history-results');
-            const draw = q => { const key = q.toLowerCase(); results.innerHTML = history.map((h, i) => ({h, i})).filter(x => `${new Date(x.h.timestamp).toLocaleString()} ${x.h.hours}小时`.toLowerCase().includes(key)).map(x => `<div style="display:flex;gap:4px;margin:4px 0"><button class="mini-btn" data-i="${x.i}" style="flex:1;text-align:left;padding:8px">${new Date(x.h.timestamp).toLocaleString()} · ${x.h.hours}小时</button><button class="mini-btn history-search-delete" data-i="${x.i}" title="删除" style="color:#b91c1c">×</button></div>`).join('') || '<div>没有匹配记录</div>'; results.querySelectorAll('button[data-i]:not(.history-search-delete)').forEach(b => b.onclick = () => { if (!confirm('恢复这份历史预报将覆盖当前已编发内容，是否继续？')) return; pbState.confirmedData = JSON.parse(JSON.stringify(history[Number(b.dataset.i)].data || {})); window.saveConfirmedDataToLocal?.(); renderPublishTableTriRow(window.currentApAnalysis || []); modal.remove(); }); results.querySelectorAll('.history-search-delete').forEach(b => b.onclick = () => { if (!confirm('确定删除这份历史预报吗？')) return; history.splice(Number(b.dataset.i), 1); localStorage.setItem('sf_publish_history_v1', JSON.stringify(history)); draw(modal.querySelector('#publish-history-search').value); renderPublishHistory(); }); };
+            const draw = q => { const key = q.toLowerCase(); results.innerHTML = history.map((h, i) => ({h, i})).filter(x => `${new Date(x.h.timestamp).toLocaleString()} ${x.h.hours}小时`.toLowerCase().includes(key)).map(x => `<div style="display:flex;gap:4px;margin:4px 0"><button class="mini-btn" data-i="${x.i}" style="flex:1;text-align:left;padding:8px">${new Date(x.h.timestamp).toLocaleString()} · ${x.h.hours}小时</button><button class="mini-btn history-search-delete" data-i="${x.i}" title="删除" style="color:#b91c1c">×</button></div>`).join('') || '<div>没有匹配记录</div>'; results.querySelectorAll('button[data-i]:not(.history-search-delete)').forEach(b => b.onclick = () => { if (!confirm('恢复这份历史预报将覆盖当前已编发内容，是否继续？')) return; pbState.confirmedData = JSON.parse(JSON.stringify(history[Number(b.dataset.i)].data || {})); window.saveConfirmedDataToLocal?.(); renderPublishTableTriRow(window.currentApAnalysis || []); refreshExportText(); loadForecastData(true).catch(error => PBLOG(`恢复历史后刷新失败: ${error}`, 'WARN')); modal.remove(); }); results.querySelectorAll('.history-search-delete').forEach(b => b.onclick = () => { if (!confirm('确定删除这份历史预报吗？')) return; history.splice(Number(b.dataset.i), 1); localStorage.setItem('sf_publish_history_v1', JSON.stringify(history)); draw(modal.querySelector('#publish-history-search').value); renderPublishHistory(); }); };
             draw(''); modal.querySelector('#publish-history-search').oninput = e => draw(e.target.value); modal.querySelector('.close-button').onclick = () => modal.remove();
         });
     };
@@ -1119,8 +1156,9 @@ function setupGlobalToolbar() {
         persistAllPublishDraftsFromDom();
         window.saveConfirmedDataToLocal?.();
         const history = JSON.parse(localStorage.getItem('sf_publish_history_v1') || '[]');
-        history.unshift({ timestamp: Date.now(), hours: pbState.validityHours || 24, data: JSON.parse(JSON.stringify(pbState.confirmedData)) });
-        localStorage.setItem('sf_publish_history_v1', JSON.stringify(history.slice(0, 50)));
+        history.sort((a, b) => Number(a.timestamp || 0) - Number(b.timestamp || 0));
+        history.push({ timestamp: Date.now(), hours: pbState.validityHours || 24, data: JSON.parse(JSON.stringify(pbState.confirmedData)) });
+        localStorage.setItem('sf_publish_history_v1', JSON.stringify(history.slice(-50)));
         renderPublishHistory();
         alert('已保存已编发内容');
     });
@@ -1400,6 +1438,12 @@ function setupModalEvents() {
   const globalModal = document.getElementById('global-settings-modal');
   
   document.getElementById('settings-toggle-btn')?.addEventListener('click', () => {
+      if (typeof window.OMICS_authorizeSettings !== 'function' || !window.OMICS_authorizeSettings()) {
+          globalModal.dataset.settingsAuthorizationFailed = 'true';
+          return;
+      }
+      // Let script.js perform the shared UI setup without asking again.
+      globalModal.dataset.settingsAuthorized = 'true';
       populateModalForm(); 
       globalModal.style.display = 'flex';
       
@@ -1978,11 +2022,27 @@ function serializePublishRows(rows) {
     };
 }
 
+function compactSerializedRows(serialized) {
+    const keep = serialized.rows.map((row, index) => {
+        const note = String(serialized.notes[index] || '').trim();
+        return row.some(cell => String(cell.text || '').trim() && !['—', '适航'].includes(String(cell.text).trim()))
+            || (note && note !== '/' && note !== '适航');
+    });
+    return {
+        rows: serialized.rows.filter((_, index) => keep[index]),
+        notes: serialized.notes.filter((_, index) => keep[index]),
+        rowSources: serialized.rowSources.filter((_, index) => keep[index])
+    };
+}
+
 function confirmAirportFromDom(icao) {
     const rows = getAirportEditableRows(icao);
     if (!rows.length) return;
     const serialized = serializePublishRows(rows);
-    const allClear = serialized.rows.every(row => row.every(cell => !cell.text));
+    const allClear = serialized.rows.every(row => row.every(cell => {
+        const value = String(cell.text || '').trim();
+        return !value || value === '—' || value === '适航';
+    }));
     if (allClear) {
         serialized.notes = serialized.notes.map((_, index) => index === 0 ? '适航' : '');
         serialized.rows.forEach(row => row.forEach(cell => {
@@ -1992,7 +2052,10 @@ function confirmAirportFromDom(icao) {
             cell.ts = 'none';
         }));
     } else {
-        serialized.notes = serialized.notes.map(note => note || '/');
+        const compacted = compactSerializedRows(serialized);
+        serialized.rows = compacted.rows;
+        serialized.notes = compacted.notes.map(note => note || '/');
+        serialized.rowSources = compacted.rowSources;
     }
     const existing = pbState.confirmedData[icao] || {};
     pbState.confirmedData[icao] = {
@@ -2008,7 +2071,7 @@ function persistDraftAirportFromDom(icao) {
     if (!icao || pbState.confirmedData[icao]) return;
     const rows = getAirportEditableRows(icao).filter(row => row.dataset.confirmed === 'false');
     if (!rows.length) return;
-    const serialized = serializePublishRows(rows);
+    const serialized = compactSerializedRows(serializePublishRows(rows));
     const mainRow = rows.find(row => row.classList.contains('tr-edit')) || rows[0];
     const adoptedSources = mainRow.dataset.adoptedSources || '';
     const hasContent = serialized.rows.some(row => row.some(cell => cell.text)) || serialized.notes.some(Boolean);
@@ -2694,16 +2757,19 @@ function getAirportEditableRows(icao) {
         .filter(row => row.classList.contains('tr-edit') || row.classList.contains('tr-edit-extra'));
 }
 
-function persistConfirmedAirportFromDom(icao) {
+function persistConfirmedAirportFromDom(icao, persistNow = true) {
     const data = pbState.confirmedData[icao];
     if (!data) return;
     const rows = getAirportEditableRows(icao).filter(row => row.dataset.confirmed === 'true');
     if (!rows.length) return;
-    const serialized = serializePublishRows(rows);
+    let serialized = serializePublishRows(rows);
+    const hasAnyContent = serialized.rows.some(row => row.some(cell => String(cell.text || '').trim() && !['—', '适航'].includes(String(cell.text).trim())))
+        || serialized.notes.some(note => { const value = String(note || '').trim(); return value && value !== '/' && value !== '适航'; });
+    if (hasAnyContent) serialized = compactSerializedRows(serialized);
     data.rows = serialized.rows;
     data.notes = serialized.notes;
     data.rowSources = serialized.rowSources;
-    window.saveConfirmedDataToLocal?.();
+    if (persistNow) window.saveConfirmedDataToLocal?.();
 }
 
 function syncHighTemperatureNoteForRow(row) {
@@ -2800,6 +2866,7 @@ function setupTableInteraction() {
   const table = document.getElementById('forecast-table');
   if(!table) return;
   const sel = { active: false, r1: -1, c1: -1, r2: -1, c2: -1 };
+  let internalClipboard = null;
   
   function getAllInteractiveRows() {
       return Array.from(table.querySelectorAll('.tr-edit, .tr-edit-extra, .tr-taf, .tr-taf-detail, .tr-nwp, .tr-nwp-detail')).filter(tr => tr.style.display !== 'none');
@@ -2867,7 +2934,7 @@ function setupTableInteraction() {
 
   document.addEventListener('keydown', e => {
       if (e.target.closest('input, textarea, select, [contenteditable="true"]')) return;
-      const selected = table.querySelectorAll('td.td-data.edit-cell.selected');
+      const selected = table.querySelectorAll('td.td-data.selected');
       if (selected.length > 0 && !document.querySelector('.cell-editor')) {
           if (e.ctrlKey || e.metaKey || e.altKey) return; 
           if (e.key.length === 1 || e.key === 'Enter' || e.key === 'Backspace') {
@@ -2955,6 +3022,7 @@ function setupTableInteraction() {
       }
       
       const textToCopy = lines.join('\n');
+      internalClipboard = textToCopy;
       // 🌟 修复：如果高端 API 被浏览器拦截，自动使用更鲁棒的 fallback 强制复制
       const fallbackCopy = (text) => {
           const textArea = document.createElement("textarea");
@@ -2978,7 +3046,9 @@ function setupTableInteraction() {
     if (sel.r1 < 0) return; 
       if (document.activeElement && (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName) || document.activeElement.isContentEditable)) return;
     e.preventDefault();
-    const text = e.clipboardData.getData('text/plain'); if (!text) return;
+    const clipboardText = e.clipboardData.getData('text/plain');
+    const text = clipboardText || internalClipboard;
+    if (text === null || text === undefined) return;
     const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
     if (lines.length && lines[lines.length - 1] === '') lines.pop();
     
@@ -3202,8 +3272,13 @@ function setupAirportInteraction() {
       if (!selectedIcao || !selectedWeatherRow) return;
       const editableRows = getAirportEditableRows(selectedIcao);
       if (editableRows.length <= 1 || !editableRows.includes(selectedWeatherRow)) return;
-      const hasContent = Array.from(selectedWeatherRow.querySelectorAll('.edit-cell')).some(cell => cell.textContent.trim())
-          || !!selectedWeatherRow.querySelector('.edit-note-input')?.value.trim();
+      const hasContent = Array.from(selectedWeatherRow.querySelectorAll('.edit-cell')).some(cell => {
+          const value = cell.textContent.trim();
+          return value && value !== '—' && value !== '适航';
+      }) || (() => {
+          const note = selectedWeatherRow.querySelector('.edit-note-input')?.value.trim() || '';
+          return note && note !== '/' && note !== '适航';
+      })();
       if (hasContent && !confirm('当前天气行已有内容，确认删除吗？')) return;
       selectedWeatherRow.remove();
       if (pbState.confirmedData[selectedIcao]) persistConfirmedAirportFromDom(selectedIcao);

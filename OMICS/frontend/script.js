@@ -327,6 +327,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     let personnelDict = { ...DEFAULT_PERSONNEL, ...(serverSettingsConfig?.personnel_dict || {}), ...(JSON.parse(localStorage.getItem('personnel_dict') || '{}')) };
     let settingsPassword = localStorage.getItem('settings_pwd') || '123';
 
+    // Shared by script.js and publish.js, which both listen for this button.
+    window.OMICS_authorizeSettings = function () {
+        const userId = String(localStorage.getItem('sf_userId') || '').trim();
+        const token = String(apiToken || localStorage.getItem('sf_weather_token') || '').trim();
+        if (token && userId && userId === ADMIN_ID) return true;
+        const inputPwd = prompt("安全验证:仅管理员(吴霄)可免密进入,其他账号需输入管理密码。");
+        if (inputPwd === null || inputPwd.trim() === '' || inputPwd !== settingsPassword) {
+            alert("密码错误,拒绝访问!");
+            return false;
+        }
+        return true;
+    };
+
     const amdSwitch = document.getElementById('admin-recognize-amd');
     if (amdSwitch) {
         const savedAmdState = localStorage.getItem('sf_recognize_amd');
@@ -772,6 +785,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     const globalSettingsModal = document.getElementById('global-settings-modal');
 
     settingsBtn.addEventListener('click', () => {
+        if (globalSettingsModal.dataset.settingsAuthorizationFailed === 'true') {
+            delete globalSettingsModal.dataset.settingsAuthorizationFailed;
+            return;
+        }
+        const preAuthorized = globalSettingsModal.dataset.settingsAuthorized === 'true';
+        delete globalSettingsModal.dataset.settingsAuthorized;
+        if (!preAuthorized && !window.OMICS_authorizeSettings()) return;
+
         const currentUserId = localStorage.getItem('sf_userId') || '';
         const currentToken = apiToken || localStorage.getItem('sf_weather_token') || '';
         const isLoggedIn = !!currentToken && !!currentUserId;
@@ -780,13 +801,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         //   2. 其他任何情况(未登录 / 登录的不是吴霄)→ 必须输入管理密码才能进入系统设置,
         //      且只能进普通设置,看不到高级管理员配置。
         const isAdminUser = isLoggedIn && currentUserId === ADMIN_ID;
-        if (!isAdminUser) {
-            const inputPwd = prompt("安全验证:仅管理员(吴霄)可免密进入,其他账号需输入管理密码。");
-            if (inputPwd !== settingsPassword) {
-                alert("密码错误,拒绝访问!");
-                return;
-            }
-        }
         globalSettingsModal.style.display = 'flex';
         renderPersonnelList();
 

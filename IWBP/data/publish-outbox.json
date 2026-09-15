@@ -1,7 +1,7 @@
 {
   "version": 1,
   "source": "工作台·发布存档",
-  "updatedAt": "2026-09-06T20:02:57.652Z",
+  "updatedAt": "2026-09-06T23:34:40.484Z",
   "items": [
     {
       "id": "po-1788724936200-v5li6m",
@@ -25720,99 +25720,6 @@
       "recalledBy": "",
       "recallOf": "",
       "publishDeadlineAt": "2026-08-07T03:02:04.676Z"
-    },
-    {
-      "id": "po-1786058600713-r9opjo",
-      "type": "alert",
-      "text": "解除【雷暴、强降水】ZSNB宁波/栎社天气警报：以上天气对公司运行影响结束，解除天气警报。",
-      "savedAt": "2026-08-06T23:23:20.713Z",
-      "savedBy": "值班员-甲",
-      "station": "ZSNB",
-      "phenomena": [
-        "雷暴",
-        "强降水"
-      ],
-      "periodSlotId": "",
-      "anchorYmd": "2026-08-07",
-      "pushedToNext": true,
-      "pushedAt": "2026-08-06T23:24:25.404Z",
-      "pushedBy": "本地机器人",
-      "warningId": "",
-      "isCancel": true,
-      "recalled": false,
-      "recalledAt": null,
-      "recalledBy": "",
-      "recallOf": "",
-      "publishDeadlineAt": "2026-08-06T23:38:20.713Z"
-    },
-    {
-      "id": "po-1786054788879-g5cgwb",
-      "type": "alert",
-      "text": "【炎热天气】ZHEC鄂州/花湖天气警报\n预计鄂州机场今日13-17时温度35-36℃。",
-      "savedAt": "2026-08-06T22:19:48.879Z",
-      "savedBy": "值班员-甲",
-      "station": "ZHEC",
-      "phenomena": [
-        "炎热天气"
-      ],
-      "periodSlotId": "",
-      "anchorYmd": "2026-08-07",
-      "pushedToNext": true,
-      "pushedAt": "2026-08-06T22:20:21.154Z",
-      "pushedBy": "本地机器人",
-      "warningId": "wa-1786054788767-44m9l",
-      "isCancel": false,
-      "recalled": false,
-      "recalledAt": null,
-      "recalledBy": "",
-      "recallOf": "",
-      "publishDeadlineAt": "2026-08-06T22:34:48.879Z"
-    },
-    {
-      "id": "po-1786054725457-svmpd9",
-      "type": "alert",
-      "text": "【炎热天气】ZSWX无锡/硕放天气警报\n预计无锡机场11-16时温度35-36℃。",
-      "savedAt": "2026-08-06T22:18:45.457Z",
-      "savedBy": "值班员-甲",
-      "station": "ZSWX",
-      "phenomena": [
-        "炎热天气"
-      ],
-      "periodSlotId": "",
-      "anchorYmd": "2026-08-07",
-      "pushedToNext": true,
-      "pushedAt": "2026-08-06T22:20:21.339Z",
-      "pushedBy": "本地机器人",
-      "warningId": "wa-1786054725209-4h6ji",
-      "isCancel": false,
-      "recalled": false,
-      "recalledAt": null,
-      "recalledBy": "",
-      "recallOf": "",
-      "publishDeadlineAt": "2026-08-06T22:33:45.457Z"
-    },
-    {
-      "id": "po-1786054701477-dfeidw",
-      "type": "alert",
-      "text": "【炎热天气】ZSQD青岛/胶东天气警报\n预计青岛机场10-17时温度35-38℃。",
-      "savedAt": "2026-08-06T22:18:21.477Z",
-      "savedBy": "值班员-甲",
-      "station": "ZSQD",
-      "phenomena": [
-        "炎热天气"
-      ],
-      "periodSlotId": "",
-      "anchorYmd": "2026-08-07",
-      "pushedToNext": true,
-      "pushedAt": "2026-08-06T22:20:21.542Z",
-      "pushedBy": "本地机器人",
-      "warningId": "wa-1786054701239-uanm7",
-      "isCancel": false,
-      "recalled": false,
-      "recalledAt": null,
-      "recalledBy": "",
-      "recallOf": "",
-      "publishDeadlineAt": "2026-08-06T22:33:21.477Z"
     }
   ]
 }
