@@ -59,7 +59,6 @@ MTWS/data/raw/
 MTWS/mtws_django/staticfiles/
 
 # ==== IWBP seat-local runtime (do not upload; app code unchanged) ====
-IWBP/data/publish-outbox.json
 IWBP/data/active-warnings.json
 IWBP/data/cas-web-sessions/
 IWBP/data/checklist-config.json
