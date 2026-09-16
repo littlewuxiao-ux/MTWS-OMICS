@@ -75,7 +75,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const UNIFIED_AUTH_STATUS_URL = '/auth/status';
     const UNIFIED_AUTH_UPDATE_URL = '/auth/update';
     const UNIFIED_AUTH_CLEAR_URL = '/auth/clear';
-    const SETTINGS_CONFIG_URL = '/api/settings_config';
+    const SETTINGS_CONFIG_URL = window.OMICS_API_URL('settings_config');
 
     function isRealUserCode(userCode) {
         const code = String(userCode || '').trim();
@@ -511,21 +511,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('browse-taf-btn')?.addEventListener('click', async (e) => {
         e.target.textContent = "打开中...";
         try {
-            const res = await fetch('/api/select_folder'); const data = await res.json();
+            const res = await fetch(window.OMICS_API_URL('select_folder')); const data = await res.json();
             if (data.success) { tafExcelPathInput.value = data.path; localStorage.setItem('taf_excel_path', data.path); patchSettingsConfig({ paths: buildPathsBlock() }); }
         } catch (err) {} e.target.textContent = "浏览";
     });
     document.getElementById('browse-manual-btn')?.addEventListener('click', async (e) => {
         e.target.textContent = "打开中...";
         try {
-            const res = await fetch('/api/select_folder'); const data = await res.json();
+            const res = await fetch(window.OMICS_API_URL('select_folder')); const data = await res.json();
             if (data.success) { manualExcelPathInput.value = data.path; localStorage.setItem('manual_excel_path', data.path); patchSettingsConfig({ paths: buildPathsBlock() }); }
         } catch (err) {} e.target.textContent = "浏览";
     });
     document.getElementById('browse-manual-forecast-btn')?.addEventListener('click', async (e) => {
         e.target.textContent = "打开中...";
         try {
-            const res = await fetch('/api/select_folder'); const data = await res.json();
+            const res = await fetch(window.OMICS_API_URL('select_folder')); const data = await res.json();
             if (data.success && manualForecastPathInput) {
                 manualForecastPathInput.value = data.path;
                 localStorage.setItem('manual_forecast_path', data.path);
@@ -536,7 +536,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('browse-backup-btn')?.addEventListener('click', async (e) => {
         e.target.textContent = "打开中...";
         try {
-            const res = await fetch('/api/select_folder'); const data = await res.json();
+            const res = await fetch(window.OMICS_API_URL('select_folder')); const data = await res.json();
             if (data.success && backupSavePathInput) { backupSavePathInput.value = data.path; localStorage.setItem('backup_save_path', data.path); patchSettingsConfig({ paths: buildPathsBlock() }); }
         } catch (err) {} e.target.textContent = "浏览";
     });
@@ -2391,7 +2391,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             manualSaveBtn.disabled = true; manualSaveBtn.textContent = "⏳ 正在生成 Excel 及备份数据...";
             try {
-                const res = await fetch('/api/save_score', {
+                const res = await fetch(window.OMICS_API_URL('save_score'), {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ results: window.lastScoreResults, forecast_mode: currentMode, export_config: exportConfig })
                 });
