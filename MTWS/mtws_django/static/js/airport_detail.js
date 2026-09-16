@@ -23,6 +23,21 @@ function canShowHeaderInfo(kind) {
   return hasAccess(`${page}_${kind}_${headerInfoMode()}`, 'display');
 }
 
+function airportDetailTimelineCornerLabel() {
+  if (window._viewMode === 'plain') {
+    return window.displayTimezone === 'UTC' ? '世界时' : '北京时';
+  }
+  return '实况信息';
+}
+
+function syncAirportDetailTimelineLabel() {
+  const label = airportDetailTimelineCornerLabel();
+  document.querySelectorAll('.airport-detail-title-row .title-text').forEach((el) => {
+    el.textContent = label;
+  });
+}
+window.syncAirportDetailTimelineLabel = syncAirportDetailTimelineLabel;
+
 // 存储图表实例和状态
 const airportDetailChart = {
   chart: null,
@@ -179,6 +194,10 @@ function showAirportDetailModal(airportData, source) {
   airportDetailChart.hours = defaultHours;
   collapseAirportChartSection();
   bindChartTimeSelectorForDetail(airport.airport_4code);
+
+  if (typeof syncAirportDetailTimelineLabel === 'function') {
+    syncAirportDetailTimelineLabel();
+  }
 
   const reportsSection = document.querySelector('#airport-detail-modal .airport-reports-section');
   if (window._viewMode === 'plain') {
@@ -1150,7 +1169,7 @@ function _buildSearchAirportDataSection(airport) {
     <div class="airport-data-section">
       <div id="search-block-metar-${code}" class="plain-detail-metar-wrap"${window._viewMode === 'plain' ? '' : ' hidden'}>${metarHTML}</div>
       <div class="title-row airport-detail-title-row">
-        <div class="title-weather"><span class="title-text">实况信息</span></div>
+        <div class="title-weather"><span class="title-text">${airportDetailTimelineCornerLabel()}</span></div>
         <div class="title-timeline">
           <div class="timeline-row beijing-time">
             <div id="search-block-bj-${code}" class="timeline-container"></div>

@@ -245,26 +245,32 @@ body.plain-mode .airport-reports-section {
   display: none;
 }
 
-/* 中文详情：时间轴左侧留出与三行说明同宽的空位，横线贴着时间轴（与原先标题行一致） */
+/* 中文详情：时间轴左侧与三行说明同宽（固定像素，不随「北京时」三字缩窄） */
+body.plain-mode {
+  --plain-row-label-width: 72px;
+}
+
 body.plain-mode .airport-detail-title-row {
   border-top: 1px solid rgba(255, 255, 255, 0.45);
 }
 
 body.plain-mode .airport-detail-title-row .title-weather {
-  width: 4.6em;
-  min-width: 4.6em;
+  width: var(--plain-row-label-width);
+  min-width: var(--plain-row-label-width);
+  max-width: var(--plain-row-label-width);
+  flex: 0 0 var(--plain-row-label-width);
+  box-sizing: border-box;
   padding-left: 0;
   justify-content: center;
   border-right: 1px solid rgba(255, 255, 255, 0.3);
-}
-
-body.plain-mode .airport-detail-title-row .title-weather .title-text {
-  visibility: hidden;
+  font-size: 12px;
 }
 
 .airport-row-plain .plain-row-labels {
-  width: 4.6em;
-  min-width: 4.6em;
+  width: var(--plain-row-label-width);
+  min-width: var(--plain-row-label-width);
+  max-width: var(--plain-row-label-width);
+  flex: 0 0 var(--plain-row-label-width);
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
