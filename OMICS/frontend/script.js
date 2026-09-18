@@ -1204,6 +1204,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const forecastManualGroup = document.getElementById('forecast-manual-group');
 
             if (currentMode === 'manual') {
+                syncManualFetchButtonText();
                 document.getElementById('manual-airport-choice')?.style.setProperty('display', 'inline-flex', '');
                 if (manualAirportDefault) manualAirportDefault.style.display = 'inline-block';
                 const downloadAirports = document.getElementById('download-airports');
@@ -1259,7 +1260,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (typeof window.OMICS_syncBottomScrollbar === 'function') setTimeout(window.OMICS_syncBottomScrollbar, 0);
     }
 
-    timeRadios.forEach(radio => { radio.addEventListener('change', () => { updateTimeRangeInputs(); syncManualAirportChoice?.(); }); });
+    timeRadios.forEach(radio => { radio.addEventListener('change', () => { updateTimeRangeInputs(); syncManualAirportChoice?.(); syncManualFetchButtonText(); }); });
     function formatFullTime(date) {
         const y = date.getUTCFullYear(); const m = String(date.getUTCMonth() + 1).padStart(2, '0');
         const d = String(date.getUTCDate()).padStart(2, '0'); const h = String(date.getUTCHours()).padStart(2, '0');
@@ -1337,6 +1338,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     function isTwentyFourHourRange() {
         return document.querySelector('input[name="time-range"]:checked')?.value === '24';
     }
+    function syncManualFetchButtonText() {
+        if (fetchManualBtn && currentMode === 'manual') fetchManualBtn.textContent = isTwentyFourHourRange() ? '下载实况/扫描预报' : '下载实况';
+    }
     function resolveScannedAirportCode(value) {
         const raw = String(value || '').trim();
         const upper = raw.toUpperCase();
@@ -1378,6 +1382,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         let scanStage = 'scan';
         fetchManualBtn.textContent = '正在扫描预报并下载实况...';
         try {
+            if (currentMode === 'manual' && !isTwentyFourHourRange()) {
+                const toUtc = value => {
+                    const y = Number(value.slice(0, 4)), m = Number(value.slice(4, 6)) - 1, d = Number(value.slice(6, 8)), h = Number(value.slice(8, 10));
+                    const utc = new Date(Date.UTC(y, m, d, h - 8));
+                    return `${utc.getUTCFullYear()}${String(utc.getUTCMonth() + 1).padStart(2, '0')}${String(utc.getUTCDate()).padStart(2, '0')}${String(utc.getUTCHours()).padStart(2, '0')}00`;
+                };
+                await new Promise(resolve => downloadData(toUtc(startTimeHidden.value), toUtc(endTimeHidden.value), requested.join(' '), ['SA', 'SP'], data => {
+                    const lines = typeof data === 'string' ? data.split('\n').filter(line => line.trim().length > 10) : Object.values(data || {}).flat().filter(Boolean);
+                    if (lines.length) { metarInput.value = lines.join('\n'); addMetarBtn?.click(); }
+                    resolve();
+                }));
+                alert('已按目标机场下载实况。');
+                return;
+            }
             if (currentMode === 'taf') {
                 const airports = downloadAirports.value.trim();
                 if (!airports) throw new Error('璇疯緭鍏ョ洰鏍囨満鍦?');
