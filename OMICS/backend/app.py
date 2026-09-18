@@ -1694,6 +1694,7 @@ def import_publish_excel_api():
                 "success": True,
                 "data": {
                     "source": source_name,
+                    "publish_date": (target_day.isoformat() if auto_root and evaluation_date else forecast_date),
                     "sheet": ws.title,
                     "forecast_date": forecast_date,
                     "start_hour_bjt": start_hour_bjt,

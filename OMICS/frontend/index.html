@@ -456,13 +456,6 @@
                     </div>
 
                     <div id="evaluation-workspace" style="display: none;">
-                        <div id="eval-person-container" style="display: none; margin-bottom: 12px; text-align: left;">
-                            <label for="eval-person-select" style="font-weight: bold; color: #DA251D;">评定对象:</label>
-                            <select id="eval-person-select" style="padding: 5px; border-radius: 4px; min-width: 120px;">
-                                <option value="">请选择人员</option>
-                            </select>
-                        </div>
-
                         <div class="time-selection-row" style="display: flex; align-items: center; justify-content: flex-start; flex-wrap: nowrap; gap: 15px; margin-bottom: 10px;">
                             <div class="date-picker-group" style="white-space: nowrap;">
                                 <label style="font-weight: bold;">评定日期:</label>
@@ -489,9 +482,20 @@
                             <div class="download-row-top">
                                 <label>目标机场代码:</label>
                                 <input type="text" id="download-airports" class="airport-input-small" placeholder="如 ZBAA ZGSZ">
+                                <select id="manual-airport-scope" style="margin-left:8px; padding:4px; border-radius:4px;">
+                                    <option value="default">默认机场</option>
+                                    <option value="all">全部机场</option>
+                                </select>
                             </div>
-                            <div class="download-row-bottom">
-                                <button id="fetch-manual-btn" class="mini-btn primary" style="font-size: 14px; padding: 8px 20px;">下载实况并填入</button>
+                            <div class="download-row-bottom" style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+                                <button id="fetch-manual-btn" class="mini-btn primary" style="font-size: 14px; padding: 8px 20px;">下载实况/扫描预报</button>
+                                <div id="eval-person-container" style="display:none; align-items:center; gap:6px;">
+                                    <span id="manual-forecast-publish-date" style="font-weight:bold; color:#005A9C;"></span>
+                                    <label for="eval-person-select" style="font-weight: bold; color: #DA251D;">评定对象:</label>
+                                    <select id="eval-person-select" style="padding: 5px; border-radius: 4px; min-width: 120px;">
+                                        <option value="">请选择人员</option>
+                                    </select>
+                                </div>
                                 <button id="fetch-taf-list-btn" class="mini-btn primary hidden" style="font-size: 14px; padding: 8px 20px;">查询预报报文</button>
                             </div>
                         </div>

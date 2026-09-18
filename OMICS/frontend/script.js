@@ -48,6 +48,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const endTimeHidden = document.getElementById('end-time');
 
     const downloadAirports = document.getElementById('download-airports');
+    const manualAirportScope = document.getElementById('manual-airport-scope');
     const fetchManualBtn = document.getElementById('fetch-manual-btn');
     const fetchTafListBtn = document.getElementById('fetch-taf-list-btn');
     const importTafMetarBtn = document.getElementById('import-taf-metar-btn');
@@ -1189,7 +1190,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const downloadAirports = document.getElementById('download-airports');
                 if (downloadAirports) downloadAirports.value = localStorage.getItem('sf_def_manual_aps') || "ZBAA ZGSZ ZHEC ZSHC";
 
-                if (evalPersonContainer) evalPersonContainer.style.display = 'block';
+                if (evalPersonContainer) evalPersonContainer.style.display = 'none';
                 if (manualArea) { manualArea.classList.remove('hidden'); manualArea.style.display = 'block'; }
                 if (tafArea) { tafArea.classList.add('hidden'); tafArea.style.display = 'none'; }
                 if (manualTimeOptions) manualTimeOptions.classList.remove('hidden');
@@ -1198,6 +1199,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (tafSelectionArea) tafSelectionArea.classList.add('hidden');
                 if (importTafMetarContainer) importTafMetarContainer.classList.add('hidden');
                 if (forecastManualGroup) forecastManualGroup.style.display = 'none';
+                if (manualAirportScope) manualAirportScope.value = localStorage.getItem('manual_airport_scope') || 'default';
+                if (manualAirportScope) manualAirportScope.dispatchEvent(new Event('change'));
             } else if (currentMode === 'taf') {
                 const downloadAirports = document.getElementById('download-airports');
                 if (downloadAirports) downloadAirports.value = localStorage.getItem('sf_def_taf_aps') || "ZHEC";
@@ -1309,50 +1312,102 @@ document.addEventListener('DOMContentLoaded', async () => {
         finally { btn.textContent = originalText; btn.disabled = false; }
     }
 
+    manualAirportScope?.addEventListener('change', () => {
+        localStorage.setItem('manual_airport_scope', manualAirportScope.value);
+        const isAll = manualAirportScope.value === 'all';
+        downloadAirports.disabled = isAll;
+        if (!isAll) downloadAirports.value = localStorage.getItem('sf_def_manual_aps') || 'ZBAA ZGSZ ZHEC ZSHC';
+    });
+
     fetchManualBtn.addEventListener('click', async () => {
         if (!apiToken) return alert("请先登录");
+        const evaluationDate = datePickerInput?.value || '';
+        const root = document.getElementById('manual-forecast-path')?.value.trim();
+        if (!evaluationDate) return alert('请先选择评定日期');
+        if (!root) return alert('请先在高级设置中配置“席位预报24小时预报路径”');
 
-        const sTime = startTimeHidden.value;
-        const eTime = endTimeHidden.value;
-        if (!sTime || !eTime) return alert("时间无效,请检查时间范围设置!");
+        const scope = manualAirportScope?.value || 'default';
+        const requested = downloadAirports.value.split(/[\s,]+/).map(v => v.trim().toUpperCase()).filter(Boolean);
+        fetchManualBtn.disabled = true;
+        const originalText = fetchManualBtn.textContent;
+        fetchManualBtn.textContent = '正在扫描预报并下载实况...';
+        try {
+            const form = new FormData();
+            form.append('manual_forecast_path', root);
+            form.append('evaluation_date', evaluationDate);
+            const response = await fetch(window.OMICS_API_URL('import_publish_excel'), { method: 'POST', body: form });
+            const result = await response.json();
+            if (!result.success) throw new Error(result.error || '扫描24小时预报失败');
+            const data = result.data || {};
+            const allEntries = Array.isArray(data.airports) ? data.airports : [];
+            if (!allEntries.length) throw new Error('扫描到的预报表中没有机场');
+            const entries = scope === 'all' ? allEntries : allEntries.filter(entry => requested.includes(String(entry.airport_name || '').trim().toUpperCase()));
+            if (!entries.length) throw new Error(scope === 'all' ? '扫描到的预报没有可用机场' : '默认机场未出现在扫描到的24小时预报中');
 
-        function resolveToUtcForFetch(bjtStr, offsetHour = 0) {
-            if (!bjtStr || bjtStr.length !== 12) return bjtStr;
-            let y = parseInt(bjtStr.slice(0, 4));
-            let m = parseInt(bjtStr.slice(4, 6)) - 1;
-            let d = parseInt(bjtStr.slice(6, 8));
-            let h = parseInt(bjtStr.slice(8, 10));
-            let utcDate = new Date(Date.UTC(y, m, d, h - 8 + offsetHour, 0));
-            let outY = utcDate.getUTCFullYear();
-            let outM = String(utcDate.getUTCMonth() + 1).padStart(2, '0');
-            let outD = String(utcDate.getUTCDate()).padStart(2, '0');
-            let outH = String(utcDate.getUTCHours()).padStart(2, '0');
-            return `${outY}${outM}${outD}${outH}00`;
-        }
-
-        const fetchStartTime = resolveToUtcForFetch(sTime, -1);
-        const fetchEndTime = resolveToUtcForFetch(eTime, 1);
-
-        await downloadData(fetchStartTime, fetchEndTime, downloadAirports.value, ["SA", "SP"], (data) => {
-            let arr = [];
-            if (typeof data === 'string') {
-                arr = data.split('\n').filter(line => line.trim().length > 10);
-            } else if (typeof data === 'object' && data !== null) {
-                Object.values(data).forEach(list => { if (Array.isArray(list)) arr.push(...list); });
+            if (data.forecast_date) {
+                const d = new Date(`${data.forecast_date}T00:00:00`);
+                if (!Number.isNaN(d.getTime())) {
+                    baseDate = d;
+                    datePickerInput?._flatpickr?.setDate(d, true);
+                }
             }
-            if (arr.length === 0) return alert(`未查到实况数据!\n(已按 UTC 纠正区间: ${fetchStartTime} - ${fetchEndTime})`);
+            const startHour = Number(data.start_hour_bjt);
+            const validity = Math.max(1, Number(data.validity_hours || 24));
+            if (!Number.isFinite(startHour) || !data.forecast_date) throw new Error('预报表缺少有效的发布时间或起报时间');
+            const start = new Date(`${data.forecast_date}T${String(startHour).padStart(2, '0')}:00:00`);
+            const end = new Date(start.getTime() + validity * 3600000);
+            const fmt = d => `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}${String(d.getHours()).padStart(2,'0')}00`;
+            startTimeHidden.value = fmt(start); endTimeHidden.value = fmt(end);
+            window.__manualGridTimeLocked = true;
 
-            const cleanedArr = arr.map(line => {
-                let text = line.trim();
-                const matchIndex = text.search(/(METAR|SPECI|[A-Z]{4}\s+\d{6}Z)/);
-                if (matchIndex > 0) text = text.substring(matchIndex);
-                return text;
+            downloadAirports.value = entries.map(entry => String(entry.airport_name).trim().toUpperCase()).join(' ');
+            generateGridBtn.click();
+            const byName = new Map(entries.map(entry => [String(entry.airport_name).trim().toUpperCase(), entry]));
+            document.querySelectorAll('#manual-grid tbody tr').forEach(tr => {
+                const entry = byName.get(String(tr.dataset.airport || '').trim().toUpperCase());
+                if (!entry) return;
+                const merged = [];
+                (entry.rows || []).forEach(row => row.forEach((value, index) => { merged[index] = mergeManualForecastCell(merged[index], value); }));
+                tr.querySelectorAll('input[data-col]').forEach((input, index) => { input.value = merged[index] || ''; });
             });
 
-            metarInput.value = cleanedArr.join('\n');
-            if (addMetarBtn) addMetarBtn.click();
-            alert(`✅ 成功导入并解析 ${cleanedArr.length} 条实况!(时区映射已对齐北京时)`);
-        });
+            if (data.eval_person) {
+                const person = document.getElementById('eval-person-select');
+                if (person && !Array.from(person.options).some(option => option.value === data.eval_person)) person.add(new Option(data.eval_person, data.eval_person));
+                if (person) person.value = data.eval_person;
+            }
+            const personContainer = document.getElementById('eval-person-container');
+            const publishDate = document.getElementById('manual-forecast-publish-date');
+            if (publishDate) publishDate.textContent = `预报发布时间：${data.publish_date || data.forecast_date || '未知'}`;
+            if (personContainer) { personContainer.style.display = 'flex'; personContainer.classList.remove('hidden'); }
+
+            function resolveToUtcForFetch(bjtStr, offsetHour = 0) {
+                const y = Number(bjtStr.slice(0,4)), m = Number(bjtStr.slice(4,6)) - 1, d = Number(bjtStr.slice(6,8)), h = Number(bjtStr.slice(8,10));
+                const utc = new Date(Date.UTC(y, m, d, h - 8 + offsetHour, 0));
+                return `${utc.getUTCFullYear()}${String(utc.getUTCMonth()+1).padStart(2,'0')}${String(utc.getUTCDate()).padStart(2,'0')}${String(utc.getUTCHours()).padStart(2,'0')}00`;
+            }
+            const fetchStartTime = resolveToUtcForFetch(startTimeHidden.value, -1);
+            const fetchEndTime = resolveToUtcForFetch(endTimeHidden.value, 1);
+            await new Promise((resolve, reject) => {
+                const timeout = setTimeout(() => reject(new Error('下载实况超时，请检查网络或服务状态')), 60000);
+                downloadData(fetchStartTime, fetchEndTime, entries.map(entry => entry.airport_name).join(' '), ['SA', 'SP'], dataResult => {
+                    let arr = [];
+                    if (typeof dataResult === 'string') arr = dataResult.split('\n').filter(line => line.trim().length > 10);
+                    else if (dataResult && typeof dataResult === 'object') Object.values(dataResult).forEach(list => { if (Array.isArray(list)) arr.push(...list); });
+                    if (!arr.length) { clearTimeout(timeout); reject(new Error('未查到对应机场实况报文')); return; }
+                    const cleaned = arr.map(line => { let text = String(line).trim(); const i = text.search(/(METAR|SPECI|[A-Z]{4}\s+\d{6}Z)/); return i > 0 ? text.substring(i) : text; });
+                    metarInput.value = cleaned.join('\n');
+                    if (addMetarBtn) addMetarBtn.click();
+                    clearTimeout(timeout); resolve();
+                });
+            });
+            alert(`已扫描 ${data.publish_date || data.forecast_date || '前一天'} 预报，生成 ${entries.length} 个机场表格，并导入对应实况报文。`);
+        } catch (error) {
+            alert(`扫描预报/下载实况失败：${error.message}`);
+        } finally {
+            fetchManualBtn.disabled = false;
+            fetchManualBtn.textContent = originalText;
+        }
     });
 
     fetchTafListBtn.addEventListener('click', async () => {
