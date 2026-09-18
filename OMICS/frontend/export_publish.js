@@ -554,12 +554,33 @@
             ).join('') || '<span style="color:#94a3b8;">暂无机场组</span>';
         };
         document.getElementById('global-import-airports-btn')?.addEventListener('click', () => {
+            const modalGrid = document.querySelector('#airport-import-modal .modal-content > div[style*="display:grid"]');
+            if (modalGrid && !modalGrid.querySelector('.airport-import-category-title')) {
+                ['运行机场与机场分组', '文字导入预报', '表格导入'].forEach((title, index) => {
+                    const heading = document.createElement('div');
+                    heading.className = 'airport-import-category-title';
+                    heading.textContent = title;
+                    modalGrid.insertBefore(heading, modalGrid.children[index === 0 ? 1 : index === 1 ? 6 : 9] || null);
+                });
+            }
             renderResidentOptions();
+            const allGroupsInput = document.getElementById('import-resident-groups-all');
+            const groupBox = document.getElementById('import-resident-groups');
+            if (allGroupsInput && groupBox && allGroupsInput.parentElement) {
+                allGroupsInput.parentElement.classList.add('resident-groups-select-all');
+                groupBox.parentElement.insertBefore(allGroupsInput.parentElement, groupBox);
+            }
             const residentLabels = [...document.querySelectorAll('.import-resident-group')];
             const residentGroups = typeof window.getPublishAirportGroups === 'function' ? window.getPublishAirportGroups() : [];
             residentLabels.forEach(input => {
                 const description = residentGroups[Number(input.value)]?.description;
-                if (description) input.parentElement.title = description;
+                if (description) {
+                    input.parentElement.title = description;
+                    const note = document.createElement('small');
+                    note.textContent = `（${description}）`;
+                    note.style.cssText = 'color:#64748b;margin-left:4px;';
+                    input.parentElement.appendChild(note);
+                }
             });
             const allGroups = document.getElementById('import-resident-groups-all');
             const groupChecks = [...document.querySelectorAll('.import-resident-group')];
