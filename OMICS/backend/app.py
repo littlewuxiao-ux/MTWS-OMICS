@@ -1619,6 +1619,13 @@ def import_publish_excel_api():
                     header_row = row_idx
                     break
             if header_row is None:
+                for row_idx in range(1, min(ws.max_row, 100) + 1):
+                    first = str(ws.cell(row_idx, 1).value or '').replace(' ', '').strip()
+                    second = str(ws.cell(row_idx, 2).value or '').replace(' ', '').strip()
+                    if '名称' in first and '性质' in second:
+                        header_row = row_idx
+                        break
+            if header_row is None:
                 raise ValueError('未找到“名称/性质”表头，无法识别预报数据区')
 
             data_start_col = 4

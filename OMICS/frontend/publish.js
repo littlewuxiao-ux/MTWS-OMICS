@@ -121,7 +121,8 @@ const pbState = {
   selectedResidentGroups: new Set(),
   runningImportMode: null,
   runningAllAirports: new Set(),
-  airportOrderMode: 'default',
+    airportOrderMode: 'default',
+    sourceSequences: { running: [], resident: [], text: [], table: [] },
   importSequence: [],
   sourceAirports: {
     running: new Set(), resident: new Set(), text: new Set(), table: new Set(), custom: new Set()
@@ -191,6 +192,7 @@ window.setTextImportAirports = function(icaos) {
     const normalized = (icaos || []).map(v => String(v || '').trim().toUpperCase()).filter(Boolean);
     pbState.textImportAirports = new Set(normalized);
     pbState.sourceAirports.text = new Set(normalized);
+    pbState.sourceSequences.text = normalized.slice();
     recordImportSequence(normalized);
 };
 
@@ -214,6 +216,9 @@ function registerSourceAirports(source, icaos, { replace = false } = {}) {
     if (replace) pbState.sourceAirports[source].clear();
     const normalized = (icaos || []).map(v => String(v || '').trim().toUpperCase()).filter(Boolean);
     normalized.forEach(icao => pbState.sourceAirports[source].add(icao));
+    if (pbState.sourceSequences[source]) {
+        normalized.forEach(icao => { const old = pbState.sourceSequences[source].indexOf(icao); if (old >= 0) pbState.sourceSequences[source].splice(old, 1); pbState.sourceSequences[source].push(icao); });
+    }
     recordImportSequence(normalized);
 }
 
@@ -278,7 +283,8 @@ function getSelectedAirportGroupInfo(icao) {
 function sortPublishAirportAnalysis(items) {
     const domesticRegions = Object.keys(AIRPORT_CFG.domestic);
     const internationalRegions = Object.keys(AIRPORT_CFG.international);
-    const importOrder = new Map(pbState.importSequence.map((icao, index) => [icao, index]));
+    const sourceOrder = new Map();
+    ['text', 'table'].forEach(source => (pbState.sourceSequences[source] || []).forEach((icao, index) => sourceOrder.set(icao, index)));
     return [...items].map((item, index) => ({ item, index })).sort((left, right) => {
         const a = left.item;
         const b = right.item;
@@ -289,9 +295,9 @@ function sortPublishAirportAnalysis(items) {
             if (groupA.groupIndex !== groupB.groupIndex) return groupA.groupIndex - groupB.groupIndex;
             if (groupA.airportIndex !== groupB.airportIndex) return groupA.airportIndex - groupB.airportIndex;
         }
-        if (pbState.airportOrderMode === 'import') {
-            const orderA = importOrder.get(a.icao) ?? Number.MAX_SAFE_INTEGER;
-            const orderB = importOrder.get(b.icao) ?? Number.MAX_SAFE_INTEGER;
+        if (sourceOrder.has(a.icao) || sourceOrder.has(b.icao)) {
+            const orderA = sourceOrder.has(a.icao) ? sourceOrder.get(a.icao) : Number.MAX_SAFE_INTEGER;
+            const orderB = sourceOrder.has(b.icao) ? sourceOrder.get(b.icao) : Number.MAX_SAFE_INTEGER;
             if (orderA !== orderB) return orderA - orderB;
             return left.index - right.index;
         }

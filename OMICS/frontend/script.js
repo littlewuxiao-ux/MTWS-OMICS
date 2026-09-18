@@ -1366,7 +1366,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     fetchManualBtn.addEventListener('click', async () => {
         if (!apiToken) return alert("请先登录");
         const evaluationDate = datePickerInput?.value || '';
-        const root = document.getElementById('manual-forecast-path')?.value.trim();
+        const root = document.getElementById('manual-forecast-path')?.value.trim() || (currentMode === 'taf' ? '.' : '');
         if (!evaluationDate) return alert('请先选择评定日期');
         if (!root) return alert('请先在高级设置中配置“席位预报24小时预报路径”');
 
@@ -1376,6 +1376,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         const originalText = fetchManualBtn.textContent;
         fetchManualBtn.textContent = '正在扫描预报并下载实况...';
         try {
+            if (currentMode === 'taf') {
+                const airports = downloadAirports.value.trim();
+                if (!airports) throw new Error('璇疯緭鍏ョ洰鏍囨満鍦?');
+                await new Promise(resolve => {
+                    downloadData(startTimeHidden.value, endTimeHidden.value, airports, ['SA', 'SP'], data => {
+                        const lines = typeof data === 'string' ? data.split('\n').filter(line => line.trim().length > 10) : Object.values(data || {}).flat().filter(Boolean);
+                        const cleaned = lines.map(line => { const text = String(line).trim(); const i = text.search(/(METAR|SPECI|[A-Z]{4}\s+\d{6}Z)/); return i > 0 ? text.substring(i) : text; });
+                        if (cleaned.length) { metarInput.value = cleaned.join('\n'); addMetarBtn?.click(); }
+                        resolve();
+                    });
+                });
+                alert('鎵弿棰勬姤澶辫触，已回退为按目标机场下载实况。');
+                return;
+            }
             const form = new FormData();
             form.append('manual_forecast_path', root);
             form.append('evaluation_date', evaluationDate);

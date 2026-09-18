@@ -555,6 +555,13 @@
         };
         document.getElementById('global-import-airports-btn')?.addEventListener('click', () => {
             renderResidentOptions();
+            const allGroups = document.getElementById('import-resident-groups-all');
+            const groupChecks = [...document.querySelectorAll('.import-resident-group')];
+            if (allGroups) {
+                allGroups.checked = false;
+                allGroups.onchange = () => groupChecks.forEach(input => { input.checked = allGroups.checked; });
+                groupChecks.forEach(input => input.addEventListener('change', () => { allGroups.checked = groupChecks.length > 0 && groupChecks.every(item => item.checked); }));
+            }
             const panel = document.getElementById('import-text-error-panel');
             if (panel) { panel.style.display = 'none'; panel.innerHTML = ''; }
             importModal.style.display = 'flex';
@@ -583,8 +590,7 @@
             button.textContent = '正在导入...';
             try {
                 const runningMode = useRunning ? (document.querySelector('input[name="import-running-mode"]:checked')?.value || 'filtered') : null;
-                const orderMode = document.querySelector('input[name="import-order-mode"]:checked')?.value || 'default';
-                window.configurePublishAirportSources?.({ runningMode, residentGroups, orderMode });
+                window.configurePublishAirportSources?.({ runningMode, residentGroups });
                 const operationSources = {
                     text: new Set(), table: new Set(), resident: new Set(), running: new Set()
                 };

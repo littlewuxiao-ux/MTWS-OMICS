@@ -281,6 +281,8 @@ textarea:focus { border-color: var(--sf-red); outline: none; background: white; 
 }
 .airport-import-order-control > span { color: #1E40AF; font-weight: bold; }
 .airport-import-order-block { padding-bottom: 4px; border-bottom: 1px solid #E2E8F0; }
+.airport-import-order-block { display: none; }
+.airport-import-section { display:flex; align-items:center; gap:14px; padding-top:6px; border-top:1px solid #E2E8F0; color:#1E40AF; }
 .import-option-help { margin: -4px 0 2px 24px; color: #64748B; font-size: 12px; line-height: 1.5; }
 
 .clear-airports-content { width: 420px; padding: 24px; text-align: left; }
