@@ -1647,13 +1647,20 @@ def import_publish_excel_api():
                             break
                 # 模板中“预报员”可能位于任意列，评定对象取其后一个单元格。
                 if not eval_person:
+                    labels = ('预报员', '评定对象', '预报人员', '姓名', '制作人')
                     for col_idx in range(1, ws.max_column):
                         label_text = str(ws.cell(row_idx, col_idx).value or '').strip().rstrip(':：')
-                        if label_text in ('预报员', '评定对象', '预报人员', '姓名', '制作人'):
-                            candidate = str(ws.cell(row_idx, col_idx + 1).value or '').strip()
-                            if candidate:
-                                eval_person = candidate
-                                break
+                        if label_text not in labels:
+                            continue
+                        # 模板存在合并单元格，值可能不在紧邻单元格，向后找若干格并跳过其它字段标签。
+                        for next_col in range(col_idx + 1, min(ws.max_column, col_idx + 6) + 1):
+                            candidate = str(ws.cell(row_idx, next_col).value or '').strip()
+                            if not candidate or candidate.rstrip(':：') in labels:
+                                continue
+                            eval_person = candidate
+                            break
+                        if eval_person:
+                            break
                 if label.startswith('日期'):
                     for col_idx in range(2, min(ws.max_column, 8) + 1):
                         value = ws.cell(row_idx, col_idx).value

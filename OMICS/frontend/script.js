@@ -225,15 +225,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     async function clearUnifiedAuth() {
-        try {
-            await fetch(UNIFIED_AUTH_CLEAR_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ source: 'OMICS' })
-            });
-        } catch (e) {
-            console.warn('清空 Nginx 统一登录态失败', e);
+        for (let attempt = 0; attempt < 3; attempt++) {
+            try {
+                await fetch(UNIFIED_AUTH_CLEAR_URL, {
+                    method: 'POST', cache: 'no-store', keepalive: true,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ source: 'OMICS', expired: false })
+                });
+                const status = await fetchUnifiedAuthStatus();
+                if (!status || !status.logged_in) return true;
+            } catch (e) {
+                console.warn('清空 Nginx 统一登录态失败', e);
+            }
+            await new Promise(resolve => setTimeout(resolve, 200));
         }
+        return false;
     }
 
     // 控制台后台定期校验 token,过期时会清空统一登录态。
@@ -749,6 +755,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     initSession();
     async function initSession() {
         try {
+            const explicitLogoutAt = Number(localStorage.getItem('omics_explicit_logout_at') || 0);
+            if (explicitLogoutAt && Date.now() - explicitLogoutAt < 2 * 60 * 1000) {
+                await clearUnifiedAuth();
+                clearLocalAuthState();
+            }
             const unified = await fetchUnifiedAuthStatus();
             if (unified && unified.logged_in && (!isUsableAuthToken(unified.token) || !isRealUserCode(unified.userCode))) {
                 console.warn('统一登录态工号或 token 无效，已清空');
@@ -772,6 +783,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
 
             if (data && data.logged_in && isUsableAuthToken(data.token) && isRealUserCode(data.userCode)) {
+                localStorage.removeItem('omics_explicit_logout_at');
                 if (data.token) {
                     saveTokenForBothApps(data.token, data.userCode);
                     await updateUnifiedAuth(data.token, data.userCode, data.displayName || personnelDict[data.userCode]);
@@ -883,6 +895,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     loginBtn.addEventListener('click', startLogin);
     logoutBtn.addEventListener('click', async () => {
+        localStorage.setItem('omics_explicit_logout_at', String(Date.now()));
         try { await fetch('/api/auth/logout', { method: 'POST' }); } catch(e) {}
         stopUnifiedAuthWatch();
         await clearUnifiedAuth();
@@ -1006,6 +1019,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const data = await res.json();
 
                 if (data.success) {
+                    localStorage.removeItem('omics_explicit_logout_at');
                     location.reload();
                 } else {
                     alert("登录失败:" + data.message);
@@ -1032,6 +1046,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 });
                 const valData = await valRes.json();
                 if (valData.success) {
+                    localStorage.removeItem('omics_explicit_logout_at');
                     apiToken = valData.token;
                     saveTokenForBothApps(apiToken);
                     hideModal(loginModal);
@@ -1372,13 +1387,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             const entries = scope === 'all' ? allEntries : allEntries.filter(entry => requested.includes(entry.airport_code));
             if (!entries.length) throw new Error(scope === 'all' ? '扫描到的预报没有可用机场' : '默认机场未出现在扫描到的24小时预报中');
 
-            if (data.forecast_date) {
-                const d = new Date(`${data.forecast_date}T00:00:00`);
-                if (!Number.isNaN(d.getTime())) {
-                    baseDate = d;
-                    datePickerInput?._flatpickr?.setDate(d, true);
-                }
-            }
             const startHour = Number(data.start_hour_bjt);
             const validity = Math.max(1, Number(data.validity_hours || 24));
             if (!Number.isFinite(startHour) || !data.forecast_date) throw new Error('预报表缺少有效的发布时间或起报时间');
