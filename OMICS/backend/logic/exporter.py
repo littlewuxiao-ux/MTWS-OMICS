@@ -19,7 +19,7 @@ def process_stats_and_save(results, currentMode, backup_path, excel_root, eval_p
     
     # =========================================================
     # 归档日期规则：
-    # - 席位预报：按页面选择的评定日期保存。
+    # - 席位预报：按预报发布时间归档，评定日期通常是发布时间的次日。
     # - 机场预报：页面评定日期对应 SF/TAF 报文检索日 +2；归档应回落到报文日，
     #   即评定日期 -2 天。不能再从逐时明细第一条 DDHH 猜日期，否则月末跨月时
     #   会把 0630/0100 等有效期内时次误归为 7 月 1 日，导致 6 月 30 日被跳过。
@@ -32,7 +32,7 @@ def process_stats_and_save(results, currentMode, backup_path, excel_root, eval_p
         dt = ui_dt - timedelta(days=2)
         base_date_str = dt.strftime('%Y-%m-%d')
     else:
-        dt = ui_dt
+        dt = ui_dt - timedelta(days=1)
         base_date_str = dt.strftime('%Y-%m-%d')
     # =========================================================
     mmdd = dt.strftime('%m%d')

@@ -1204,6 +1204,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const forecastManualGroup = document.getElementById('forecast-manual-group');
 
             if (currentMode === 'manual') {
+                document.getElementById('manual-airport-choice')?.style.setProperty('display', 'inline-flex', '');
                 const downloadAirports = document.getElementById('download-airports');
                 if (downloadAirports) downloadAirports.value = localStorage.getItem('sf_def_manual_aps') || "ZBAA ZGSZ ZHEC ZSHC";
 
@@ -1220,6 +1221,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (manualAirportAll) manualAirportAll.checked = false;
                 if (manualAirportAllLabel) manualAirportAllLabel.style.display = isTwentyFourHourRange() ? 'inline' : 'none';
             } else if (currentMode === 'taf') {
+                document.getElementById('manual-airport-choice')?.style.setProperty('display', 'none', 'important');
                 const downloadAirports = document.getElementById('download-airports');
                 if (downloadAirports) downloadAirports.value = localStorage.getItem('sf_def_taf_aps') || "ZHEC";
 

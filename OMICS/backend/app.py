@@ -1648,6 +1648,7 @@ def import_publish_excel_api():
                 # 模板中“预报员”可能位于任意列，评定对象取其后一个单元格。
                 if not eval_person:
                     labels = ('预报员', '评定对象', '预报人员', '姓名', '制作人')
+                    ignored_values = labels + ('备注', '日期', '起报时间', '影响机场', '预报时段', '预报时刻')
                     for col_idx in range(1, ws.max_column):
                         label_text = str(ws.cell(row_idx, col_idx).value or '').strip().rstrip(':：')
                         if label_text not in labels:
@@ -1655,7 +1656,7 @@ def import_publish_excel_api():
                         # 模板存在合并单元格，值可能不在紧邻单元格，向后找若干格并跳过其它字段标签。
                         for next_col in range(col_idx + 1, min(ws.max_column, col_idx + 6) + 1):
                             candidate = str(ws.cell(row_idx, next_col).value or '').strip()
-                            if not candidate or candidate.rstrip(':：') in labels:
+                            if not candidate or candidate.rstrip(':：') in ignored_values:
                                 continue
                             eval_person = candidate
                             break

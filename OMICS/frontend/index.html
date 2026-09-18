@@ -480,12 +480,11 @@
 
                         <div class="download-section">
                             <div class="download-row-top">
-                                <label>目标机场:</label>
-                                <input type="text" id="download-airports" class="airport-input-small" placeholder="如 ZBAA ZGSZ">
                                 <span id="manual-airport-choice" style="display:inline-flex; align-items:center; gap:10px; margin-left:8px; font-size:13px;">
-                                    <label title="使用输入框中的目标机场"><input type="radio" name="manual-airport-scope" id="manual-airport-default" value="default" checked> 默认机场</label>
+                                    <label title="使用输入框中的目标机场"><input type="radio" name="manual-airport-scope" id="manual-airport-default" value="default" checked> 目标机场</label>
                                     <label id="manual-airport-all-label" title="选择全部24小时预报涉及机场"><input type="radio" name="manual-airport-scope" id="manual-airport-all" value="all"> 全部机场</label>
                                 </span>
+                                <input type="text" id="download-airports" class="airport-input-small" placeholder="如 ZBAA ZGSZ">
                             </div>
                             <div class="download-row-bottom" style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
                                 <button id="fetch-manual-btn" class="mini-btn primary" style="font-size: 14px; padding: 8px 20px;">下载实况/扫描预报</button>
