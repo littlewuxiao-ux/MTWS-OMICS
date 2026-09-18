@@ -16,7 +16,8 @@ window.OMICS_API_URL = function(path) {
 const _omicsNativeFetch = window.fetch.bind(window);
 window.fetch = function(input, init) {
     if (typeof input === 'string' && input.startsWith('/api/')) {
-        input = window.OMICS_API_URL(input);
+        // OMICS_API_URL 接收的是接口相对路径；这里去掉原始 /api 前缀，避免生成 /api/api/...
+        input = window.OMICS_API_URL(input.replace(/^\/api\//, ''));
     }
     return _omicsNativeFetch(input, init);
 };
