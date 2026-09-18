@@ -2143,6 +2143,10 @@ def export_publish_api():
                 ws.sheet_view.showGridLines = False
 
                 xlsx_path = os.path.join(target_dir, f'24小时天气预报_{ts}.xlsx')
+                date_match = re.search(r'(20\d{2})[-/]?(\d{2})[-/]?(\d{2})', str(start_date or ''))
+                file_date = ''.join(date_match.groups()) if date_match else datetime.now().strftime('%Y%m%d')
+                desired_xlsx_path = os.path.join(target_dir, f'未来24小时预报{file_date}.xlsx')
+                xlsx_path = desired_xlsx_path
                 wb.save(xlsx_path)
                 saved.append(xlsx_path)
             except Exception as e:

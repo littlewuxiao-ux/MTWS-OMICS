@@ -1372,6 +1372,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const scope = manualAirportAll?.checked && isTwentyFourHourRange() ? 'all' : 'default';
         const requested = downloadAirports.value.split(/[\s,]+/).map(v => v.trim().toUpperCase()).filter(Boolean);
+        if (currentMode === 'manual' && !window.__manualGridTimeLocked) updateTimeRangeInputs();
         fetchManualBtn.disabled = true;
         const originalText = fetchManualBtn.textContent;
         let scanStage = 'scan';
@@ -1480,6 +1481,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             alert(`已扫描 ${data.publish_date || data.forecast_date || '前一天'} 预报，生成 ${entries.length} 个机场表格，并导入对应实况报文。`);
         } catch (error) {
             alert(`扫描预报/下载实况失败：${error.message}`);
+            if (currentMode === 'manual' && scanStage === 'scan') {
+                await new Promise(resolve => downloadData(startTimeHidden.value, endTimeHidden.value, requested.join(' '), ['SA', 'SP'], data => {
+                    const lines = typeof data === 'string' ? data.split('\n').filter(line => line.trim().length > 10) : Object.values(data || {}).flat().filter(Boolean);
+                    if (lines.length) { metarInput.value = lines.join('\n'); addMetarBtn?.click(); }
+                    resolve();
+                }));
+                alert(`扫描预报失败：${error.message}\n已回退按目标机场下载实况。`);
+            } else {
+                alert(`下载实况失败：${error.message}`);
+            }
         } finally {
             fetchManualBtn.disabled = false;
             fetchManualBtn.textContent = originalText;
