@@ -554,20 +554,27 @@
             ).join('') || '<span style="color:#94a3b8;">暂无机场组</span>';
         };
         document.getElementById('global-import-airports-btn')?.addEventListener('click', () => {
-            const modalGrid = document.querySelector('#airport-import-modal .modal-content > div[style*="display:grid"]');
-            if (modalGrid && !modalGrid.querySelector('.airport-import-category-title')) {
-                ['运行机场与机场分组', '文字导入预报', '表格导入'].forEach((title, index) => {
-                    const heading = document.createElement('div');
-                    heading.className = 'airport-import-category-title';
-                    heading.textContent = title;
-                    modalGrid.insertBefore(heading, modalGrid.children[index === 0 ? 1 : index === 1 ? 6 : 9] || null);
-                });
-            }
+            document.querySelectorAll('#airport-import-modal .airport-import-category-title').forEach(node => node.remove());
+            const addCategoryHeading = (id, title) => {
+                const input = document.getElementById(id);
+                const anchor = input?.closest('label') || input;
+                if (!anchor?.parentElement) return;
+                const heading = document.createElement('div');
+                heading.className = 'airport-import-category-title';
+                heading.textContent = title;
+                anchor.parentElement.insertBefore(heading, anchor);
+            };
+            addCategoryHeading('import-source-running', '运行机场与机场分组');
+            addCategoryHeading('import-source-text', '文字导入预报');
+            addCategoryHeading('import-source-table', '表格导入');
             renderResidentOptions();
             const allGroupsInput = document.getElementById('import-resident-groups-all');
             const groupBox = document.getElementById('import-resident-groups');
             if (allGroupsInput && groupBox && allGroupsInput.parentElement) {
                 allGroupsInput.parentElement.classList.add('resident-groups-select-all');
+                allGroupsInput.parentElement.childNodes.forEach(node => { if (node.nodeType === Node.TEXT_NODE) node.textContent = ' 机场分组'; });
+                const previous = allGroupsInput.parentElement.previousElementSibling;
+                if (previous && !previous.querySelector('input')) previous.remove();
                 groupBox.parentElement.insertBefore(allGroupsInput.parentElement, groupBox);
             }
             const residentLabels = [...document.querySelectorAll('.import-resident-group')];
