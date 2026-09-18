@@ -1374,6 +1374,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const requested = downloadAirports.value.split(/[\s,]+/).map(v => v.trim().toUpperCase()).filter(Boolean);
         fetchManualBtn.disabled = true;
         const originalText = fetchManualBtn.textContent;
+        let scanStage = 'scan';
         fetchManualBtn.textContent = '正在扫描预报并下载实况...';
         try {
             if (currentMode === 'taf') {
@@ -1395,7 +1396,27 @@ document.addEventListener('DOMContentLoaded', async () => {
             form.append('evaluation_date', evaluationDate);
             const response = await fetch(window.OMICS_API_URL('import_publish_excel'), { method: 'POST', body: form });
             const result = await response.json();
+            if (!result.success) {
+                const reason = result.error || '扫描预报失败';
+                await new Promise(resolve => downloadData(startTimeHidden.value, endTimeHidden.value, requested.join(' '), ['SA', 'SP'], data => {
+                    const lines = typeof data === 'string' ? data.split('\n').filter(line => line.trim().length > 10) : Object.values(data || {}).flat().filter(Boolean);
+                    if (lines.length) { metarInput.value = lines.join('\n'); addMetarBtn?.click(); }
+                    resolve();
+                }));
+                alert(`扫描预报失败：${reason}\n已回退按目标机场下载实况。`);
+                return;
+            }
             if (!result.success) throw new Error(result.error || '扫描24小时预报失败');
+            if (!result.success) {
+                const reason = result.error || '扫描预报失败';
+                await new Promise(resolve => downloadData(startTimeHidden.value, endTimeHidden.value, requested.join(' '), ['SA', 'SP'], data => {
+                    const lines = typeof data === 'string' ? data.split('\n').filter(line => line.trim().length > 10) : Object.values(data || {}).flat().filter(Boolean);
+                    if (lines.length) { metarInput.value = lines.join('\n'); addMetarBtn?.click(); }
+                    resolve();
+                }));
+                alert(`扫描预报失败：${reason}\n已回退按目标机场下载实况。`);
+                return;
+            }
             const data = result.data || {};
             const allEntries = (Array.isArray(data.airports) ? data.airports : []).map(entry => ({
                 ...entry,
@@ -1441,6 +1462,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 return `${utc.getUTCFullYear()}${String(utc.getUTCMonth()+1).padStart(2,'0')}${String(utc.getUTCDate()).padStart(2,'0')}${String(utc.getUTCHours()).padStart(2,'0')}00`;
             }
             const fetchStartTime = resolveToUtcForFetch(startTimeHidden.value, -1);
+            scanStage = 'metar';
             const fetchEndTime = resolveToUtcForFetch(endTimeHidden.value, 1);
             await new Promise((resolve, reject) => {
                 const timeout = setTimeout(() => reject(new Error('下载实况超时，请检查网络或服务状态')), 60000);

@@ -1479,6 +1479,12 @@ function renderAirportGroupsConfig() {
             </div>
         `;
     });
+    document.querySelectorAll('.ap-group-item').forEach((item, idx) => {
+        const name = item.querySelector('.grp-name');
+        if (name && !item.querySelector('.grp-description')) {
+            name.insertAdjacentHTML('afterend', `<input type="text" class="grp-description" value="${String(pbState.airportGroups[idx]?.description || '').replace(/"/g, '&quot;')}" placeholder="补充说明" style="width:120px; margin-left:6px; padding:2px;">`);
+        }
+    });
     document.querySelectorAll('.del-grp').forEach(btn => {
         btn.addEventListener('click', (e) => {
             syncAirportGroupsFromForm();
@@ -1500,8 +1506,9 @@ function syncAirportGroupsFromForm() {
     pbState.airportGroups = Array.from(items).map(item => {
         const name = item.querySelector('.grp-name').value.trim() || '未命名';
         const alwaysShow = item.querySelector('.grp-show').checked;
+        const description = item.querySelector('.grp-description')?.value.trim() || '';
         const airports = item.querySelector('.grp-aps').value.toUpperCase().split(/[\s,]+/).filter(code => code.length === 4);
-        return { name, alwaysShow, airports };
+        return { name, alwaysShow, description, airports };
     });
 }
 

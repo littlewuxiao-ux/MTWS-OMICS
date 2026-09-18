@@ -555,6 +555,12 @@
         };
         document.getElementById('global-import-airports-btn')?.addEventListener('click', () => {
             renderResidentOptions();
+            const residentLabels = [...document.querySelectorAll('.import-resident-group')];
+            const residentGroups = typeof window.getPublishAirportGroups === 'function' ? window.getPublishAirportGroups() : [];
+            residentLabels.forEach(input => {
+                const description = residentGroups[Number(input.value)]?.description;
+                if (description) input.parentElement.title = description;
+            });
             const allGroups = document.getElementById('import-resident-groups-all');
             const groupChecks = [...document.querySelectorAll('.import-resident-group')];
             if (allGroups) {
@@ -563,6 +569,14 @@
                 groupChecks.forEach(input => input.addEventListener('change', () => { allGroups.checked = groupChecks.length > 0 && groupChecks.every(item => item.checked); }));
             }
             const panel = document.getElementById('import-text-error-panel');
+            const textSource = document.getElementById('import-source-text');
+            if (textSource && !document.getElementById('import-text-purpose-help')) {
+                const help = document.createElement('span');
+                help.id = 'import-text-purpose-help';
+                help.className = 'import-option-help';
+                help.textContent = '主要用于国际备降机场评估。';
+                textSource.closest('label')?.after(help);
+            }
             if (panel) { panel.style.display = 'none'; panel.innerHTML = ''; }
             importModal.style.display = 'flex';
         });

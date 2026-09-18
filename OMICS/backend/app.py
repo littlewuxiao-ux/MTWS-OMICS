@@ -1712,6 +1712,15 @@ def import_publish_excel_api():
                 current["rows"].append(cells)
                 current["notes"].append(note or '/')
 
+            # 导出文件有时只在文件名中保留日期，起报时间则没有单独标签；
+            # 这种文件按文件名日期读取，并以 00 时作为默认起报时刻。
+            if not forecast_date:
+                import re
+                match = re.search(r'(20\d{6})', source_name)
+                if match:
+                    forecast_date = datetime.strptime(match.group(1), '%Y%m%d').strftime('%Y-%m-%d')
+            if start_hour_bjt is None and forecast_date:
+                start_hour_bjt = 0
             if not entries:
                 raise ValueError('表格中没有可导入的机场预报')
             return jsonify({
