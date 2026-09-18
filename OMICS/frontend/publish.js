@@ -164,8 +164,16 @@ window.saveConfirmedDataToLocal = function() {
     const domOrder = Array.from(document.querySelectorAll('#forecast-table tr.tr-edit[data-icao]'))
         .map(row => row.dataset.icao).filter(Boolean);
     if (domOrder.length) pbState.importSequence = domOrder;
+    // 同步保存表格中显示的机场性质（包括分组性质/手动调整性质）。
+    document.querySelectorAll('#forecast-table tr.tr-edit[data-icao]').forEach(row => {
+        const icao = row.dataset.icao;
+        const typeCell = row.querySelector('.col-airport-type');
+        const type = String(typeCell?.textContent || '').trim();
+        if (icao && type) pbState.importedAirportTypes[icao] = type;
+    });
     const wrapper = { timestamp: Date.now(), user: curUser, data: pbState.confirmedData,
         draftData: pbState.draftData, importSequence: pbState.importSequence,
+        importedAirportTypes: pbState.importedAirportTypes,
         manuallyRemovedAirports: Array.from(pbState.manuallyRemovedAirports || []) };
     localStorage.setItem('sf_confirmed_forecasts_v3', JSON.stringify(wrapper));
     localStorage.setItem('sf_manually_removed_airports_v1', JSON.stringify(Array.from(pbState.manuallyRemovedAirports || [])));
@@ -448,6 +456,7 @@ window.initPublishModule = async function() {
             pbState.confirmedData = savedWrapper.data || {};
             pbState.draftData = savedWrapper.draftData || {};
             pbState.importSequence = Array.isArray(savedWrapper.importSequence) ? savedWrapper.importSequence : [];
+            pbState.importedAirportTypes = savedWrapper.importedAirportTypes || {};
             if (Array.isArray(savedWrapper.manuallyRemovedAirports)) pbState.manuallyRemovedAirports = new Set(savedWrapper.manuallyRemovedAirports);
             pbState.confirmedUser = savedWrapper.user;
             
