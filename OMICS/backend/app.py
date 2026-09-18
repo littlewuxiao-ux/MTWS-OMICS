@@ -1692,6 +1692,38 @@ def import_publish_excel_api():
                     return str(int(value))
                 return str(value).strip()
 
+            # Some exported workbooks preserve the values but not the exact
+            # label text. Read the actual date/time cells in the header area
+            # as a structural fallback (date row near the top, start time row
+            # immediately before the airport header).
+            if not forecast_date:
+                for row_idx in range(1, min(header_row, 8) + 1):
+                    for col_idx in range(1, min(ws.max_column, 8) + 1):
+                        value = ws.cell(row_idx, col_idx).value
+                        if isinstance(value, datetime):
+                            forecast_date = value.strftime('%Y-%m-%d')
+                            break
+                        if isinstance(value, date_type):
+                            forecast_date = value.strftime('%Y-%m-%d')
+                            break
+                    if forecast_date:
+                        break
+            if start_hour_bjt is None:
+                for row_idx in range(max(1, header_row - 3), header_row):
+                    for col_idx in range(1, min(ws.max_column, 8) + 1):
+                        value = ws.cell(row_idx, col_idx).value
+                        if isinstance(value, datetime):
+                            start_hour_bjt = value.hour
+                            break
+                        if isinstance(value, time_type):
+                            start_hour_bjt = value.hour
+                            break
+                        if isinstance(value, (int, float)) and 0 <= float(value) < 1:
+                            start_hour_bjt = int(round(float(value) * 24)) % 24
+                            break
+                    if start_hour_bjt is not None:
+                        break
+
             entries = []
             current = None
             stop_labels = ('地面结冰', '颜色说明', '发布说明')
@@ -1719,8 +1751,8 @@ def import_publish_excel_api():
                 match = re.search(r'(20\d{6})', source_name)
                 if match:
                     forecast_date = datetime.strptime(match.group(1), '%Y%m%d').strftime('%Y-%m-%d')
-            if start_hour_bjt is None and forecast_date:
-                start_hour_bjt = 0
+            if start_hour_bjt is None:
+                raise ValueError('预报表缺少有效的起报时间，请检查表格中的起报时间单元格')
             if not entries:
                 raise ValueError('表格中没有可导入的机场预报')
             return jsonify({
