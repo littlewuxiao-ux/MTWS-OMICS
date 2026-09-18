@@ -75,7 +75,7 @@ window.GLOBAL_AIRPORT_NAME_MAP = window.GLOBAL_AIRPORT_NAME_MAP || {
 
 const AIRPORT_CFG = {
   "domestic": {
-    "华南": ["ZGSZ","ZGGG","ZGOW","ZGSD"], "华中": ["ZHEC","ZHHH","ZGHA","ZHCC"],
+    "华南": ["ZGSZ","ZGGG","ZGOW","ZGSD","ZJHK"], "华中": ["ZHEC","ZHHH","ZGHA","ZHCC"],
     "华东": ["ZSPD","ZSHC","ZSNB","ZSWZ","ZSYW","ZSFZ","ZSQZ","ZSAM","ZSOF","ZSNJ","ZSNT","ZSWX","ZSXZ","ZSJN","ZSWF","ZSQD","ZSYT"],
     "华北": ["ZBAA","ZBHH","ZBSJ","ZBYN","ZBTJ"], "东北": ["ZYTX","ZYTL","ZYHB","ZYCC"],
     "西北": ["ZLLL","ZLXY","ZWWW"], "西南": ["ZUUU","ZPPP","ZULS","ZUCK","ZUGY"], "港台": ["VHHH","RCTP","VMMC"]
@@ -160,7 +160,13 @@ window.saveConfirmedDataToLocal = function() {
     });
     const userEl = document.getElementById('user-id-display');
     const curUser = userEl ? userEl.textContent.trim() : 'UNKNOWN';
-    const wrapper = { timestamp: Date.now(), user: curUser, data: pbState.confirmedData };
+    // 同步保存机场顺序，确保重新加载后置顶/拖拽顺序不丢失。
+    const domOrder = Array.from(document.querySelectorAll('#forecast-table tr.tr-edit[data-icao]'))
+        .map(row => row.dataset.icao).filter(Boolean);
+    if (domOrder.length) pbState.importSequence = domOrder;
+    const wrapper = { timestamp: Date.now(), user: curUser, data: pbState.confirmedData,
+        draftData: pbState.draftData, importSequence: pbState.importSequence,
+        manuallyRemovedAirports: Array.from(pbState.manuallyRemovedAirports || []) };
     localStorage.setItem('sf_confirmed_forecasts_v3', JSON.stringify(wrapper));
     localStorage.setItem('sf_manually_removed_airports_v1', JSON.stringify(Array.from(pbState.manuallyRemovedAirports || [])));
 };
@@ -225,7 +231,7 @@ function getAirportRegion(icao) {
         }
     }
     const domesticPrefixes = [
-        ['华北', /^ZB/], ['东北', /^ZY/], ['华东', /^ZS/], ['华南', /^ZG/],
+        ['华北', /^ZB/], ['东北', /^ZY/], ['华东', /^ZS/], ['华南', /^(?:ZG|ZJ)/],
         ['华中', /^ZH/], ['西北', /^Z[WL]/], ['西南', /^Z[UP]/]
     ];
     for (const [region, pattern] of domesticPrefixes) {
@@ -440,6 +446,9 @@ window.initPublishModule = async function() {
         const savedWrapper = JSON.parse(localStorage.getItem('sf_confirmed_forecasts_v3'));
         if (savedWrapper && savedWrapper.timestamp && (Date.now() - savedWrapper.timestamp < 24 * 3600 * 1000)) {
             pbState.confirmedData = savedWrapper.data || {};
+            pbState.draftData = savedWrapper.draftData || {};
+            pbState.importSequence = Array.isArray(savedWrapper.importSequence) ? savedWrapper.importSequence : [];
+            if (Array.isArray(savedWrapper.manuallyRemovedAirports)) pbState.manuallyRemovedAirports = new Set(savedWrapper.manuallyRemovedAirports);
             pbState.confirmedUser = savedWrapper.user;
             
             // 实时监听用户切换，如果变更则清空确认缓存
@@ -889,6 +898,9 @@ function buildPublishExportText(timezone = 'auto') {
             return temperatures.length ? Math.max(...temperatures) : null;
         };
 
+        // 终端区/本场备注只对降水、雷雨类天气生效；其它天气现象不带出该备注。
+        const isPrecipOrThunder = value => /雨|雪|冰雹|霰|雷雨|雷暴|冻雨/.test(String(value || ''));
+
         const legacyRowTexts = rows.map((cells, rowIndex) => {
             if (!cells?.length) return '';
             const note = String(notes[rowIndex] || '').trim();
@@ -914,7 +926,9 @@ function buildPublishExportText(timezone = 'auto') {
                 const firstWeather = normalizedWeather.findIndex(value => value && value !== '—' && value !== '适航');
                 let lastWeather = normalizedWeather.length - 1;
                 while (lastWeather >= 0 && (!normalizedWeather[lastWeather] || normalizedWeather[lastWeather] === '—' || normalizedWeather[lastWeather] === '适航')) lastWeather--;
-                return `${formatRange(Math.max(0, firstWeather), Math.max(firstWeather, lastWeather))}${effectiveNote && isModifier ? effectiveNote : ''}${rainPhrase}，伴雷暴`;
+                const scopedNote = effectiveNote && /(终端区|本场)/.test(effectiveNote) ? effectiveNote : '';
+                const rangeText = formatRange(Math.max(0, firstWeather), Math.max(firstWeather, lastWeather));
+                return `${rangeText}${scopedNote ? `${scopedNote}有` : ''}${rainPhrase}，伴雷暴`;
             }
             const ranges = [];
             let currentValue = formatCellValue(cells[0]);
@@ -923,7 +937,7 @@ function buildPublishExportText(timezone = 'auto') {
                 const nextValue = index < cells.length ? formatCellValue(cells[index]) : null;
                 if (nextValue !== currentValue) {
                     if (currentValue && currentValue !== '—' && currentValue !== '适航') {
-                        const inlineNote = effectiveNote && !isWindDescription ? effectiveNote : '';
+                        const inlineNote = effectiveNote && !isWindDescription && isPrecipOrThunder(currentValue) && /(终端区|本场)/.test(effectiveNote) ? effectiveNote : '';
                         ranges.push(`${formatRange(startIndex, index - 1)}${inlineNote}${currentValue}`);
                     }
                     currentValue = nextValue;
@@ -1120,8 +1134,15 @@ function buildPublishExportText(timezone = 'auto') {
             const min = Math.min(...tempValues), max = Math.max(...tempValues);
             mergedTemperatureRanges.push(`${formatRange(tempStart, temperatureValues.length - 1)}温度${min === max ? min : `${min}-${max}`}℃`);
         }
-        const noteText = notes.map(note => String(note || '').trim()).filter(note => note && note !== '/' && note !== '适航' && !/风|能见度/.test(note)).join('，');
-        const rowTexts = [...mergedWeatherRanges, ...mergedVisibilityRanges, ...mergedWindRanges, ...mergedTemperatureRanges, noteText].filter(Boolean);
+        const scopedNotes = notes.map(note => String(note || '').trim())
+            .filter(note => note && note !== '/' && note !== '适航' && /(终端区|本场)/.test(note));
+        const scopedNoteText = Array.from(new Set(scopedNotes)).join('，');
+        const weatherRangesWithScopedNote = scopedNoteText
+            ? mergedWeatherRanges.map(value => value.replace(/^(.+?(?:时|Z))/, `$1${scopedNoteText}有`))
+            : mergedWeatherRanges;
+        const noteText = notes.map(note => String(note || '').trim())
+            .filter(note => note && note !== '/' && note !== '适航' && !/风|能见度/.test(note) && !/(终端区|本场)/.test(note)).join('，');
+        const rowTexts = [...weatherRangesWithScopedNote, ...mergedVisibilityRanges, ...mergedWindRanges, ...mergedTemperatureRanges, noteText].filter(Boolean);
 
         const timeText = rowTexts.length ? rowTexts.join('；') : '预计天气适航';
         const nameMode = document.querySelector('input[name="export-text-name"]:checked')?.value || 'chinese';
@@ -1581,12 +1602,8 @@ function setupModalEvents() {
   const globalModal = document.getElementById('global-settings-modal');
   
   document.getElementById('settings-toggle-btn')?.addEventListener('click', () => {
-      if (typeof window.OMICS_authorizeSettings !== 'function' || !window.OMICS_authorizeSettings()) {
-          globalModal.dataset.settingsAuthorizationFailed = 'true';
-          return;
-      }
-      // Let script.js perform the shared UI setup without asking again.
-      globalModal.dataset.settingsAuthorized = 'true';
+      // 权限校验和首次打开由 script.js 统一处理；这里仅负责发布页设置内容初始化，避免重复弹出密码。
+      if (globalModal.style.display !== 'flex') return;
       populateModalForm(); 
       globalModal.style.display = 'flex';
       

@@ -885,6 +885,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         clearLocalAuthState();
         userInfoDiv.classList.add('hidden');
         loginBtn.classList.remove('hidden');
+        setTimeout(() => startLogin(), 0);
 
         const adminSection = document.getElementById('admin-only-section');
         if (adminSection) {
@@ -923,17 +924,28 @@ document.addEventListener('DOMContentLoaded', async () => {
         qrStatusText.appendChild(redBtn);
 
         try {
-            const res = await fetch('/api/auth/qrcode');
-            const data = await res.json();
+            let data = null;
+            let lastError = null;
+            for (let attempt = 0; attempt < 3; attempt++) {
+                try {
+                    const res = await fetch('/api/auth/qrcode', { cache: 'no-store' });
+                    data = await res.json();
+                    if (data.success) break;
+                    lastError = new Error(data.error || '二维码接口返回失败');
+                } catch (err) {
+                    lastError = err;
+                }
+                if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 700));
+            }
             if (document.getElementById('offline-login-container')) return;
 
-            if (data.success) {
+            if (data?.success) {
                 qrImage.src = "data:image/png;base64," + data.qr_img_base64;
                 qrImage.style.display = "block";
                 qrStatusText.textContent = "请使用 SF App 扫码登录";
                 pollTimer = setInterval(checkLoginStatus, 2000);
             } else {
-                showOfflineLoginForm("获取失败: " + data.error);
+                showOfflineLoginForm("获取失败: " + (data?.error || lastError?.message || '未知错误'));
             }
         } catch (e) {
             if (!document.getElementById('offline-login-container')) {
@@ -1483,7 +1495,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     generateGridBtn.addEventListener('click', () => {
-        updateTimeRangeInputs();
+        if (!window.__manualGridTimeLocked) updateTimeRangeInputs();
+        window.__manualGridTimeLocked = false;
         const sTime = startTimeHidden.value;
         const eTime = endTimeHidden.value;
         if (!sTime || !eTime) return alert("请先在上方设置并确认时间范围!");
@@ -1502,6 +1515,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         html += `</tbody></table>`;
         manualGridContainer.innerHTML = html;
         pasteExcelBtn.classList.remove('hidden');
+        document.getElementById('extract-forecast-table-btn')?.classList.remove('hidden');
     });
 
     function generateHourlyHeaders(startStr, endStr) {
@@ -1548,7 +1562,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     pasteExcelBtn.addEventListener('click', async () => {
         try {
             const text = await navigator.clipboard.readText();
-            const rows = text.replace(/\r/g, '').trimEnd().split('\n');
+            const rawRows = text.replace(/\r/g, '').trimEnd().split('\n');
+            const rows = [];
+            rawRows.forEach(line => {
+                if (line.includes('\t') || !rows.length) rows.push(line);
+                else rows[rows.length - 1] += ` ${line.trim()}`;
+            });
             const trs = document.getElementById('manual-grid').querySelectorAll('tbody tr');
             rows.forEach((rowText, i) => {
                 if (trs[i]) {
@@ -1577,6 +1596,21 @@ document.addEventListener('DOMContentLoaded', async () => {
             const data = result.data || {};
             const entries = data.airports || [];
             if (!entries.length) throw new Error('表格中没有可提取的机场预报');
+            // 使用 Excel 中的起报日期/时间和实际小时数生成对应的 24 小时表格。
+            if (data.forecast_date) {
+                const d = new Date(`${data.forecast_date}T00:00:00`);
+                if (!Number.isNaN(d.getTime())) {
+                    baseDate = d;
+                    document.getElementById('base-date-picker')._flatpickr?.setDate(d, true);
+                }
+            }
+            if (Number.isFinite(Number(data.start_hour_bjt)) && data.forecast_date) {
+                const start = new Date(`${data.forecast_date}T${String(Number(data.start_hour_bjt)).padStart(2, '0')}:00:00`);
+                const end = new Date(start.getTime() + Number(data.validity_hours || 24) * 3600000);
+                const fmt = d => `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}${String(d.getHours()).padStart(2,'0')}00`;
+                startTimeHidden.value = fmt(start); endTimeHidden.value = fmt(end);
+                window.__manualGridTimeLocked = true;
+            }
             const airports = entries.map(entry => entry.airport_name).filter(Boolean);
             downloadAirports.value = airports.join(' ');
             generateGridBtn.click();
