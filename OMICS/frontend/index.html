@@ -480,18 +480,19 @@
 
                         <div class="download-section">
                             <div class="download-row-top">
-                                <label>目标机场代码:</label>
+                                <label>目标机场:</label>
                                 <input type="text" id="download-airports" class="airport-input-small" placeholder="如 ZBAA ZGSZ">
-                                <select id="manual-airport-scope" style="margin-left:8px; padding:4px; border-radius:4px;">
-                                    <option value="default">默认机场</option>
-                                    <option value="all">全部机场</option>
-                                </select>
+                                <span id="manual-airport-choice" style="display:inline-flex; align-items:center; gap:10px; margin-left:8px; font-size:13px;">
+                                    <label title="使用输入框中的目标机场"><input type="radio" name="manual-airport-scope" id="manual-airport-default" value="default" checked> 默认机场</label>
+                                    <label id="manual-airport-all-label" title="选择全部24小时预报涉及机场"><input type="radio" name="manual-airport-scope" id="manual-airport-all" value="all"> 全部机场</label>
+                                </span>
                             </div>
                             <div class="download-row-bottom" style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
                                 <button id="fetch-manual-btn" class="mini-btn primary" style="font-size: 14px; padding: 8px 20px;">下载实况/扫描预报</button>
-                                <div id="eval-person-container" style="display:none; align-items:center; gap:6px;">
+                                <div id="eval-person-container" style="display:none; align-items:center; gap:8px; margin-left:auto; padding:6px 10px; border:1px solid #dbeafe; border-radius:8px; background:#f8fbff; box-shadow:0 1px 3px rgba(30,64,175,.08);">
                                     <span id="manual-forecast-publish-date" style="font-weight:bold; color:#005A9C;"></span>
-                                    <label for="eval-person-select" style="font-weight: bold; color: #DA251D;">评定对象:</label>
+                                    <span style="color:#cbd5e1;">|</span>
+                                    <label for="eval-person-select" style="font-weight: bold; color: #b91c1c;">评定对象</label>
                                     <select id="eval-person-select" style="padding: 5px; border-radius: 4px; min-width: 120px;">
                                         <option value="">请选择人员</option>
                                     </select>
@@ -505,8 +506,7 @@
                                 <div class="grid-actions" style="margin-top: 10px;">
                                     <button id="generate-grid-btn" class="mini-btn">生成预报表格</button>
                                     <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-                                        <button id="paste-excel-btn" class="mini-btn hidden">从 Excel 粘贴</button>
-                                        <button id="extract-forecast-table-btn" class="mini-btn hidden">从预报表格提取</button>
+                                        <button id="paste-excel-btn" class="mini-btn hidden" style="background:#6c757d; color:#fff; border:1px solid #5a6268;">从 Excel 粘贴</button>
                                     </div>
                                 </div>
                                 <div id="manual-forecast-grid-container" class="manual-grid-wrapper"></div>

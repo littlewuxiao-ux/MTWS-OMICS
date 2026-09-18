@@ -1645,6 +1645,15 @@ def import_publish_excel_api():
                         if candidate:
                             eval_person = candidate
                             break
+                # 模板中“预报员”可能位于任意列，评定对象取其后一个单元格。
+                if not eval_person:
+                    for col_idx in range(1, ws.max_column):
+                        label_text = str(ws.cell(row_idx, col_idx).value or '').strip().rstrip(':：')
+                        if label_text in ('预报员', '评定对象', '预报人员', '姓名', '制作人'):
+                            candidate = str(ws.cell(row_idx, col_idx + 1).value or '').strip()
+                            if candidate:
+                                eval_person = candidate
+                                break
                 if label.startswith('日期'):
                     for col_idx in range(2, min(ws.max_column, 8) + 1):
                         value = ws.cell(row_idx, col_idx).value
