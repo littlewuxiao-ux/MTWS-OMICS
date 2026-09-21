@@ -1038,9 +1038,11 @@
         const unresolved = [];
         const importedIcaos = [];
 
-        if (data.forecast_date && Number.isInteger(data.start_hour_bjt)) {
-            const parts = data.forecast_date.split('-').map(Number);
-            const utc = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2], data.start_hour_bjt - 8));
+        const detectedDate = data.forecast_date || data.publish_date;
+        const detectedHour = Number(data.start_hour_bjt);
+        if (detectedDate && Number.isFinite(detectedHour)) {
+            const parts = String(detectedDate).slice(0, 10).split(/[-/]/).map(Number);
+            const utc = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2], detectedHour - 8));
             window.pbState.startDate = utc.toISOString().slice(0, 10);
             window.pbState.startHour = utc.getUTCHours();
             window.pbState.validityHours = Number(data.validity_hours) || 24;

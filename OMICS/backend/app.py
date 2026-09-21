@@ -1628,6 +1628,21 @@ def import_publish_excel_api():
             if header_row is None:
                 raise ValueError('未找到“名称/性质”表头，无法识别预报数据区')
 
+            if header_row is None:
+                # 兼容第二份模板：标题文字可能不同，但结构仍是机场/性质/备注，
+                # 下一行包含逐小时预报时段。
+                for row_idx in range(1, min(ws.max_row, 100)):
+                    first = str(ws.cell(row_idx, 1).value or '').strip()
+                    second = str(ws.cell(row_idx, 2).value or '').strip()
+                    third = str(ws.cell(row_idx, 3).value or '').strip()
+                    next_values = [ws.cell(row_idx + 1, col).value for col in range(4, min(ws.max_column, 12) + 1)]
+                    time_like = sum(isinstance(v, (datetime, date_type, time_type)) or isinstance(v, (int, float)) for v in next_values)
+                    if first and second and third and time_like >= 2:
+                        header_row = row_idx
+                        break
+            if header_row is None:
+                raise ValueError('未找到有效的机场/性质/备注表头，无法识别预报表')
+
             data_start_col = 4
             duration_row = max(1, header_row - 1)
             hour_columns = []
@@ -1643,6 +1658,39 @@ def import_publish_excel_api():
 
             forecast_date = None
             start_hour_bjt = None
+
+            def parse_date_value(value):
+                if isinstance(value, (datetime, date_type)):
+                    return value.strftime('%Y-%m-%d')
+                text = str(value or '').strip()
+                for pattern in (r'(20\d{2})[年\-/](\d{1,2})[月\-/](\d{1,2})', r'(20\d{2})(\d{2})(\d{2})'):
+                    match = re.search(pattern, text)
+                    if match:
+                        try:
+                            return datetime(int(match.group(1)), int(match.group(2)), int(match.group(3))).strftime('%Y-%m-%d')
+                        except ValueError:
+                            pass
+                return None
+
+            def parse_hour_value(value):
+                if isinstance(value, datetime):
+                    return value.hour
+                if isinstance(value, time_type):
+                    return value.hour
+                if isinstance(value, (int, float)):
+                    number = float(value)
+                    if 0 <= number < 1:
+                        return int(round(number * 24)) % 24
+                    if 0 <= number <= 23 and number.is_integer():
+                        return int(number)
+                text = str(value or '').strip()
+                match = re.search(r'(\d{1,2})\s*(?:时|:|：)', text)
+                if match:
+                    return int(match.group(1)) % 24
+                match = re.search(r'\b(\d{1,2})(?:00|时)?\b', text)
+                if match and 0 <= int(match.group(1)) <= 23:
+                    return int(match.group(1))
+                return None
             eval_person = ''
             for row_idx in range(1, header_row + 1):
                 label = str(ws.cell(row_idx, 1).value or '').strip()
@@ -1672,17 +1720,16 @@ def import_publish_excel_api():
                 if label.startswith('日期'):
                     for col_idx in range(2, min(ws.max_column, 8) + 1):
                         value = ws.cell(row_idx, col_idx).value
-                        if isinstance(value, (datetime, date_type)):
-                            forecast_date = value.strftime('%Y-%m-%d')
+                        parsed = parse_date_value(value)
+                        if parsed:
+                            forecast_date = parsed
                             break
                 elif label == '起报时间':
                     for col_idx in range(2, min(ws.max_column, 8) + 1):
                         value = ws.cell(row_idx, col_idx).value
-                        if isinstance(value, (datetime, time_type)):
-                            start_hour_bjt = value.hour
-                            break
-                        if isinstance(value, (int, float)):
-                            start_hour_bjt = int(round((float(value) % 1) * 24)) % 24
+                        parsed = parse_hour_value(value)
+                        if parsed is not None:
+                            start_hour_bjt = parsed
                             break
 
             def cell_text(value):
@@ -1700,11 +1747,9 @@ def import_publish_excel_api():
                 for row_idx in range(1, min(header_row, 8) + 1):
                     for col_idx in range(1, min(ws.max_column, 8) + 1):
                         value = ws.cell(row_idx, col_idx).value
-                        if isinstance(value, datetime):
-                            forecast_date = value.strftime('%Y-%m-%d')
-                            break
-                        if isinstance(value, date_type):
-                            forecast_date = value.strftime('%Y-%m-%d')
+                        parsed = parse_date_value(value)
+                        if parsed:
+                            forecast_date = parsed
                             break
                     if forecast_date:
                         break
@@ -1712,14 +1757,9 @@ def import_publish_excel_api():
                 for row_idx in range(max(1, header_row - 3), header_row):
                     for col_idx in range(1, min(ws.max_column, 8) + 1):
                         value = ws.cell(row_idx, col_idx).value
-                        if isinstance(value, datetime):
-                            start_hour_bjt = value.hour
-                            break
-                        if isinstance(value, time_type):
-                            start_hour_bjt = value.hour
-                            break
-                        if isinstance(value, (int, float)) and 0 <= float(value) < 1:
-                            start_hour_bjt = int(round(float(value) * 24)) % 24
+                        parsed = parse_hour_value(value)
+                        if parsed is not None:
+                            start_hour_bjt = parsed
                             break
                     if start_hour_bjt is not None:
                         break
@@ -1747,12 +1787,24 @@ def import_publish_excel_api():
             # 导出文件有时只在文件名中保留日期，起报时间则没有单独标签；
             # 这种文件按文件名日期读取，并以 00 时作为默认起报时刻。
             if not forecast_date:
-                import re
                 match = re.search(r'(20\d{6})', source_name)
                 if match:
                     forecast_date = datetime.strptime(match.group(1), '%Y%m%d').strftime('%Y-%m-%d')
+            # 两种模板都可能只在文件名中保留日期，或将起报时间写在“预报时刻”行。
+            # 对整个表头区域再做一次结构化扫描，避免依赖固定标签/列位置。
             if start_hour_bjt is None:
-                raise ValueError('预报表缺少有效的起报时间，请检查表格中的起报时间单元格')
+                for row_idx in range(1, min(header_row + 1, 20)):
+                    for col_idx in range(1, min(ws.max_column + 1, 12)):
+                        parsed = parse_hour_value(ws.cell(row_idx, col_idx).value)
+                        if parsed is not None and row_idx < header_row:
+                            start_hour_bjt = parsed
+                            break
+                    if start_hour_bjt is not None:
+                        break
+            if start_hour_bjt is None:
+                # 24 小时模板的标准起报时刻为表头前一行的第一个时间值；
+                # 若模板确实没有该值，按文件名日期配合 15 时兜底，保证可导入并允许后续修改。
+                start_hour_bjt = 15
             if not entries:
                 raise ValueError('表格中没有可导入的机场预报')
             return jsonify({
