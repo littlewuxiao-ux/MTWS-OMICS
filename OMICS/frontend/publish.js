@@ -124,6 +124,7 @@ const pbState = {
     airportOrderMode: 'default',
     sourceSequences: { running: [], resident: [], text: [], table: [] },
   importSequence: [],
+  manualAirportOrder: [],
   sourceAirports: {
     running: new Set(), resident: new Set(), text: new Set(), table: new Set(), custom: new Set()
   },
@@ -174,6 +175,7 @@ window.saveConfirmedDataToLocal = function() {
     });
     const wrapper = { timestamp: Date.now(), user: curUser, data: pbState.confirmedData,
         draftData: pbState.draftData, importSequence: pbState.importSequence,
+        manualAirportOrder: pbState.manualAirportOrder,
         importedAirportTypes: pbState.importedAirportTypes,
         manuallyRemovedAirports: Array.from(pbState.manuallyRemovedAirports || []) };
     localStorage.setItem('sf_confirmed_forecasts_v3', JSON.stringify(wrapper));
@@ -285,9 +287,19 @@ function sortPublishAirportAnalysis(items) {
     const internationalRegions = Object.keys(AIRPORT_CFG.international);
     const sourceOrder = new Map();
     ['text', 'table'].forEach(source => (pbState.sourceSequences[source] || []).forEach((icao, index) => sourceOrder.set(icao, index)));
+    const manualOrder = new Map((pbState.manualAirportOrder || []).map((icao, index) => [String(icao).trim().toUpperCase(), index]));
     return [...items].map((item, index) => ({ item, index })).sort((left, right) => {
         const a = left.item;
         const b = right.item;
+        if (manualOrder.size) {
+            const orderA = manualOrder.get(String(a.icao || '').trim().toUpperCase());
+            const orderB = manualOrder.get(String(b.icao || '').trim().toUpperCase());
+            if (orderA !== undefined || orderB !== undefined) {
+                if (orderA === undefined) return 1;
+                if (orderB === undefined) return -1;
+                if (orderA !== orderB) return orderA - orderB;
+            }
+        }
         const groupA = getSelectedAirportGroupInfo(a.icao);
         const groupB = getSelectedAirportGroupInfo(b.icao);
         if (!!groupA?.pinned !== !!groupB?.pinned) return groupA?.pinned ? -1 : 1;
@@ -462,6 +474,7 @@ window.initPublishModule = async function() {
             pbState.confirmedData = savedWrapper.data || {};
             pbState.draftData = savedWrapper.draftData || {};
             pbState.importSequence = Array.isArray(savedWrapper.importSequence) ? savedWrapper.importSequence : [];
+            pbState.manualAirportOrder = Array.isArray(savedWrapper.manualAirportOrder) ? savedWrapper.manualAirportOrder : [];
             pbState.importedAirportTypes = savedWrapper.importedAirportTypes || {};
             if (Array.isArray(savedWrapper.manuallyRemovedAirports)) pbState.manuallyRemovedAirports = new Set(savedWrapper.manuallyRemovedAirports);
             pbState.confirmedUser = savedWrapper.user;
@@ -1284,6 +1297,14 @@ function setupGlobalToolbar() {
     if (refBtn) {
         refBtn.onclick = () => {
             if (!(localStorage.getItem('sf_weather_token') || localStorage.getItem('mtws_token'))) return alert("请先登录！");
+            const titleSelect = document.getElementById('pb-main-title-select');
+            const preset = titleSelect?.dataset.appliedValue || titleSelect?.value;
+            if (preset && preset !== 'custom') {
+                const nowBjt = new Date(Date.now() + 8 * 3600000);
+                const dateInput = document.getElementById('pb-datetime');
+                if (dateInput) dateInput.value = nowBjt.toISOString().slice(0, 10);
+                applyTimePreset(preset);
+            }
             loadForecastData();
         };
     }
@@ -3011,7 +3032,7 @@ function setupDragAndDrop() {
     table.addEventListener('dragover', e => {
         e.preventDefault();
         if (!draggedIcao) return;
-        const tr = e.target.closest('.tr-edit');
+        const tr = e.target.closest('tr.tr-edit[data-icao]');
         if (tr) {
             const rect = tr.getBoundingClientRect();
             indicator.style.display = 'block';
@@ -3025,7 +3046,7 @@ function setupDragAndDrop() {
         e.preventDefault();
         indicator.style.display = 'none';
         if (!draggedIcao) return;
-        const tr = e.target.closest('.tr-edit');
+        const tr = e.target.closest('tr.tr-edit[data-icao]');
         if (tr) {
             const targetIcao = tr.dataset.icao;
             if (targetIcao !== draggedIcao) {
@@ -3034,6 +3055,9 @@ function setupDragAndDrop() {
                 if (fromIdx >= 0 && toIdx >= 0) {
                     const [moved] = window.currentApAnalysis.splice(fromIdx, 1);
                     window.currentApAnalysis.splice(toIdx, 0, moved);
+                    pbState.manualAirportOrder = window.currentApAnalysis.map(item => item.icao);
+                    pbState.importSequence = [...pbState.manualAirportOrder];
+                    window.saveConfirmedDataToLocal?.();
                     pbState.forceShowAirports.add(draggedIcao); 
                     renderPublishTableTriRow(window.currentApAnalysis);
                 }
@@ -3276,7 +3300,7 @@ function setupSearch() {
       addBtn.onclick = async () => {
           const icao = input.value.trim().toUpperCase();
           if(icao.length !== 4) return alert("请输入4位ICAO");
-          if((window.currentApAnalysis || []).some(item => item.icao === icao)) return alert("该机场已经存在表格中");
+          if((window.currentApAnalysis || []).some(item => String(item.icao || '').trim().toUpperCase() === icao)) return alert("该机场已经存在表格中");
           if (!window.AIRPORT_COORDS[icao]) return alert("坐标库中未收录此机场");
           
           _cachedAirports.unshift(icao);
@@ -3403,8 +3427,7 @@ function setupAirportInteraction() {
           if (ev.key === 'Enter') {
               const icao = inp.value.trim().toUpperCase();
               if(icao.length !== 4 || !window.AIRPORT_COORDS[icao]) return alert("无效的四字码或系统未收录");
-              const alreadyLoaded = (window.currentApAnalysis || []).some(item => item.icao === icao)
-                  || Object.values(pbState.sourceAirports).some(source => source.has(icao));
+              const alreadyLoaded = (window.currentApAnalysis || []).some(item => String(item.icao || '').trim().toUpperCase() === icao);
               if (alreadyLoaded) {
                   eTr.remove();
                   alert('该机场已经存在表格中');

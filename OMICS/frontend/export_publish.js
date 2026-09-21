@@ -548,6 +548,8 @@
         const renderResidentOptions = () => {
             const box = document.getElementById('import-resident-groups');
             if (!box) return;
+            const selectAll = document.getElementById('import-resident-groups-all');
+            if (selectAll) selectAll.checked = false;
             const groups = typeof window.getPublishAirportGroups === 'function' ? window.getPublishAirportGroups() : [];
             box.innerHTML = groups.map(group =>
                 `<label><input type="checkbox" class="import-resident-group" value="${group.index}"> ${escapeHtml(group.name)}${group.alwaysShow ? ' [置顶]' : ''} (${group.airports.length})</label>`
@@ -591,6 +593,7 @@
             });
             const allGroups = document.getElementById('import-resident-groups-all');
             const groupChecks = [...document.querySelectorAll('.import-resident-group')];
+            groupChecks.forEach(input => { input.checked = false; });
             if (allGroups) {
                 allGroups.checked = false;
                 allGroups.onchange = () => groupChecks.forEach(input => { input.checked = allGroups.checked; });
