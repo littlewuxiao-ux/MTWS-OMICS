@@ -2188,13 +2188,32 @@ def save_score_api():
             from backend.logic.exporter import process_stats_and_save
 
         # 🌟 并且只调用一次，带有完整的 rater 参数
-        process_stats_and_save(results, mode, backup_path, excel_root, eval_person, base_date_str, rater)
+        saved_file = process_stats_and_save(results, mode, backup_path, excel_root, eval_person, base_date_str, rater)
         
-        return jsonify({"success": True, "message": "保存成功！"})
+        return jsonify({
+            "success": True,
+            "message": "保存成功！",
+            "file_path": saved_file,
+            "folder_path": os.path.dirname(saved_file)
+        })
     except Exception as e:
         import traceback
         traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/open_folder', methods=['POST'])
+def open_folder_api():
+    try:
+        folder_path = os.path.abspath(os.path.normpath(str((request.json or {}).get('path', '')).strip()))
+        if not os.path.isdir(folder_path):
+            return jsonify({"success": False, "error": "保存文件夹不存在"}), 400
+        if os.name != 'nt':
+            return jsonify({"success": False, "error": "当前系统不支持资源管理器打开文件夹"}), 400
+        os.startfile(folder_path)
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
 # 🌟 找回失落的接口：日数据明细查询
 @app.route('/api/query_raw_data', methods=['POST'])
 def query_raw_data_api():

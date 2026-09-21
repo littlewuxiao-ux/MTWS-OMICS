@@ -2025,6 +2025,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 window.lastScoreBaseDateStr = payload.export_config.base_date_str;
                 const saveBtn = document.getElementById('manual-save-btn');
                 if (saveBtn) saveBtn.style.display = 'block';
+                const checkBtn = document.getElementById('check-saved-file-btn');
+                if (checkBtn) checkBtn.style.display = 'none';
             }
 
         } catch (e) { resultsContainer.innerHTML = `<div class="error-box">评分失败: ${e.message}</div>`; }
@@ -2510,6 +2512,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     const manualSaveBtn = document.getElementById('manual-save-btn');
+    const checkSavedFileBtn = document.getElementById('check-saved-file-btn');
+    let lastSavedFolder = '';
+    checkSavedFileBtn?.addEventListener('click', async () => {
+        if (!lastSavedFolder) return alert('尚未找到本次保存目录，请先保存评定结果。');
+        try {
+            const res = await fetch(window.OMICS_API_URL('open_folder'), {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path: lastSavedFolder })
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) throw new Error(data.error || '打开文件夹失败');
+        } catch (e) {
+            alert('打开保存文件夹失败: ' + e.message);
+        }
+    });
     if (manualSaveBtn) {
         manualSaveBtn.addEventListener('click', async () => {
             if (!window.lastScoreResults) return alert("请先进行评定!");
@@ -2530,8 +2547,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 });
                 const data = await res.json();
                 if (data.success) {
+                    lastSavedFolder = data.folder_path || '';
                     alert("✅ 保存成功!\n📊 Excel 表格已导出\n📦 数据已同步至底层数据库");
                     manualSaveBtn.style.display = 'none';
+                    if (checkSavedFileBtn) checkSavedFileBtn.style.display = lastSavedFolder ? 'block' : 'none';
                 }else throw new Error(data.error);
             } catch (e) { alert("❌ 保存失败: " + e.message); }
             finally { manualSaveBtn.disabled = false; manualSaveBtn.textContent = "💾 保存评定结论到文件"; }

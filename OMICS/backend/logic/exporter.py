@@ -242,3 +242,5 @@ def process_stats_and_save(results, currentMode, backup_path, excel_root, eval_p
         raise Exception(f"路径 [{full_path}] 无法写入。\n可能原因：Z盘未连接、权限不足或文件名有误。\n系统报错: {str(e)}")
     
     with open(db_file, 'w', encoding='utf-8') as f: json.dump(db_data, f, ensure_ascii=False, indent=2)
+
+    return full_path
