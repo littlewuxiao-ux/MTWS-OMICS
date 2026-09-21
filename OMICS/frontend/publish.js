@@ -3290,6 +3290,12 @@ function setupTableInteraction() {
   });
 }
 
+function isAirportVisibleInPublishTable(icao) {
+    const normalized = String(icao || '').trim().toUpperCase();
+    return Array.from(document.querySelectorAll('#forecast-table tr.tr-edit[data-icao]'))
+        .some(row => String(row.dataset.icao || '').trim().toUpperCase() === normalized);
+}
+
 function setupSearch() {
   const addBtn = document.getElementById('custom-airport-btn');
   const input = document.getElementById('custom-airport-input');
@@ -3300,7 +3306,7 @@ function setupSearch() {
       addBtn.onclick = async () => {
           const icao = input.value.trim().toUpperCase();
           if(icao.length !== 4) return alert("请输入4位ICAO");
-          if((window.currentApAnalysis || []).some(item => String(item.icao || '').trim().toUpperCase() === icao)) return alert("该机场已经存在表格中");
+          if(isAirportVisibleInPublishTable(icao)) return alert("该机场已经存在表格中");
           if (!window.AIRPORT_COORDS[icao]) return alert("坐标库中未收录此机场");
           
           _cachedAirports.unshift(icao);
@@ -3427,17 +3433,25 @@ function setupAirportInteraction() {
           if (ev.key === 'Enter') {
               const icao = inp.value.trim().toUpperCase();
               if(icao.length !== 4 || !window.AIRPORT_COORDS[icao]) return alert("无效的四字码或系统未收录");
-              const alreadyLoaded = (window.currentApAnalysis || []).some(item => String(item.icao || '').trim().toUpperCase() === icao);
-              if (alreadyLoaded) {
+              if (isAirportVisibleInPublishTable(icao)) {
                   eTr.remove();
                   alert('该机场已经存在表格中');
                   return;
               }
-              
+
+              const currentOrder = (window.currentApAnalysis || [])
+                  .map(item => String(item.icao || '').trim().toUpperCase())
+                  .filter(code => code && code !== icao);
+              const anchorIndex = currentOrder.indexOf(String(selectedIcao || '').trim().toUpperCase());
+              currentOrder.splice(anchorIndex >= 0 ? anchorIndex + 1 : currentOrder.length, 0, icao);
+              pbState.manualAirportOrder = currentOrder;
+              pbState.importSequence = [...currentOrder];
               pbState.customCoords[icao] = window.AIRPORT_COORDS[icao]; 
-              pbState.forceShowAirports.add(icao); 
+              pbState.forceShowAirports.add(icao);
+              pbState.manuallyRemovedAirports.delete(icao);
               registerSourceAirports('custom', [icao]);
               await loadForecastData(true);
+              window.saveConfirmedDataToLocal?.();
           }
       });
   });
