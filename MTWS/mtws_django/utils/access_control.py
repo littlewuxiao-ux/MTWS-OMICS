@@ -23,6 +23,8 @@ ACCESS_MODULES: List[Dict[str, Any]] = [
      'hint_display': '导航栏显示并可进入地图模式'},
     {'code': 'view_plain', 'name': '视图：中文模式', 'category': 'views', 'has_activate': True, 'has_write': False,
      'hint_display': '导航栏显示并可进入中文模式', 'hint_activate': '允许中文模式触发后台解析'},
+    {'code': 'flight_marks', 'name': '航班时刻（marks）', 'category': 'home', 'has_activate': False, 'has_write': False,
+     'hint_display': '允许使用 ?flight=marks 航班时刻图标模式'},
     {'code': 'login_user', 'name': '登录的用户/登出按钮', 'category': 'home', 'has_activate': True, 'has_write': False,
      'hint_display': '显示右上角用户与登出', 'hint_activate': '允许点击登出'},
     {'code': 'nwp', 'name': '温度辅助', 'category': 'home', 'has_activate': True, 'has_write': False,

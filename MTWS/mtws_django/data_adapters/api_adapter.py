@@ -145,12 +145,12 @@ class APIDataAdapter(BaseDataAdapter):
             start_timestamp = int(start_time.timestamp() * 1000)
             end_timestamp = int(end_time.timestamp() * 1000)
             
-            # 准备请求数据
+            # 准备请求数据（纳入 ATA 供 events；time_slots 在解析侧仍跳过已落地）
             request_data = {
                 "startTime": start_timestamp,
                 "endTime": end_timestamp,
                 "excludeCancel": True,
-                "excludeHaveAta": True
+                "excludeHaveAta": False
             }
             
             logger.info(f"请求航班数据: {start_time} 到 {end_time}")

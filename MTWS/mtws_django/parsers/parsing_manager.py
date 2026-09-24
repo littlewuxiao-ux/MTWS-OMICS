@@ -152,6 +152,7 @@ class ParsingManager:
         })
         
         logger.info(f"所有解析器运行完成，总耗时: {total_execution_time:.2f} 秒")
+        self._apply_marks_flight_alerts(results)
         return results
     
     def run_sequential_parsing(self, time_mode=None) -> Dict[str, Any]:
@@ -347,7 +348,26 @@ class ParsingManager:
                 pass
         
         return self._finalize_results(results, start_time)
-    
+
+    def _apply_marks_flight_alerts(self, results: Dict[str, Any]) -> None:
+        """按本轮入库变化更新 marks 的 events.warning 与机场三色。"""
+        try:
+            from utils.marks_alert_calculator import MarksAlertCalculator
+            parsers = results.get('parsers') or {}
+            flight = parsers.get('flight') or {}
+            metar = parsers.get('metar') or {}
+            taf = parsers.get('taf') or {}
+            full = set(metar.get('updated_airports') or [])
+            full.update(taf.get('updated_airports') or [])
+            full.update(flight.get('marks_full_airports') or [])
+            partial = dict(flight.get('marks_changed_keys') or {})
+            MarksAlertCalculator(self.time_mode).apply(
+                full_airports=full,
+                changed_keys_by_airport=partial,
+            )
+        except Exception as e:
+            logger.error(f"marks 航班告警更新失败: {e}", exc_info=True)
+
     def _finalize_results(self, results: Dict[str, Any], start_time: datetime) -> Dict[str, Any]:
         """
         完成解析结果的最终处理
@@ -359,6 +379,7 @@ class ParsingManager:
         Returns:
             Dict: 最终结果
         """
+        self._apply_marks_flight_alerts(results)
         end_time = datetime.now()
         total_execution_time = (end_time - start_time).total_seconds()
         
@@ -392,13 +413,15 @@ class ParsingManager:
         
         try:
             if parser_type == 'flight':
-                return self.flight_parser.parse_and_save()
+                result = self.flight_parser.parse_and_save()
             elif parser_type == 'metar':
-                return self.metar_parser.parse_and_save()
+                result = self.metar_parser.parse_and_save()
             elif parser_type == 'taf':
-                return self.taf_parser.parse_and_save()
+                result = self.taf_parser.parse_and_save()
             else:
                 raise ValueError(f"未知的解析器类型: {parser_type}")
+            self._apply_marks_flight_alerts({'parsers': {parser_type: result}})
+            return result
                 
         except Exception as e:
             logger.error(f"{parser_type}解析器运行异常: {e}")

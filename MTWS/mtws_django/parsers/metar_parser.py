@@ -75,7 +75,7 @@ class MetarParser:
             adapter = AdapterFactory.create_adapter(time_mode=self.time_mode, token=self.token)
             df = adapter.get_metar_data(active_airports)
             
-            success_count, error_count = self._process_all_airports(active_airports, df)
+            success_count, error_count, updated_airports = self._process_all_airports(active_airports, df)
             
             self._cleanup_old_records()
             
@@ -88,6 +88,7 @@ class MetarParser:
                 'record_count': success_count,
                 'error_count': error_count,
                 'execution_time': execution_time,
+                'updated_airports': updated_airports,
             }
             
         except Exception as e:
@@ -138,7 +139,7 @@ class MetarParser:
             adapter = AdapterFactory.create_adapter(time_mode=self.time_mode, token=self.token)
             df = adapter.get_metar_data(airport_codes)
             
-            success_count, error_count = self._process_all_airports(airport_codes, df)
+            success_count, error_count, updated_airports = self._process_all_airports(airport_codes, df)
             
             self._cleanup_old_records()
             
@@ -153,6 +154,7 @@ class MetarParser:
                 'error_count': error_count,
                 'execution_time': execution_time,
                 'filtered_airports': airport_codes,
+                'updated_airports': updated_airports,
             }
             
         except Exception as e:
@@ -234,6 +236,7 @@ class MetarParser:
 
         success_count = 0
         error_count = 0
+        updated_airports = []
 
         for airport_code in airport_codes:
             try:
@@ -241,6 +244,8 @@ class MetarParser:
                     airport_df = df[df['airport4Code'].astype(str).str.strip() == airport_code]
                     inserted = self._insert_airport_rows(airport_code, airport_df, existing_sqcs)
                     success_count += inserted
+                    if inserted:
+                        updated_airports.append(airport_code)
                 elif airport_code not in airports_with_n:
                     # API 无数据且 DB 无 N 行 → 创建占位行（直接标记 import_alert=Y）
                     self._create_placeholder_and_alert(airport_code, now_ms)
@@ -251,7 +256,7 @@ class MetarParser:
         # 主循环结束后，统一执行入库告警检查
         self._check_metar_import_alert(airport_codes, now_ms, config)
 
-        return success_count, error_count
+        return success_count, error_count, updated_airports
 
     def _skip_import_alert(self) -> bool:
         """
@@ -1354,7 +1359,8 @@ class MetarParser:
                 
                 if times:
                     min_time = min(times)
-                    time_diff = abs(metar_obs_time - min_time)
+                    # 起飞 − 观测：过去时刻为负，恒 ≤ 裕度，时间条件成立
+                    time_diff = min_time - metar_obs_time
                     threshold_ms = threshold_hours * 3600000
                     time_condition_met = (time_diff <= threshold_ms)
             

@@ -186,7 +186,8 @@ function _repaintAirportRow(code) {
   if (detailMain && detailModal && detailModal.style.display === 'block'
       && typeof currentDetailAirportCode !== 'undefined' && currentDetailAirportCode === code) {
     paintPlainDetailMetar(airport);
-    detailMain.innerHTML = createAirportRowForDetail(airport);
+    const detailScope = 'detail';
+    detailMain.innerHTML = createAirportRowForDetail(airport, { marksScope: detailScope });
     const airportRow = detailMain.querySelector('.airport-row');
     if (airportRow && typeof updateAirportGridForModal === 'function') {
       updateAirportGridForModal(airportRow);
@@ -199,7 +200,7 @@ function _repaintAirportRow(code) {
   const searchMain = document.getElementById(`search-block-main-${code}`);
   if (searchMain) {
     paintSearchBlockMetar(code, airport);
-    searchMain.innerHTML = createAirportRowForDetail(airport);
+    searchMain.innerHTML = createAirportRowForDetail(airport, { marksScope: 'search:' + String(code).toUpperCase() });
     const airportRow = searchMain.querySelector('.airport-row');
     if (airportRow && typeof updateAirportGridForModal === 'function') {
       updateAirportGridForModal(airportRow);

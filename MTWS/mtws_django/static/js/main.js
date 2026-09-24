@@ -566,6 +566,8 @@ function applyTimeRangeScaling() {
 
     if (currentTimeRange === 48) {
         // 48小时模式：调整格子最小宽度以适应更多格子
+        // marks 连续轴不用 timeline-container 的半格平移，否则顶轴与内容竖线错位
+        const marksMode = typeof isFlightMarksMode === 'function' && isFlightMarksMode();
         const style = document.createElement('style');
         style.id = 'time-range-48-style';
         style.textContent = `
@@ -576,11 +578,12 @@ function applyTimeRangeScaling() {
             .timeline-background-slot {
                 min-width: 30px !important;
             }
-            
-            /* 48小时模式：调整时间刻度偏移量 */
+            ${marksMode ? '' : `
+            /* 48小时模式：调整时间刻度偏移量（三段式等宽格） */
             .timeline-container {
                 transform: translateX(calc(-100% / 48 / 2)) !important;
             }
+            `}
         `;
 
         document.head.appendChild(style);
@@ -590,6 +593,45 @@ function applyTimeRangeScaling() {
 // 旧的00时线加粗函数已被新的网格系统替代
 
 // 生成时间轴
+function fillMarksHourTicks(beijingTimeline, utcTimeline) {
+    beijingTimeline.innerHTML = '';
+    utcTimeline.innerHTML = '';
+    beijingTimeline.style.position = 'relative';
+    utcTimeline.style.position = 'relative';
+    beijingTimeline.style.transform = 'none';
+    utcTimeline.style.transform = 'none';
+    const winStart = getMarksWindowStartMs();
+    const dur = getMarksWindowDurationMs();
+    const winEnd = winStart + dur;
+    const makeTick = (parent, ms, text) => {
+        const pct = ((ms - winStart) / dur) * 100;
+        if (pct < -0.1 || pct > 100.1) return;
+        const el = document.createElement('div');
+        el.className = 'timeline-slot timeline-slot-abs';
+        el.style.left = `${pct}%`;
+        el.textContent = text;
+        parent.appendChild(el);
+    };
+    const firstHour = new Date(winStart);
+    firstHour.setSeconds(0, 0);
+    firstHour.setMinutes(0, 0, 0);
+    if (firstHour.getTime() <= winStart) firstHour.setHours(firstHour.getHours() + 1);
+    for (let t = firstHour.getTime(); t <= winEnd; t += 3600000) {
+        const dt = new Date(t);
+        let bjH, utcH;
+        if (currentTimeMode === 'test') {
+            utcH = dt.getUTCHours().toString().padStart(2, '0');
+            bjH = new Date(dt.getTime() + 8 * 3600000).getUTCHours().toString().padStart(2, '0');
+        } else {
+            bjH = dt.getHours().toString().padStart(2, '0');
+            utcH = new Date(dt.getTime() - 8 * 3600000).getHours().toString().padStart(2, '0');
+        }
+        makeTick(beijingTimeline, t, bjH);
+        makeTick(utcTimeline, t, utcH);
+    }
+    return { winStart, dur };
+}
+
 function generateTimeline() {
     const beijingTimeline = document.getElementById('beijing-timeline');
     const utcTimeline = document.getElementById('utc-timeline');
@@ -630,6 +672,22 @@ function generateTimeline() {
     }
 
     // 生成动态数量的时间段
+    const marksMode = typeof isFlightMarksMode === 'function' && isFlightMarksMode();
+    if (marksMode && typeof fillMarksHourTicks === 'function') {
+        // 连续轴刻度：取消三段式半格平移，否则数字相对下方竖线整体偏左
+        // 若上次误包了 slide 层，先拆回，避免时刻行结构被破坏
+        if (typeof unwrapMarksTitleSlideLayer === 'function') {
+            unwrapMarksTitleSlideLayer(titleTimeline);
+        }
+        const { winStart, dur } = fillMarksHourTicks(beijingTimeline, utcTimeline);
+        if (typeof updateMarksNowBadge === 'function') {
+            updateMarksNowBadge(titleTimeline, winStart, dur);
+        }
+    } else {
+        beijingTimeline.style.transform = '';
+        utcTimeline.style.transform = '';
+        if (typeof removeMarksNowBadge === 'function') removeMarksNowBadge();
+        if (typeof unwrapMarksTitleSlideLayer === 'function') unwrapMarksTitleSlideLayer(titleTimeline);
     for (let i = 0; i < currentTimeRange; i++) {
         let beijingHour, utcHour;
 
@@ -667,6 +725,7 @@ function generateTimeline() {
             utcSlot.classList.add('current-time');
         }
         utcTimeline.appendChild(utcSlot);
+    }
     }
 }
 
@@ -2221,6 +2280,9 @@ function displayAirports(airports) {
         if (nwpEnabled && Object.keys(_nwpCache).length > 0) {
             renderAllNwpOverlays(_nwpCache);
         }
+        if (typeof ensureFlightPastHandleFloat === 'function') {
+            ensureFlightPastHandleFloat();
+        }
     }, 100);
 }
 
@@ -2367,6 +2429,18 @@ function createAirportRow(airport) {
 
     const noTafData = (!tafData || tafData.length === 0) || (tafData[0].data_status === 'C');
     const tafAlertClass = (tafData && tafData.length > 0 && tafData[0].import_alert === 'Y') ? ' taf-import-alerted' : '';
+    const marksMode = typeof isFlightMarksMode === 'function' && isFlightMarksMode();
+    const timelineInner = `
+                ${noTafData ? '<div class="no-taf-data">没有有效的TAF数据</div>' : ''}
+                <div class="forecast-row main-forecast${tafAlertClass}">
+                    ${createTafForecastRow(tafData, 'main')}
+                </div>
+                <div class="forecast-row change-forecast${tafAlertClass}">
+                    ${createTafForecastRow(tafData, 'change')}
+                </div>
+                <div class="forecast-row flight-row">
+                    ${createFlightTimeline(flightData, tafData, airport.metar_data, airport)}
+                </div>`;
 
     return `
         <div class="airport-row">
@@ -2379,23 +2453,29 @@ function createAirportRow(airport) {
             </div>
             ${buildWeatherInfoDiv(airport.airport_4code, latestMetar)}
             <div class="forecast-timeline">
-                ${noTafData ? '<div class="no-taf-data">没有有效的TAF数据</div>' : ''}
-                <div class="forecast-row main-forecast${tafAlertClass}">
-                    ${createTafForecastRow(tafData, 'main')}
-                </div>
-                <div class="forecast-row change-forecast${tafAlertClass}">
-                    ${createTafForecastRow(tafData, 'change')}
-                </div>
-                <div class="forecast-row flight-row">
-                    ${createFlightTimeline(flightData, tafData, airport.metar_data, airport)}
-                </div>
+                ${marksMode ? `<div class="marks-slide-layer">${timelineInner}</div>` : timelineInner}
             </div>
         </div>
     `;
 }
 
 // 为机场详情弹窗创建专用的机场行（不包含airport-info）
-function createAirportRowForDetail(airport) {
+function createAirportRowForDetail(airport, opts) {
+    const code = airport && airport.airport_4code
+        ? String(airport.airport_4code).toUpperCase()
+        : '';
+    let scope = (opts && opts.marksScope) || window._marksRenderScope || 'detail';
+    if (scope === 'home' || !scope) scope = 'detail';
+    if (scope !== 'detail' && !(typeof scope === 'string' && scope.indexOf('search:') === 0)) {
+        scope = code ? ('search:' + code) : 'detail';
+    }
+    if (typeof withMarksRenderScope === 'function') {
+        return withMarksRenderScope(scope, () => createAirportRowForDetailUnforced(airport));
+    }
+    return createAirportRowForDetailUnforced(airport);
+}
+
+function createAirportRowForDetailUnforced(airport) {
     const flightData = airport.flight_data || {};
     const latestMetar = airport.metar_data && airport.metar_data.length > 0 ? airport.metar_data[0] : null;
     const tafData = airport.taf_data || [];
@@ -2417,12 +2497,8 @@ function createAirportRowForDetail(airport) {
     const rowClass = isPlain
         ? 'airport-row airport-row-detail airport-row-plain'
         : 'airport-row airport-row-detail';
-
-    return `
-        <div class="${rowClass}">
-            ${weatherBox}
-            ${rowLabels}
-            <div class="forecast-timeline">
+    const marksMode = typeof isFlightMarksMode === 'function' && isFlightMarksMode();
+    const timelineInner = `
                 ${noTafData ? '<div class="no-taf-data">没有有效的TAF数据</div>' : ''}
                 <div class="forecast-row main-forecast${tafAlertClass}">
                     ${createTafForecastRow(tafData, 'main')}
@@ -2432,7 +2508,14 @@ function createAirportRowForDetail(airport) {
                 </div>
                 <div class="forecast-row flight-row">
                     ${createFlightTimeline(flightData, tafData, airport.metar_data, airport)}
-                </div>
+                </div>`;
+
+    return `
+        <div class="${rowClass}">
+            ${weatherBox}
+            ${rowLabels}
+            <div class="forecast-timeline">
+                ${marksMode ? `<div class="marks-slide-layer">${timelineInner}</div>` : timelineInner}
             </div>
         </div>
     `;
@@ -2642,6 +2725,10 @@ function hideModal(modalId) {
 
         if (modalId === 'airport-detail-modal') {
             modal.style.zIndex = '';
+            if (typeof removeMarksPastHandle === 'function') removeMarksPastHandle('detail');
+        }
+        if (modalId === 'airport-search-modal') {
+            document.querySelectorAll('.flight-past-handle-float.scope-search').forEach((el) => el.remove());
         }
     }
 }
@@ -3584,6 +3671,53 @@ function isTimeBeforeOrEqual(time1, time2) {
 
 // ==================== 动态网格系统 ====================
 
+function isMarksDisplayMidnight(ms) {
+    const dt = new Date(ms);
+    const utcMode = window.displayTimezone === 'UTC';
+    if (utcMode) {
+        return dt.getUTCHours() === 0 && dt.getUTCMinutes() === 0;
+    }
+    if (typeof currentTimeMode !== 'undefined' && currentTimeMode === 'test') {
+        const bj = new Date(dt.getTime() + 8 * 3600000);
+        return bj.getUTCHours() === 0 && bj.getUTCMinutes() === 0;
+    }
+    const beijingFmt = new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Asia/Shanghai',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+    });
+    const hm = {};
+    beijingFmt.formatToParts(dt).forEach(function (part) {
+        if (part.type === 'hour') hm.hour = parseInt(part.value, 10);
+        if (part.type === 'minute') hm.minute = parseInt(part.value, 10);
+    });
+    return hm.hour === 0 && hm.minute === 0;
+}
+
+function getMarksAxisLineSpecs() {
+    const winStart = getMarksWindowStartMs();
+    const dur = getMarksWindowDurationMs();
+    const winEnd = winStart + dur;
+    const specs = [{ pct: 0, ms: winStart }];
+    const firstHour = new Date(winStart);
+    firstHour.setSeconds(0, 0);
+    firstHour.setMinutes(0, 0, 0);
+    if (firstHour.getTime() <= winStart) {
+        firstHour.setHours(firstHour.getHours() + 1);
+    }
+    for (let t = firstHour.getTime(); t <= winEnd + 1000; t += 3600000) {
+        const pct = (t - winStart) / dur;
+        if (pct >= 0 && pct <= 1.0001) {
+            specs.push({ pct, ms: t });
+        }
+    }
+    if (specs[specs.length - 1].pct < 0.999) {
+        specs.push({ pct: 1, ms: winEnd });
+    }
+    return specs;
+}
+
 // 计算与时间模式对应的「午夜刻度」竖线索引（与既有 UTC 刻度步进方式一致）
 function findMidnightBoldLineIndexes(currentTime) {
     const indexes = [];
@@ -3634,6 +3768,13 @@ function findMidnightBoldLineIndexes(currentTime) {
 
 // 计算竖线位置
 function calculateVerticalLinePositions(horizontalLineWidth, timeSlots) {
+    // marks 连续轴：整点竖线按分钟比例放置
+    if (typeof isFlightMarksMode === 'function' && isFlightMarksMode()
+        && typeof getMarksWindowStartMs === 'function'
+        && typeof getMarksWindowDurationMs === 'function') {
+        return getMarksAxisLineSpecs().map((s) => s.pct * horizontalLineWidth);
+    }
+
     const cellWidth = horizontalLineWidth / timeSlots; // 每个格子宽度
     const positions = [];
 
@@ -3661,6 +3802,14 @@ function calculateHorizontalLinePositions(airportRowHeight) {
 // 不能用全局 document.querySelector（会导致所有机场行都错误地共用同一个机场的宽度）
 function calculateHorizontalWidth(airportElement) {
     const minWidth = 1680 - 80 - 200; // 1400px
+    // marks 模式：全站共用同一宽度，避免各行 scrollWidth 微小差异导致竖线/顶轴错位
+    if (typeof isFlightMarksMode === 'function' && isFlightMarksMode()) {
+        const main = document.getElementById('content-main');
+        const sample = (main && main.querySelector('.forecast-timeline'))
+            || (airportElement && airportElement.querySelector('.forecast-timeline'));
+        const w = sample ? sample.clientWidth : minWidth;
+        return Math.max(minWidth, w);
+    }
     const scopedTimeline = airportElement ? airportElement.querySelector('.forecast-timeline') : null;
     const contentWidth = scopedTimeline?.scrollWidth || minWidth;
     return Math.max(minWidth, contentWidth);
@@ -3703,15 +3852,19 @@ function createHorizontalLines(airportElement, airportHeight, horizontalWidth) {
 
 // 创建竖线
 function createVerticalLines(airportElement, airportHeight, horizontalWidth, timeSlots) {
-    // 移除旧的竖线
     airportElement.querySelectorAll('.grid-vertical-line').forEach(line => line.remove());
+
+    const marksMode = typeof isFlightMarksMode === 'function' && isFlightMarksMode();
+    if (marksMode) {
+        appendMarksVerticalLines(airportElement, { dark: false });
+        return;
+    }
 
     const positions = calculateVerticalLinePositions(horizontalWidth, timeSlots);
     const midnightIndexes = findMidnightBoldLineIndexes(getCurrentTime());
 
-    // 检测是否有airport-info元素，如果没有说明是详情页布局
     const hasAirportInfo = airportElement.querySelector('.airport-info') !== null;
-    const leftOffset = hasAirportInfo ? 280 : 200; // 有airport-info时280px，否则200px
+    const leftOffset = hasAirportInfo ? 280 : 200;
 
     positions.forEach((position, index) => {
         const line = document.createElement('div');
@@ -3735,6 +3888,33 @@ function createVerticalLines(airportElement, airportHeight, horizontalWidth, tim
         }
 
         airportElement.appendChild(line);
+    });
+}
+
+function appendMarksVerticalLines(airportElement, options) {
+    const dark = !!(options && options.dark);
+    const timeline = airportElement.querySelector('.forecast-timeline');
+    const host = (timeline && timeline.querySelector(':scope > .marks-slide-layer')) || timeline || airportElement;
+    const specs = getMarksAxisLineSpecs();
+    specs.forEach((spec) => {
+        const line = document.createElement('div');
+        const isMidnightLine = isMarksDisplayMidnight(spec.ms);
+        line.className = 'grid-vertical-line' + (isMidnightLine ? ' utc-00-line' : '');
+        const color = isMidnightLine
+            ? (dark ? '#ffffff' : '#666')
+            : (dark ? 'rgba(255, 255, 255, 0.3)' : '#ddd');
+        line.style.cssText = `
+            position: absolute;
+            left: ${spec.pct * 100}%;
+            top: 0;
+            width: ${isMidnightLine ? '3px' : '1px'};
+            height: 100%;
+            background-color: ${color};
+            z-index: 0;
+            pointer-events: none;
+            transform: translateX(-50%);
+        `;
+        host.appendChild(line);
     });
 }
 
@@ -3785,6 +3965,9 @@ function updateAllAirportGrids() {
             updateAirportGrid(airportRow);
         }
     });
+    if (typeof ensureFlightPastHandleFloat === 'function') {
+        ensureFlightPastHandleFloat();
+    }
 }
 
 // updateFlightStatusWarning → 已迁移至 main_flight.js
@@ -3835,10 +4018,31 @@ if (!window.tokenInvalidDetected) {
 function generateAirportDetailTimeline() {
     const beijingTimeline = document.getElementById('airport-detail-beijing-timeline');
     const utcTimeline = document.getElementById('airport-detail-utc-timeline');
+    if (!beijingTimeline || !utcTimeline) return;
 
-    // 复用主页的时间轴生成逻辑
+    if (typeof syncMarksPastOpenClass === 'function') {
+        syncMarksPastOpenClass('detail');
+    }
+
+    const paint = () => {
+        if (typeof isFlightMarksMode === 'function' && isFlightMarksMode()
+            && typeof fillMarksHourTicks === 'function') {
+            const { winStart, dur } = fillMarksHourTicks(beijingTimeline, utcTimeline);
+            const titleTimeline = beijingTimeline.closest('.title-timeline');
+            if (typeof updateMarksNowBadge === 'function') {
+                updateMarksNowBadge(titleTimeline, winStart, dur);
+            }
+            return true;
+        }
+        return false;
+    };
+    if (typeof withMarksRenderScope === 'function') {
+        if (withMarksRenderScope('detail', paint)) return;
+    } else if (paint()) {
+        return;
+    }
+
     const currentTime = getCurrentTime();
-
     let beijingCells = '';
     let utcCells = '';
 
@@ -3846,19 +4050,13 @@ function generateAirportDetailTimeline() {
         let beijingHour, utcHour;
 
         if (currentTimeMode === 'test') {
-            // test模式：currentTime是UTC时间
             const utcTime = new Date(currentTime.getTime() + i * 60 * 60 * 1000);
             utcHour = utcTime.getUTCHours().toString().padStart(2, '0');
-
-            // 北京时间（UTC+8）
             const beijingTime = new Date(utcTime.getTime() + 8 * 60 * 60 * 1000);
             beijingHour = beijingTime.getUTCHours().toString().padStart(2, '0');
         } else {
-            // current模式：currentTime是本地时间
             const localTime = new Date(currentTime.getTime() + i * 60 * 60 * 1000);
             beijingHour = localTime.getHours().toString().padStart(2, '0');
-
-            // UTC时间（本地时间 - 8小时）
             const utcTime = new Date(localTime.getTime() - 8 * 60 * 60 * 1000);
             utcHour = utcTime.getHours().toString().padStart(2, '0');
         }
@@ -3893,11 +4091,25 @@ function displayAirportDetailData(airportData) {
         if (airportRow) {
             updateAirportGridForModal(airportRow);
         }
+        if (typeof ensureMarksPastHandle === 'function') {
+            ensureMarksPastHandle('detail');
+        }
     }, 150);
 }
 
 // 弹窗专用网格更新函数（考虑85%缩放）
 function updateAirportGridForModal(airportElement) {
+    const run = () => updateAirportGridForModalInner(airportElement);
+    const scope = (typeof marksScopeFromElement === 'function')
+        ? marksScopeFromElement(airportElement)
+        : 'detail';
+    if (typeof withMarksRenderScope === 'function') {
+        return withMarksRenderScope(scope, run);
+    }
+    return run();
+}
+
+function updateAirportGridForModalInner(airportElement) {
     // 必须先移除旧的网格线，再测量高度/宽度，原因同 updateAirportGrid：
     // 避免把上一轮网格线的绝对定位偏移计入尺寸测量，形成越刷新越往下/往右偏移的累积误差
     airportElement.querySelectorAll('.grid-vertical-line, .grid-horizontal-line').forEach(line => line.remove());
@@ -3913,39 +4125,42 @@ function updateAirportGridForModal(airportElement) {
 
     let horizontalWidth;
     if (forecastTimeline) {
-        horizontalWidth = forecastTimeline.scrollWidth;
+        horizontalWidth = forecastTimeline.clientWidth || forecastTimeline.scrollWidth;
     } else {
         horizontalWidth = calculateHorizontalWidth(airportElement);
     }
 
     const timeSlots = currentTimeRange;
+    const marksMode = typeof isFlightMarksMode === 'function' && isFlightMarksMode();
 
-    // 创建竖线 - 使用原始宽度平分
-    const positions = calculateVerticalLinePositions(horizontalWidth, timeSlots);
-    const midnightIndexes = findMidnightBoldLineIndexes(getCurrentTime());
+    if (marksMode) {
+        appendMarksVerticalLines(airportElement, { dark: true });
+    } else {
+        const positions = calculateVerticalLinePositions(horizontalWidth, timeSlots);
+        const midnightIndexes = findMidnightBoldLineIndexes(getCurrentTime());
 
-    // 弹窗为深色主题：普通线统一为半透明白，00UTC/00CST整点线为3px不透明白（与主页加粗逻辑一致，仅配色不同）
-    positions.forEach((position, index) => {
-        const line = document.createElement('div');
-        line.className = 'grid-vertical-line';
-        const isMidnightLine = midnightIndexes.includes(index);
+        positions.forEach((position, index) => {
+            const line = document.createElement('div');
+            line.className = 'grid-vertical-line';
+            const isMidnightLine = midnightIndexes.includes(index);
 
-        line.style.cssText = `
-            position: absolute;
-            left: ${leftOffset + position}px;
-            top: 0;
-            width: ${isMidnightLine ? '3px' : '1px'};
-            height: ${airportHeight}px;
-            background-color: ${isMidnightLine ? '#ffffff' : 'rgba(255, 255, 255, 0.3)'};
-            z-index: 0;
-            pointer-events: none;
-        `;
+            line.style.cssText = `
+                position: absolute;
+                left: ${leftOffset + position}px;
+                top: 0;
+                width: ${isMidnightLine ? '3px' : '1px'};
+                height: ${airportHeight}px;
+                background-color: ${isMidnightLine ? '#ffffff' : 'rgba(255, 255, 255, 0.3)'};
+                z-index: 0;
+                pointer-events: none;
+            `;
 
-        if (isMidnightLine) {
-            line.classList.add('utc-00-line');
-        }
-        airportElement.appendChild(line);
-    });
+            if (isMidnightLine) {
+                line.classList.add('utc-00-line');
+            }
+            airportElement.appendChild(line);
+        });
+    }
 
     // 创建横线
     const horizontalPositions = calculateHorizontalLinePositions(airportHeight);

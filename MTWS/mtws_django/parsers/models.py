@@ -16,8 +16,12 @@ class Flight(models.Model):
     # 是否有航班
     has_flight = models.BooleanField(default=False, verbose_name='是否有航班')
 
-    # 前端使用的 48 时段数组，原样读写，不再分列存储
-    flight_detail = models.JSONField(blank=True, null=True, verbose_name='航班时段明细')
+    # 三段式 48 时段与 marks 事件各占一列
+    time_slots = models.JSONField(blank=True, null=True, verbose_name='航班时段明细')
+    events = models.JSONField(blank=True, null=True, verbose_name='航班时刻事件')
+    metar_highest_alert = models.JSONField(blank=True, null=True, verbose_name='机场实况最高告警五档')
+    taf_highest_alert = models.JSONField(blank=True, null=True, verbose_name='机场预报最高告警五档')
+    airport_highest_alert = models.JSONField(blank=True, null=True, verbose_name='机场综合最高告警五档')
     
     # 新增字段
     en_route = models.IntegerField(blank=True, null=True, verbose_name='是否在航线上')
@@ -44,11 +48,25 @@ class Flight(models.Model):
         return f"Flight {self.airport_4code} - Has: {self.has_flight}"
 
     def as_time_slots(self):
-        """返回前端使用的 time_slots 数组（flight_detail 原样，不做时段重算）。"""
-        detail = self.flight_detail
-        if isinstance(detail, list):
-            return detail
+        """返回前端使用的 time_slots 数组。"""
+        slots = self.time_slots
+        if isinstance(slots, list):
+            return slots
         return [''] * 48
+
+    def as_events(self):
+        """返回 marks 模式用的 events 列表。"""
+        events = self.events
+        if isinstance(events, list):
+            return events
+        return []
+
+    def as_alert_levels(self, attr: str):
+        """返回长度 5 的告警数组（裕度 0–4）。"""
+        raw = getattr(self, attr, None)
+        if isinstance(raw, list) and len(raw) >= 5:
+            return [raw[i] if raw[i] in ('R', 'Y', 'G', 'N') else 'N' for i in range(5)]
+        return ['N', 'N', 'N', 'N', 'N']
 
 
 

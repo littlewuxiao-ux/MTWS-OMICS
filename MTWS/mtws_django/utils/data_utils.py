@@ -311,14 +311,15 @@ class DataProcessor:
             Dict: 合并后的数据
         """
         if not time_slots or len(time_slots) != 48:
-            return {'has_flight': False, 'flight_detail': [''] * 48}
+            return {'has_flight': False, 'time_slots': [''] * 48, 'events': []}
         
         has_flight = any(slot and str(slot).strip() and str(slot).strip() != 'None'
                         for slot in time_slots)
         
         return {
             'has_flight': has_flight,
-            'flight_detail': list(time_slots),
+            'time_slots': list(time_slots),
+            'events': [],
         }
     
     @staticmethod

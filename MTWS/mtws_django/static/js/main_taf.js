@@ -261,6 +261,31 @@ function createBecmgTransitionBar(taf, becmgIndex) {
 
 // 计算甘特图条带的位置
 function calculateGanttPosition(startTime, endTime, currentTime) {
+    // marks 模式：连续分钟轴，窗口左缘为 now（或展开后 now-2h）
+    if (typeof isFlightMarksMode === 'function' && isFlightMarksMode()
+        && typeof getMarksWindowStartMs === 'function'
+        && typeof getMarksWindowDurationMs === 'function'
+        && typeof calculateDDHHOffset === 'function') {
+        const startOffsetH = calculateDDHHOffset(startTime, currentTime);
+        const endOffsetH = calculateDDHHOffset(endTime, currentTime);
+        if (startOffsetH === null || endOffsetH === null) {
+            return { left: 0, width: 0 };
+        }
+        // DDHH 相对「当前时刻整点」的小时差；换算到绝对 ms 时用整点对齐的当前小时
+        const aligned = new Date(currentTime.getTime());
+        aligned.setMinutes(0, 0, 0);
+        const startMs = aligned.getTime() + startOffsetH * 3600000;
+        const endMs = aligned.getTime() + endOffsetH * 3600000;
+        const winStart = getMarksWindowStartMs();
+        const dur = getMarksWindowDurationMs();
+        const left = ((startMs - winStart) / dur) * 100;
+        const right = ((endMs - winStart) / dur) * 100;
+        const clampedLeft = Math.max(0, Math.min(100, left));
+        const clampedRight = Math.max(0, Math.min(100, right));
+        if (clampedRight <= clampedLeft) return { left: 0, width: 0 };
+        return { left: clampedLeft, width: clampedRight - clampedLeft };
+    }
+
     // 将时间字符串转换为相对当前时间的小时偏移
     const startOffset = calculateTimeOffset(startTime, currentTime);
     const endOffset = calculateTimeOffset(endTime, currentTime);
@@ -378,7 +403,20 @@ function createTemperatureIndicators(taf) {
         if (temp.time && temp.value) {  // 只要有时间和温度值就显示
             const offset = calculateTimeOffset(temp.time, currentTime);
             if (offset >= 0 && offset < currentTimeRange) {
-                const left = (offset / currentTimeRange) * 100; // 显示在边界线上
+                let left;
+                if (typeof isFlightMarksMode === 'function' && isFlightMarksMode()
+                    && typeof calculateDDHHOffset === 'function'
+                    && typeof getMarksWindowStartMs === 'function'
+                    && typeof marksMsToLeftPercent === 'function') {
+                    const offH = calculateDDHHOffset(temp.time, currentTime);
+                    if (offH === null) return;
+                    const aligned = new Date(currentTime.getTime());
+                    aligned.setMinutes(0, 0, 0);
+                    left = marksMsToLeftPercent(aligned.getTime() + offH * 3600000);
+                    if (left < 0 || left > 100) return;
+                } else {
+                    left = (offset / currentTimeRange) * 100;
+                }
 
                 // 根据告警级别确定颜色，无告警或N时使用浅灰色（0.8透明度）
                 let triangleColor;
