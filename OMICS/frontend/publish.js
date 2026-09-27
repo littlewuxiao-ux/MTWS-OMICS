@@ -453,6 +453,7 @@ window.initPublishModule = async function() {
 
     const settingsConfig = window.OMICS_CONFIG || window.OMICS_SETTINGS_CONFIG || {};
     const publishConfig = settingsConfig.publish || {};
+    if (Array.isArray(publishConfig.carrier_filter) && publishConfig.carrier_filter.length) pbState.carrierFilter = publishConfig.carrier_filter.map(v => String(v).trim().toUpperCase()).filter(Boolean);
     let savedGroups = publishConfig.airport_groups && publishConfig.airport_groups.length ? JSON.stringify(publishConfig.airport_groups) : localStorage.getItem('pb_airport_groups');
     pbState.airportGroups = savedGroups ? JSON.parse(savedGroups) : DEFAULT_AIRPORT_GROUPS;
     if (publishConfig.airport_groups && publishConfig.airport_groups.length) localStorage.setItem('pb_airport_groups', JSON.stringify(publishConfig.airport_groups));
@@ -928,7 +929,7 @@ function buildPublishExportText(timezone = 'auto') {
             let windText = formatPublishWindText(withoutTemperature);
             // 统一将纯数字能见度单元格导出为可读的中文单位。
             windText = windText.replace(/(^|\s)(\d{2,4})(?=\s|$)/g, (m, p, v) => `能见度${v}米`);
-            return addShortTermBeforeThunder(windText);
+            return windText;
         };
         const getCellTemperature = cell => {
             const temperatures = String(cell?.text || '').trim().split(/\s+/)
@@ -1181,7 +1182,10 @@ function buildPublishExportText(timezone = 'auto') {
             : mergedWeatherRanges;
         const noteText = notes.map(note => String(note || '').trim())
             .filter(note => note && note !== '/' && note !== '适航' && !/风|能见度/.test(note) && !/(终端区|本场)/.test(note)).join('，');
-        const rowTexts = [...weatherRangesWithScopedNote, ...mergedVisibilityRanges, ...mergedWindRanges, ...mergedTemperatureRanges, noteText].filter(Boolean);
+        const highTempNote = notes.some(note => /高温/.test(String(note || '')));
+        const windNoteFirst = notes.map(note => String(note || '').trim()).find(note => note && /风/.test(note) && !/间歇|短时|偶有|局地|阶段性|阵性/.test(note));
+        const leadingNotes = [windNoteFirst, highTempNote ? '高温' : ''].filter(Boolean);
+        const rowTexts = [...leadingNotes, ...weatherRangesWithScopedNote, ...mergedVisibilityRanges, ...mergedWindRanges, ...mergedTemperatureRanges, noteText].filter(Boolean);
 
         const timeText = rowTexts.length ? rowTexts.join('；') : '预计天气适航';
         const nameMode = document.querySelector('input[name="export-text-name"]:checked')?.value || 'chinese';
@@ -1323,6 +1327,8 @@ function setupGlobalToolbar() {
     const refreshExportText = () => {
         const textarea = document.getElementById('export-text-content');
         if (!textarea) return;
+        persistAllPublishDraftsFromDom();
+        document.querySelectorAll('#forecast-table tr.tr-edit[data-confirmed="true"][data-icao]').forEach(row => persistConfirmedAirportFromDom(row.dataset.icao, false));
         const timezone = document.querySelector('input[name="export-text-timezone"]:checked')?.value || 'auto';
         textarea.value = buildPublishExportText(timezone);
     };
@@ -1555,6 +1561,7 @@ function buildPublishBlockFromLocal() {
     return {
         airport_groups: (groups && groups.length) ? groups : (s.airport_groups || []),
         auto_ec_cfg: (ec && Object.keys(ec).length) ? ec : (s.auto_ec_cfg || {}),
+        carrier_filter: pbState.carrierFilter,
         display_elements: {
             wind: pbState.showWind,
             visibility: pbState.showVis,
