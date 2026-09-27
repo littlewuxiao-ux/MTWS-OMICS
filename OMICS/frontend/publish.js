@@ -1967,6 +1967,22 @@ async function fetchTafDataForAirports(airports, startMs, endMs, setProgress) {
     }
 }
 
+async function fetchLatestMetarForAirports(airports, setProgress) {
+    const token = localStorage.getItem('sf_weather_token') || localStorage.getItem('mtws_token');
+    if (!token || !airports.length) return {};
+    setProgress?.('正在调取最新 METAR 实况数据...');
+    const now = Date.now();
+    const fmt = ms => { const d = new Date(ms); return `${d.getUTCFullYear()}${String(d.getUTCMonth()+1).padStart(2,'0')}${String(d.getUTCDate()).padStart(2,'0')}${String(d.getUTCHours()).padStart(2,'0')}00`; };
+    try {
+        const res = await fetch((window.OMICS_API_URL || (path => `/api/${path}`))('fetch_data'), { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ token, start_time: fmt(now - 36 * 3600000), end_time: fmt(now), airports: airports.join(' '), wtypes:['SA','SP'] }) });
+        const result = await res.json();
+        const map = {};
+        const rows = Array.isArray(result.data) ? result.data : (Array.isArray(result.obj) ? result.obj : []);
+        rows.forEach(row => { const icao = String(row.airport4Code || row.airport || row.icao || '').toUpperCase(); const text = row.metar || row.report || row.raw || row.data || ''; if (icao && text) { const ts = Number(row.observationTime || row.receiveTime || row.obsTime || 0); if (!map[icao] || ts > map[icao].ts) map[icao] = { text: String(text), ts }; } });
+        return Object.fromEntries(Object.entries(map).map(([k,v]) => [k, v.text]));
+    } catch (e) { return {}; }
+}
+
 // ==========================================
 // 🌟 翻译、判定与多要素处理核心
 // ==========================================
@@ -2468,8 +2484,9 @@ async function loadForecastData(retainOrder = false) {
 
         setProgress('正在调取 TAF 数据；正在调取 EC 数值预报数据（并行）...');
         setProgress('正在调取 TAF 数据；正在调取 EC 数值预报数据（并行）...');
-        const [tafDataMap, ...nwpChunks] = await Promise.all([
+        const [tafDataMap, metarMap, ...nwpChunks] = await Promise.all([
             fetchTafDataForAirports(validAps, startMs, flightEndMs, setProgress),
+            fetchLatestMetarForAirports(validAps, setProgress),
             ...nwpPromises
         ]);
 
@@ -2530,7 +2547,7 @@ async function loadForecastData(retainOrder = false) {
             // 🌟 需求：EC/TAF 未勾选时不作为筛选依据。hasAlert 只由被勾选的数据源决定。
             // （常驻机场、手动追加、已确认机场不受此限制，在过滤/排序环节另行豁免）
             const hasAlert = isConfirmed || (pbState.defaultShowEc && hasAlertEC) || (pbState.defaultShowTaf && hasAlertTAF);
-            return { icao, hasAlert, hasAlertEC, hasAlertTAF, nwp, tafRaw, tafHourly };
+            return { icao, hasAlert, hasAlertEC, hasAlertTAF, nwp, tafRaw, tafHourly, metarRaw: metarMap?.[icao] || '' };
         });
 
         setProgress('6/6 正在排版...');
@@ -2598,7 +2615,7 @@ function renderPublishTableTriRow(apAnalysis, preserveDrafts = true) {
     _cachedAirports = filteredAnalysis.map(a => a.icao);
     
     filteredAnalysis.forEach((apInfo, groupIdx) => {
-        const { icao, hasAlert, nwp, tafHourly, tafRaw } = apInfo;
+        const { icao, hasAlert, nwp, tafHourly, tafRaw, metarRaw } = apInfo;
         const apType = apInfo._apType;
         const gClass = (groupIdx % 2 === 0) ? 'g0' : 'g1';
         const apName = window.GLOBAL_AIRPORT_NAME_MAP[icao] || icao; 
@@ -2635,7 +2652,7 @@ function renderPublishTableTriRow(apAnalysis, preserveDrafts = true) {
         }
 
         trEdit.innerHTML = `
-            <td class="col-airport td-airport" rowspan="1" draggable="true" data-icao="${icao}" title="${tafRaw || '无TAF报文'}${window.getPublishMetar?.(icao) ? '\n\nMETAR:\n' + window.getPublishMetar(icao) : '\n\n暂无已导入METAR'}" style="font-weight:bold; vertical-align:middle; cursor:move; position:sticky; ${isGray?'color:#94a3b8;':''}">${apName}<button class="airport-delete-x" data-icao="${icao}" title="删除该机场">×</button></td>
+            <td class="col-airport td-airport" rowspan="1" draggable="true" data-icao="${icao}" title="${tafRaw || '无TAF报文'}\n\nMETAR:\n${metarRaw || '暂无最新METAR'}" style="font-weight:bold; vertical-align:middle; cursor:move; position:sticky; ${isGray?'color:#94a3b8;':''}">${apName}<button class="airport-delete-x" data-icao="${icao}" title="删除该机场">×</button></td>
             <td rowspan="1" class="col-airport-type" contenteditable="true" spellcheck="false" title="点击修改机场性质" style="vertical-align:middle; border-right:2px solid #cbd5e1;">${apType}</td>
             ${srcOpHTML}
         `;
