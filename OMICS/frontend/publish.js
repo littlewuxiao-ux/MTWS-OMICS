@@ -1426,6 +1426,10 @@ function setupQuickTimeOptions() {
             const now = new Date(Date.now() + 8 * 3600000); 
             document.getElementById('pb-datetime').value = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}`;
             applyTimePreset(e.target.value);
+            // 预报时段变化会改变运行航班筛选窗口，需重新获取航班并重建机场列表。
+            if (pbState.runningImportMode && (window.currentApAnalysis || []).length > 0) {
+                loadForecastData(true);
+            }
         });
     }
 
@@ -1959,7 +1963,7 @@ async function fetchTafDataForAirports(airports, startMs, endMs, setProgress) {
     const eStr = fmt(endMs);
 
     try {
-        if(setProgress) setProgress(`正在极速拉取并解析 TAF 报文，请稍候...`);
+        if(setProgress) setProgress('TAF', '正在拉取并解析 TAF 报文...');
         const res = await fetch((window.OMICS_API_URL || (path => `/api/${path}`))('fetch_data'), {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ token: token, start_time: sStr, end_time: eStr, airports: airports.join(' '), wtypes: ["FC", "FT"] })
@@ -1994,7 +1998,7 @@ async function fetchTafDataForAirports(airports, startMs, endMs, setProgress) {
         }
         return tafMap;
     } catch(e) {
-        if(setProgress) setProgress(`TAF 接口暂不可用，继续使用 EC 数据...`, false);
+        if(setProgress) setProgress('TAF', '接口暂不可用，继续使用 EC 数据...', false);
         const tafMap = {};
         airports.forEach(ap => tafMap[ap] = { raw: [], hourly: null });
         return tafMap;
@@ -2004,7 +2008,7 @@ async function fetchTafDataForAirports(airports, startMs, endMs, setProgress) {
 async function fetchLatestMetarForAirports(airports, setProgress) {
     const token = localStorage.getItem('sf_weather_token') || localStorage.getItem('mtws_token');
     if (!token || !airports.length) return {};
-    setProgress?.('正在调取最新 METAR 实况数据...');
+    setProgress?.('METAR', '正在调取最新 METAR 实况数据...');
     const now = Date.now();
     const fmt = ms => { const d = new Date(ms); return `${d.getUTCFullYear()}${String(d.getUTCMonth()+1).padStart(2,'0')}${String(d.getUTCDate()).padStart(2,'0')}${String(d.getUTCHours()).padStart(2,'0')}00`; };
     try {
@@ -2393,7 +2397,7 @@ function showPublishLoadingStatus(message) {
     loader.style.boxSizing = 'border-box';
     // Keep publish progress behind the login modal so a failed refresh
     // cannot obscure the QR code when the user signs in again.
-    loader.style.zIndex = '1500';
+    loader.style.zIndex = '10050';
     loader.style.margin = '0';
     loader.style.boxShadow = '0 12px 40px rgba(15, 23, 42, 0.22)';
     loader.style.color = '#005A9C';
@@ -2410,10 +2414,12 @@ async function loadForecastData(retainOrder = false) {
     PBLOG(`loadForecastData 开始 | retainOrder=${retainOrder} | startDate=${pbState.startDate} startHour=${pbState.startHour} validity=${pbState.validityHours}h`);
     
     const progressState = { flight: '等待', taf: '等待', metar: '等待', ec: '等待', parse: '等待', layout: '等待' };
-    const setProgress = (msg, isError = false) => {
+    const setProgress = (stageOrMsg, msgOrError = false, legacyError = false) => {
         if (!loader) return;
-        const lower = String(msg).toLowerCase();
-        const key = lower.includes('航班') ? 'flight' : lower.includes('taf') ? 'taf' : lower.includes('metar') ? 'metar' : lower.includes('数值') || lower.includes('ec') ? 'ec' : lower.includes('解析') ? 'parse' : lower.includes('排版') ? 'layout' : null;
+        const explicitStage = ['flight', 'taf', 'metar', 'ec', 'parse', 'layout'].includes(String(stageOrMsg).toLowerCase());
+        const key = explicitStage ? String(stageOrMsg).toLowerCase() : null;
+        const msg = explicitStage ? String(msgOrError) : String(stageOrMsg);
+        const isError = explicitStage ? legacyError : Boolean(msgOrError);
         if (key) progressState[key] = isError ? '失败' : msg;
         loader.style.display = 'block'; loader.style.color = isError ? '#dc2626' : '#005A9C';
         loader.style.position = 'fixed';
@@ -2424,7 +2430,7 @@ async function loadForecastData(retainOrder = false) {
         loader.style.boxSizing = 'border-box';
         // The login modal uses the shared modal layer (z-index: 2000).
         // Progress and error messages must remain below it.
-        loader.style.zIndex = '1500';
+        loader.style.zIndex = '10050';
         loader.style.margin = '0';
         loader.style.boxShadow = '0 12px 40px rgba(15, 23, 42, 0.22)';
         loader.innerHTML = isError ? `❌ ${msg}` : `<span class="spinner"></span> ${msg}`;
@@ -2525,13 +2531,16 @@ async function loadForecastData(retainOrder = false) {
             nwpPromises.push(p);
         }
 
-        setProgress('正在调取 TAF 数据；正在调取 EC 数值预报数据（并行）...');
-        setProgress('正在调取 TAF 数据；正在调取 EC 数值预报数据（并行）...');
+        setProgress('TAF', '正在并行拉取 TAF 报文...');
+        setProgress('EC', '正在并行拉取 EC 数值预报...');
         const [tafDataMap, metarMap, ...nwpChunks] = await Promise.all([
             fetchTafDataForAirports(validAps, startMs, flightEndMs, setProgress),
             fetchLatestMetarForAirports(validAps, setProgress),
             ...nwpPromises
         ]);
+        setProgress('TAF', '已完成');
+        setProgress('METAR', '已完成');
+        setProgress('EC', '已完成');
 
         setProgress('5/6 正在解析数据与判断恶劣天气...');
         let nwpArr = [];

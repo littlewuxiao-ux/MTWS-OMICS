@@ -134,6 +134,7 @@ textarea:focus { border-color: var(--sf-red); outline: none; background: white; 
 
 #publish-loading-indicator { box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08); }
 #publish-loading-indicator .spinner { width: 22px; height: 22px; vertical-align: -7px; }
+#login-modal { z-index: 11000 !important; }
 #forecast-table .airport-confirmed .td-airport,
 #forecast-table .airport-confirmed .col-airport-type { font-weight: 800 !important; color: #0f172a !important; }
 #forecast-table .airport-unconfirmed .td-airport,
@@ -406,7 +407,7 @@ textarea:focus { border-color: var(--sf-red); outline: none; background: white; 
     .publish-filter-settings-grid { grid-template-columns: 1fr; gap: 14px; }
     .publish-filter-settings-group { padding: 10px; }
     #pb-export-header { padding: 14px !important; }
-    #pb-main-title-select { width: 100%; max-width: 100%; margin-bottom: 14px !important; font-size: 30px !important; }
+    #pb-main-title-select { width: 100%; max-width: 100%; margin-bottom: 14px !important; font-size: 32px !important; }
     .pb-alert-summary { display: grid !important; grid-template-columns: repeat(4, minmax(0, 1fr)); width: 100% !important; }
     .pb-alert-summary > div { min-width: 0; }
     .pb-header-meta { display: grid !important; grid-template-columns: 1fr; gap: 10px; align-items: start !important; }
@@ -579,7 +580,7 @@ main.main-grid { gap: 0; }
 .publish-region-group-title { color: #334155; font-size: 12px; font-weight: 800; margin-right: 2px; }
 .publish-region-row label { display: inline-flex; align-items: center; gap: 4px; }
 #pb-export-header { background: linear-gradient(135deg, #263449 0%, #34445b 100%) !important; border-radius: 12px 12px 0 0 !important; padding: 18px !important; box-shadow: 0 8px 20px rgba(23,32,51,.12); }
-#pb-main-title-select { font-size: 26px !important; margin-bottom: 16px !important; }
+#pb-main-title-select { font-size: 36px !important; margin-bottom: 16px !important; }
 .pb-alert-summary { width: 100% !important; gap: 8px !important; margin-bottom: 16px !important; }
 .pb-alert-summary > div { min-width: 70px; border-radius: 8px !important; box-shadow: inset 0 1px rgba(255,255,255,.22); }
 .pb-header-meta { border-top-color: rgba(255,255,255,.18) !important; }

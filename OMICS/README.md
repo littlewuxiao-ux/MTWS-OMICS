@@ -28,6 +28,16 @@
 
 ## 最近更新 · 2026-08-02
 
+### 2026-09-27 · Publish workflow fixes
+
+- Publish Excel export now uses the filename pattern `未来24小时天气预报YYYYMMDD.xlsx`.
+- Excel import supports both the `.xlsx` and `.xlsm` 24-hour forecast templates in the project parent directory. It reads forecast date, start time, validity, airport rows, notes, airport nature, and the footer's ground-icing/extreme-cold airport summary.
+- Imported footer conditions are restored in the publish view and persisted with the local publish snapshot. Airports with the same condition are grouped into one statement, for example `哈尔滨、长春（地面结冰）；锡林浩特（极寒）`.
+- Import progress is cleared after a successful parse, including workbooks whose imported rows do not yet contain NWP data.
+- Publish text export reflects edited notes immediately. Wind notes are placed first, high-temperature notes precede temperature text, and visibility values such as `5000+` and `4000+` export as `能见度大于5000米` and `能见度大于4000米`.
+- The publish view can fetch the latest METAR independently of future TAF data and shows TAF/METAR on airport hover. Parallel loading status reports flight, TAF, METAR, EC, parsing, and layout stages.
+- Running-flight filtering supports a configurable carrier-code list (default: `O3`, `8K`, `YG`) and includes only flights within one hour before through three hours after the selected forecast period.
+
 - 修复 TAF/EC 连续双击失效：不再依赖浏览器原生 `dblclick` 对长点击序列的分组，自行将连续点击两两配对，连续多次双击可稳定逐次展开/收起。数据视图首行按 TAF、EC、编发和视图操作重新分组，来源开关、明细展开和一键采纳放在各自数据源内。
 - 区域显示改为纯前端显隐：国内、国际区域内容左对齐，切换区域不再重新请求 TAF/EC/NWP；关闭区域只隐藏机场，完整数据、置顶顺序和缓存均保留，重新开启后原位恢复。运行机场导入会先加载全部区域，再按当前区域选择显示。
 - 发布表右键菜单统一提供增加天气行、删除当前天气行、新增机场和撤销编发；多行预报可删除第一行，附加行备注可直接编辑，撤销编发会保留内容回到草稿。新增机场遇到已加载机场时明确提示。
