@@ -172,6 +172,7 @@ window.saveConfirmedDataToLocal = function() {
         draftData: pbState.draftData, importSequence: pbState.importSequence,
         manualAirportOrder: pbState.manualAirportOrder,
         importedAirportTypes: pbState.importedAirportTypes,
+        specialConditionText: document.getElementById('pb-special-airports')?.value || localStorage.getItem('pb_special_condition_text') || '无',
         manualAirportTypes: pbState.manualAirportTypes,
         manuallyRemovedAirports: Array.from(pbState.manuallyRemovedAirports || []) };
     localStorage.setItem('sf_confirmed_forecasts_v3', JSON.stringify(wrapper));
@@ -487,6 +488,10 @@ window.initPublishModule = async function() {
             pbState.importSequence = Array.isArray(savedWrapper.importSequence) ? savedWrapper.importSequence : [];
             pbState.manualAirportOrder = Array.isArray(savedWrapper.manualAirportOrder) ? savedWrapper.manualAirportOrder : [];
             pbState.importedAirportTypes = savedWrapper.importedAirportTypes || {};
+            if (savedWrapper.specialConditionText) {
+                const footer = document.getElementById('pb-special-airports');
+                if (footer) footer.value = savedWrapper.specialConditionText;
+            }
             pbState.manualAirportTypes = savedWrapper.manualAirportTypes || {};
             if (Array.isArray(savedWrapper.manuallyRemovedAirports)) pbState.manuallyRemovedAirports = new Set(savedWrapper.manuallyRemovedAirports);
             pbState.confirmedUser = savedWrapper.user;
@@ -2233,15 +2238,19 @@ function getAirportSpecialConditions(nwp) {
 function updateSpecialConditionFooter() {
   const input = document.getElementById('pb-special-airports');
   if (!input) return;
-  const values = [];
+  const grouped = new Map();
   sortPublishAirportAnalysis(window.currentApAnalysis || []).forEach(ap => {
       if (!isAirportRegionEnabled(ap.icao)) return;
       const reasons = pbState.specialConditionAirports.get(ap.icao);
       if (!reasons?.size) return;
       const name = window.GLOBAL_AIRPORT_NAME_MAP[ap.icao] || ap.icao;
-      values.push(`${name}（${Array.from(reasons).join('/')}）`);
+      const reason = Array.from(reasons).sort().join('/');
+      if (!grouped.has(reason)) grouped.set(reason, []);
+      grouped.get(reason).push(name);
   });
-  input.value = values.length ? values.join('、') : '无';
+  const values = Array.from(grouped, ([reason, names]) => `${names.join('、')}（${reason}）`);
+  input.value = values.length ? values.join('；') : '无';
+  localStorage.setItem('pb_special_condition_text', input.value);
 }
 
 function analyzeCategory(val) {

@@ -1766,6 +1766,15 @@ def import_publish_excel_api():
 
             entries = []
             current = None
+            special_condition_text = ''
+            for r in range(1, ws.max_row + 1):
+                row_values = [cell_text(ws.cell(r, c).value) for c in range(1, ws.max_column + 1)]
+                joined = ' '.join(v for v in row_values if v)
+                if '地面结冰' in joined or '极寒' in joined:
+                    label_pos = next((i for i, v in enumerate(row_values) if '地面结冰' in v or '极寒' in v), 0)
+                    tail = ' '.join(v for v in row_values[label_pos + 1:] if v)
+                    special_condition_text = tail or joined
+                    break
             stop_labels = ('地面结冰', '颜色说明', '发布说明')
             for row_idx in range(header_row + 1, ws.max_row + 1):
                 airport_name = cell_text(ws.cell(row_idx, 1).value)
@@ -1817,6 +1826,7 @@ def import_publish_excel_api():
                     "start_hour_bjt": start_hour_bjt,
                     "validity_hours": max(0, len(hour_columns) - 1),
                     "eval_person": eval_person,
+                    "special_condition_text": special_condition_text,
                     "airports": entries
                 }
             })
@@ -2197,7 +2207,7 @@ def export_publish_api():
                 xlsx_path = os.path.join(target_dir, f'24小时天气预报_{ts}.xlsx')
                 date_match = re.search(r'(20\d{2})[-/]?(\d{2})[-/]?(\d{2})', str(start_date or ''))
                 file_date = ''.join(date_match.groups()) if date_match else datetime.now().strftime('%Y%m%d')
-                desired_xlsx_path = os.path.join(target_dir, f'未来24小时预报{file_date}.xlsx')
+                desired_xlsx_path = os.path.join(target_dir, f'未来24小时天气预报{file_date}.xlsx')
                 xlsx_path = desired_xlsx_path
                 wb.save(xlsx_path)
                 saved.append(xlsx_path)

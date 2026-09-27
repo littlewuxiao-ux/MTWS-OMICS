@@ -1096,6 +1096,12 @@
             window.pbState.validityHours = Number(data.validity_hours) || 24;
             window.syncPublishTimeControls?.({ custom: true });
         }
+        if (data.special_condition_text) {
+            const footer = document.getElementById('pb-special-airports');
+            if (footer) footer.value = data.special_condition_text;
+            localStorage.setItem('pb_special_condition_text', data.special_condition_text);
+            window.saveConfirmedDataToLocal?.();
+        }
 
         (data.airports || []).forEach(entry => {
             const resolved = resolveAirportResult(entry.airport_name, nameMap);
@@ -1122,7 +1128,7 @@
         window.registerPublishSourceAirports?.('table', importedIcaos);
         if (unresolved.length) alert('以下机场未能匹配机场字典，已跳过：\n' + unresolved.join('、'));
         const loader = document.getElementById('publish-loading-indicator');
-        if (loader && !(window.currentApAnalysis || []).some(ap => importedIcaos.includes(ap.icao) && !ap.nwp)) loader.style.display = 'none';
+        if (loader) loader.style.display = 'none';
         return { count: importedIcaos.length, icaos: importedIcaos };
     }
 
