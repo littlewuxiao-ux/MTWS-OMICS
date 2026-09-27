@@ -692,6 +692,7 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
   position: relative;
   border-bottom: 1px solid #95a5a6;
   z-index: 1001;
+  overflow: visible;
   /* 确保数字时间轴在最上层 */
 }
 
@@ -2792,6 +2793,7 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
   border-radius: 4px;
   flex: 1;
   min-width: 0;
+  position: relative;
 }
 
 /* 卡片上部分：左图标 + 右信息 */
@@ -2830,6 +2832,10 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
   line-height: 1.1;
   word-break: break-all;
   flex-shrink: 0;
+}
+.flight-info-icon-label.is-overdue {
+  color: var(--alert-y);
+  font-weight: 700;
 }
 
 .flight-info-content {
@@ -3738,3 +3744,407 @@ p.settings-hint {
 }
 .settings-msg.success { color: var(--alert-g); }
 .settings-msg.error { color: var(--alert-r); }
+
+/* ========== 航班时刻 marks 模式 ========== */
+/* 取消三段式「半格左移」，否则顶轴数字相对内容竖线整体偏左 */
+.flight-marks-mode .timeline-container {
+  transform: none !important;
+}
+.flight-marks-mode .main-title-row .title-timeline,
+.flight-marks-mode #content-main .forecast-timeline,
+.flight-marks-mode .airport-detail-main .forecast-timeline,
+.flight-marks-mode .airport-search-block .forecast-timeline {
+  overflow: hidden;
+  position: relative;
+}
+.flight-marks-mode .airport-detail-title-row .title-timeline,
+.flight-marks-mode .airport-search-block .title-timeline {
+  overflow: visible;
+  position: relative;
+}
+.flight-marks-mode .marks-slide-layer {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  will-change: transform;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+}
+.flight-marks-mode #content-main .forecast-timeline > .marks-slide-layer {
+  display: flex;
+  flex-direction: column;
+}
+.flight-marks-past-open .main-title-row .title-timeline {
+  position: relative;
+}
+
+/* NOW：叠在时间轴轨道内侧下方，不占行、不挤整点 */
+.marks-now-badge {
+  position: absolute;
+  bottom: 1px;
+  transform: translateX(-50%);
+  z-index: 1005;
+  background: #e74c3c;
+  color: #fff;
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 10px;
+  padding: 0 3px;
+  border-radius: 2px;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.airport-detail-title-row .marks-now-badge {
+  z-index: 1005;
+}
+
+/* 拉出锚点：透明热区 + 居中细轨 + 中部握柄（Gantt/分隔条常见做法） */
+.flight-past-handle-float {
+  position: fixed;
+  z-index: 1200;
+  width: 14px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: opacity 0.15s ease;
+}
+.flight-past-handle-rail {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: #7f8c8d;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.55);
+  pointer-events: none;
+}
+.flight-past-handle-knob {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 14px;
+  height: 28px;
+  margin-left: -7px;
+  border-radius: 4px;
+  background: #fff;
+  border: 1px solid #7f8c8d;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.16);
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #5d6d7e;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1;
+}
+.flight-past-handle-knob::before {
+  content: '›';
+  margin-left: 1px;
+}
+.flight-past-handle-float.open .flight-past-handle-knob::before {
+  content: '‹';
+  margin-left: 0;
+  margin-right: 1px;
+}
+.flight-past-handle-float.open .flight-past-handle-rail {
+  background: #5d6d7e;
+}
+.flight-past-handle-float.open .flight-past-handle-knob {
+  border-color: #5d6d7e;
+}
+body:not(.flight-marks-mode) .flight-past-handle-float {
+  display: none !important;
+}
+.flight-past-handle-float.in-modal.scope-search {
+  z-index: 20005;
+}
+.flight-past-handle-float.in-modal.scope-detail {
+  z-index: 20015;
+}
+
+.flight-marks-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  overflow: visible;
+}
+.flight-marks-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 50%;
+  overflow: visible;
+}
+.flight-marks-track-upper { top: 0; }
+.flight-marks-track-lower { bottom: 0; }
+
+.flight-mark {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  min-height: 16px;
+  height: 16px;
+  min-width: 12px;
+  box-sizing: border-box;
+  border: 1px solid #000;
+  border-radius: 2px;
+  color: #000;
+  font-size: 10px;
+  font-weight: 700;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  pointer-events: auto;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 2px;
+}
+.flight-mark-label {
+  display: block;
+  line-height: 14px;
+  overflow: hidden;
+  position: relative;
+  z-index: 2;
+  color: #000;
+}
+/* 时刻竖线：地面白、空中黑、超时闪烁 */
+.flight-mark-tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  height: auto;
+  background: #fff;
+  border: none;
+  box-sizing: border-box;
+  transform: translateX(-50%);
+  z-index: 1;
+  pointer-events: none;
+}
+.flight-mark-tick-air {
+  background: #000;
+}
+.flight-mark-tick-overdue {
+  animation: flight-mark-tick-overdue 0.9s steps(1, end) infinite;
+}
+@keyframes flight-mark-tick-overdue {
+  0%, 69% { background: #fff; }
+  70%, 100% { background: #000; }
+}
+
+.flight-marks-legend {
+  display: none;
+  position: fixed;
+  z-index: 3600;
+  left: 50%;
+  bottom: 12px;
+  flex-direction: column;
+  gap: 4px;
+  max-width: calc(100vw - 16px);
+  padding: 6px 10px 8px;
+  background: rgba(44, 62, 80, 0.94);
+  color: #fff;
+  border-radius: 6px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.28);
+  font-size: 12px;
+  line-height: 1.4;
+  user-select: none;
+}
+.fml-handle {
+  cursor: move;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-align: center;
+  padding-bottom: 2px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+  margin-bottom: 2px;
+}
+.fml-body {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+}
+.fml-left {
+  display: grid;
+  grid-template-columns: auto auto;
+  grid-template-rows: auto auto;
+  gap: 4px 10px;
+  flex-shrink: 0;
+}
+.fml-swatch {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+.fml-mark {
+  position: relative;
+  width: 22px;
+  height: 16px;
+  box-sizing: border-box;
+  border: 1px solid #000;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+.fml-mark::after {
+  content: '';
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  left: 50%;
+  width: 2px;
+  background: #fff;
+  transform: translateX(-50%);
+}
+.fml-mark-r { background: rgba(var(--alert-r-rgb), 0.8); }
+.fml-mark-y { background: rgba(var(--alert-y-rgb), 0.8); }
+.fml-mark-g { background: rgba(var(--alert-g-rgb), 0.8); }
+.fml-mark-n { background: rgba(var(--alert-n-rgb), 0.8); }
+.fml-right {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-left: 10px;
+  border-left: 1px solid rgba(255, 255, 255, 0.2);
+}
+.fml-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  align-items: center;
+}
+.fml-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+.fml-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  padding: 0 4px;
+  height: 16px;
+  border-radius: 2px;
+  background: #95a5a6;
+  color: #000;
+  font-weight: 700;
+  font-size: 11px;
+}
+.fml-tick {
+  display: inline-block;
+  width: 3px;
+  height: 14px;
+  border-radius: 1px;
+  background: #fff;
+  flex-shrink: 0;
+}
+.fml-tick-black { background: #000; box-shadow: 0 0 0 1px rgba(255,255,255,0.35); }
+.fml-tick-blink {
+  animation: flight-mark-tick-overdue 0.9s steps(1, end) infinite;
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.35);
+}
+
+.flight-marks-tooltip {
+  display: none;
+  position: fixed;
+  z-index: 40050;
+  max-width: none;
+  padding: 8px 10px;
+  background: #243447;
+  color: #ecf0f1;
+  font-size: 12px;
+  line-height: 1.4;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+  white-space: nowrap;
+}
+.fmt-card + .fmt-card {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+.fmt-row1 {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.fmt-role {
+  color: #6ea8fe;
+  font-weight: 700;
+}
+.fmt-no {
+  color: #fff;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.fmt-apt {
+  color: #c5d0dc;
+  font-weight: 400;
+}
+.fmt-row2 {
+  margin-top: 5px;
+  display: flex;
+  gap: 12px;
+  color: #d5dee8;
+  font-size: 11px;
+}
+.fmt-row2 i {
+  font-style: normal;
+  color: #8fa4b8;
+  margin-right: 4px;
+  font-weight: 400;
+}
+
+.flight-marks-mode .flight-row {
+  overflow: visible;
+}
+.flight-marks-mode .grid-vertical-line {
+  z-index: 0;
+}
+
+/* 展开后：过去 2h 灰色背景带（画在裁剪容器上，不随 slide 移动） */
+.flight-marks-past-open .forecast-timeline::before,
+.flight-marks-past-open .title-timeline::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: calc(100% * var(--marks-past-ratio, 0.0556));
+  background: rgba(128, 128, 128, 0.22);
+  z-index: 0;
+  pointer-events: none;
+}
+
+.timeline-slot-abs {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  width: auto;
+  min-width: 0;
+  flex: none;
+  padding: 0 2px;
+  font-size: 11px;
+  pointer-events: none;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}

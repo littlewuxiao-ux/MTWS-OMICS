@@ -242,9 +242,11 @@ class DatabaseManager:
                 return True
             
             old_slots = latest_flight.as_time_slots()
-            new_slots = new_flight_data.get('flight_detail')
+            new_slots = new_flight_data.get('time_slots')
             if new_slots is None:
-                new_slots = new_flight_data.get('time_slots')
+                new_slots = new_flight_data.get('flight_detail')
+                if isinstance(new_slots, dict):
+                    new_slots = new_slots.get('time_slots')
             return old_slots != (new_slots if new_slots is not None else [])
             
         except Exception as e:

@@ -17,7 +17,7 @@ from core.models import AirportInfo, AirportAlertThresholds, Carrier, WeatherAle
 from parsers.models import Flight, Metar, Taf, ParseLog
 from parsers.parsing_manager import ParsingManager
 from utils.time_manager import TimeManager
-from utils.alert_calculator import AlertCalculator
+from utils.marks_alert_calculator import computed_alerts_from_flight
 from utils.popup_utils import PopupManager, get_seat_identity, get_popup_trace_hours
 from data_adapters.adapter_factory import AdapterFactory
 from utils.cas_api_log import cas_user_context, log_cas_api_request
@@ -164,6 +164,7 @@ def airports_overview(request, time_mode='current'):
                 'flight_data': {
                     'has_flight': flight_data.has_flight,
                     'time_slots': flight_data.as_time_slots(),
+                    'events': flight_data.as_events(),
                     'last_updated': flight_data.created_at.isoformat()
                 },
                 'metar_data': [
@@ -290,21 +291,10 @@ def airports_overview(request, time_mode='current'):
                 ]
             }
             
-            # 6. 计算告警结果（所有margin值的预计算）
-            try:
-                alert_calculator = AlertCalculator(time_mode)
-                
-                # 获取当前时间范围设置（默认36小时，可以从请求参数获取）
-                time_range = 36  # 可以根据需要调整或从参数获取
-                
-                # 计算所有告警裕度的告警结果
-                computed_alerts = alert_calculator.calculate_airport_alerts(airport_data, time_range)
-                airport_data['computed_alerts'] = computed_alerts
-                
-            except Exception as e:
-                logger.error(f"计算机场 {airport.airport_4code} 告警失败: {str(e)}")
-                # 如果计算失败，提供空的告警结果
-                airport_data['computed_alerts'] = alert_calculator._get_empty_alerts() if 'alert_calculator' in locals() else {}
+            # 格点恢复：改回
+            #   from utils.alert_calculator import AlertCalculator
+            #   airport_data['computed_alerts'] = AlertCalculator(time_mode).calculate_airport_alerts(airport_data, time_range)
+            airport_data['computed_alerts'] = computed_alerts_from_flight(flight_data)
             
             airports_data.append(airport_data)
         
@@ -1583,10 +1573,11 @@ def _get_system_airport_search_data(code):
         'flight_data': {
             'has_flight': flight_data.has_flight if flight_data else False,
             'time_slots': flight_data.as_time_slots() if flight_data else [False] * 48,
+            'events': flight_data.as_events() if flight_data else [],
         },
         'metar_data': [_serialize_metar(m) for m in metar_qs],
         'taf_data': [_serialize_taf(taf_record)] if taf_record else [],
-        'computed_alerts': {},
+        'computed_alerts': computed_alerts_from_flight(flight_data),
     }
 
 
@@ -1726,6 +1717,7 @@ def _get_external_airport_search_data(code, time_mode, token):
         'flight_data': {
             'has_flight': False,
             'time_slots': [False] * 48,
+            'events': [],
         },
         'metar_data': metar_result,
         'taf_data': taf_result,
@@ -1782,7 +1774,7 @@ def airport_search(request, time_mode='current'):
                         'is_system_airport': False,
                     'area': '', 'area_code': '', 'classification': '',
                     'forecast_phone': '', 'observation_phone': '', 'other_phone': '',
-                    'flight_data': {'has_flight': False, 'time_slots': [False] * 48},
+                    'flight_data': {'has_flight': False, 'time_slots': [False] * 48, 'events': []},
                     'metar_data': [],
                     'taf_data': [],
                     'computed_alerts': {},

@@ -439,6 +439,11 @@ function generateFlightInfoCardsHTML(popupData) {
     const arrivingTimeInfo = formatFlightTime(arrivingTime);
     const landingTimeInfo = formatFlightTime(landingTime);
     const departingTimeInfo = formatFlightTime(departingTime);
+    const flightInfoLabel = (ts, overdueText, normalText) => {
+        const overdue = ts && ts <= currentTime;
+        const cls = overdue ? 'flight-info-icon-label is-overdue' : 'flight-info-icon-label';
+        return `<div class="${cls}">${overdue ? overdueText : normalText}</div>`;
+    };
 
     const staticBase = (typeof window !== 'undefined' && window.STATIC_URL) ? window.STATIC_URL : '/static/';
     const svg = function (name) { return staticBase + 'svg/' + name; };
@@ -454,7 +459,7 @@ function generateFlightInfoCardsHTML(popupData) {
                     <div class="flight-info-date ${arrivingTimeInfo.timeClass}">${arrivingTimeInfo.date}</div>
                 </div>
             </div>
-            <div class="flight-info-icon-label">上一站最近起飞时间</div>
+            ${flightInfoLabel(arrivingTime, '航班上一站超时未起飞', '上一站最近起飞时间')}
         </div>
         <div class="flight-info-card">
             <div class="flight-info-card-upper">
@@ -466,7 +471,7 @@ function generateFlightInfoCardsHTML(popupData) {
                     <div class="flight-info-date ${landingTimeInfo.timeClass}">${landingTimeInfo.date}</div>
                 </div>
             </div>
-            <div class="flight-info-icon-label">本场最近着陆时间</div>
+            ${flightInfoLabel(landingTime, '航班超时未落地', '本场最近着陆时间')}
         </div>
         <div class="flight-info-card">
             <div class="flight-info-card-upper">
@@ -478,7 +483,7 @@ function generateFlightInfoCardsHTML(popupData) {
                     <div class="flight-info-date ${departingTimeInfo.timeClass}">${departingTimeInfo.date}</div>
                 </div>
             </div>
-            <div class="flight-info-icon-label">本场最近起飞时间</div>
+            ${flightInfoLabel(departingTime, '航班本站超时未起飞', '本场最近起飞时间')}
         </div>
         <div class="flight-info-card">
             <div class="flight-info-card-upper">

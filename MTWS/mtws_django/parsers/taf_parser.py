@@ -1518,7 +1518,8 @@ class TafParser:
             'total_processed': 0,
             'success_count': 0,
             'error_count': 0,
-            'errors': []
+            'errors': [],
+            'updated_airports': [],
         }
         
         try:
@@ -1589,6 +1590,7 @@ class TafParser:
                             **data_dict
                         )
                         taf_record.save()
+                        result.setdefault('updated_airports', []).append(airport_code)
                         
                         result['success_count'] += 1
                     else:
@@ -1636,7 +1638,8 @@ class TafParser:
             'error_count': 0,
             'record_count': 0,  # 添加record_count字段
             'errors': [],
-            'filtered_airports': airport_codes
+            'filtered_airports': airport_codes,
+            'updated_airports': [],
         }
         
         try:
@@ -1756,6 +1759,7 @@ class TafParser:
                             **data_dict
                         )
                         taf_record.save()
+                        result.setdefault('updated_airports', []).append(airport_code)
                         
                         # 检查全表总量，超限时批量删除最旧500行
                         self._clean_old_data()

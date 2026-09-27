@@ -1,6 +1,6 @@
 """
-航班告警计算工具模块
-完整实现前端的告警计算逻辑，支持所有告警裕度值的预计算
+格点航班行用的按小时告警。恢复格点时：api/views 概览对每场再调用
+AlertCalculator.calculate_airport_alerts；当前概览不 import、不执行本模块。
 """
 
 import logging
@@ -13,7 +13,7 @@ logger = logging.getLogger('mtws.alert_calculator')
 
 
 class AlertCalculator:
-    """航班告警计算器"""
+    """格点视图按小时叠 METAR/TAF。当前主页不调用。"""
     
     def __init__(self, time_mode='current'):
         self.time_mode = time_mode

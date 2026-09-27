@@ -98,6 +98,9 @@ function showAirportDetailModal(airportData, source) {
 
   // 记录当前展示的机场代码，供温度辅助覆盖层刷新使用
   currentDetailAirportCode = airport.airport_4code;
+  if (typeof setMarksPastExpanded === 'function') {
+    setMarksPastExpanded('detail', true);
+  }
 
   // 第1行：机场代码和名称（代码在上，名称在下）
   document.getElementById('airport-title-code').textContent = airport.airport_4code;
@@ -327,6 +330,9 @@ function displayHistoryReports(data) {
   fillReportGroup('airport-metar-reports', payload.metar_reports, 'metar-line', '获取历史实况数据失败');
   fillReportGroup('airport-taf-reports', payload.taf_reports, 'taf-line', '获取历史预报数据失败');
   compensateReportsContentScale();
+  if (typeof positionAllMarksPastHandles === 'function') {
+    requestAnimationFrame(() => positionAllMarksPastHandles());
+  }
 }
 
 // ==================================
@@ -358,6 +364,9 @@ function toggleAirportChartSection() {
 
   const collapsed = section.classList.toggle('collapsed');
   updateChartToggleSwitchText(collapsed);
+  if (typeof positionAllMarksPastHandles === 'function') {
+    requestAnimationFrame(() => positionAllMarksPastHandles());
+  }
   if (collapsed) return;
 
   const startChart = () => {
@@ -1158,7 +1167,7 @@ function _buildSearchAirportHeader(airport) {
 function _buildSearchAirportDataSection(airport) {
   const code = airport.airport_4code;
   const rowHTML = (typeof createAirportRowForDetail === 'function')
-    ? createAirportRowForDetail(airport)
+    ? createAirportRowForDetail(airport, { marksScope: 'search:' + String(code).toUpperCase() })
     : '<div class="airport-search-empty">无法生成数据行</div>';
 
   const metarHTML = (window._viewMode === 'plain' && typeof plainDetailMetarRow === 'function')
@@ -1201,8 +1210,12 @@ function showAirportSearchMulti(airports) {
 
   // 生成各机场 HTML
   const blocksHTML = airports.map(airport => {
+    const code = String(airport.airport_4code || '').toUpperCase();
+    if (typeof setMarksPastExpanded === 'function') {
+      setMarksPastExpanded('search:' + code, true);
+    }
     return `
-      <div class="airport-search-block" data-code="${airport.airport_4code}">
+      <div class="airport-search-block flight-marks-past-open" data-code="${code}">
         ${_buildSearchAirportHeader(airport)}
         ${_buildSearchAirportDataSection(airport)}
       </div>
@@ -1241,6 +1254,9 @@ function showAirportSearchMulti(airports) {
     if (window._viewMode === 'plain' && typeof ensurePlainForAirports === 'function') {
       ensurePlainForAirports(airports);
     }
+    if (typeof ensureModalMarksPastHandles === 'function') {
+      ensureModalMarksPastHandles();
+    }
   });
 }
 
@@ -1269,6 +1285,28 @@ function _generateSearchTimeline(bjId, utcId) {
   const bjEl = document.getElementById(bjId);
   const utcEl = document.getElementById(utcId);
   if (!bjEl || !utcEl) return;
+
+  const codeMatch = String(bjId || '').match(/^search-block-bj-(.+)$/);
+  const scope = codeMatch ? ('search:' + String(codeMatch[1]).toUpperCase()) : 'detail';
+  if (typeof syncMarksPastOpenClass === 'function') syncMarksPastOpenClass(scope);
+
+  const paintMarks = () => {
+    if (!(typeof isFlightMarksMode === 'function' && isFlightMarksMode()
+        && typeof fillMarksHourTicks === 'function')) {
+      return false;
+    }
+    const { winStart, dur } = fillMarksHourTicks(bjEl, utcEl);
+    const titleTimeline = bjEl.closest('.title-timeline');
+    if (typeof updateMarksNowBadge === 'function') {
+      updateMarksNowBadge(titleTimeline, winStart, dur);
+    }
+    return true;
+  };
+  if (typeof withMarksRenderScope === 'function') {
+    if (withMarksRenderScope(scope, paintMarks)) return;
+  } else if (paintMarks()) {
+    return;
+  }
 
   const currentTime = (typeof getCurrentTime === 'function') ? getCurrentTime() : new Date();
   const timeRange = (typeof currentTimeRange !== 'undefined') ? currentTimeRange : 36;
@@ -1336,8 +1374,8 @@ function _loadSearchExtraInfo(airportCode) {
     const closeBtn = modal.querySelector('.modal-close');
     if (closeBtn) {
       closeBtn.addEventListener('click', function () {
-        // 清空缓存
         Object.keys(searchAirportCache).forEach(k => delete searchAirportCache[k]);
+        document.querySelectorAll('.flight-past-handle-float.scope-search').forEach((el) => el.remove());
       });
     }
   });

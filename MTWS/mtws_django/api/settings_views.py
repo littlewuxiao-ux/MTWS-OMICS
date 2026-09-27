@@ -31,6 +31,18 @@ def _get_user_code(request, time_mode):
     return request.headers.get('X-User-Code', 'default')
 
 
+def _refresh_marks_alerts(airport_codes, time_mode='current'):
+    """阈值变更后重算 marks 航班告警及机场三色。"""
+    try:
+        from utils.marks_alert_calculator import MarksAlertCalculator
+        codes = [c for c in (airport_codes or []) if c]
+        if not codes:
+            return
+        MarksAlertCalculator(time_mode).apply(full_airports=codes)
+    except Exception as e:
+        logger.error(f"阈值变更后更新 marks 告警失败: {e}", exc_info=True)
+
+
 def _deny_settings_write(request, module_code: str):
     """设置写接口统一鉴权：需对应模块写入权，且仅本机可改库。"""
     from utils.access_control import resolve_access_identity, has_perm, is_local_request
@@ -542,6 +554,7 @@ def settings_alert_thresholds(request, time_mode='current'):
 
         AirportAlertThresholds.objects.create(**kwargs)
         logger.info(f"[设置] 用户 {user_code} 新增机场告警阈值: {code}")
+        _refresh_marks_alerts([code], time_mode)
         return JsonResponse({'success': True, 'message': f'{code} 告警阈值新增成功'})
     except (json.JSONDecodeError, ValueError) as e:
         return JsonResponse({'success': False, 'error': f'数据格式错误: {e}'}, status=400)
@@ -576,6 +589,7 @@ def settings_alert_thresholds_detail(request, airport_4code, time_mode='current'
                     setattr(obj, f, int(data[f]))
             obj.save()
             logger.info(f"[设置] 用户 {user_code} 修改机场告警阈值: {airport_4code}")
+            _refresh_marks_alerts([airport_4code], time_mode)
             return JsonResponse({'success': True, 'message': '修改成功'})
         except (json.JSONDecodeError, ValueError) as e:
             return JsonResponse({'success': False, 'error': f'数据格式错误: {e}'}, status=400)
@@ -586,6 +600,7 @@ def settings_alert_thresholds_detail(request, airport_4code, time_mode='current'
     try:
         obj.delete()
         logger.info(f"[设置] 用户 {user_code} 删除机场告警阈值: {airport_4code}")
+        _refresh_marks_alerts([airport_4code], time_mode)
         return JsonResponse({'success': True, 'message': f'{airport_4code} 告警阈值已删除'})
     except Exception as e:
         logger.error(f"删除告警阈值失败: {e}")
