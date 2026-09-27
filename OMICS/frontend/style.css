@@ -132,6 +132,15 @@ textarea:focus { border-color: var(--sf-red); outline: none; background: white; 
 /* 🌟 修复：publish.js 使用 <span class="spinner"> 作加载动画，之前 CSS 未定义导致不显示 */
 .spinner { display: inline-block; width: 16px; height: 16px; vertical-align: -3px; margin-right: 8px; border: 3px solid rgba(0,90,156,0.25); border-top-color: var(--sf-red, #005A9C); border-radius: 50%; animation: spin 0.8s linear infinite; }
 
+#publish-loading-indicator { box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08); }
+#publish-loading-indicator .spinner { width: 22px; height: 22px; vertical-align: -7px; }
+#forecast-table .airport-confirmed .td-airport,
+#forecast-table .airport-confirmed .col-airport-type { font-weight: 800 !important; color: #0f172a !important; }
+#forecast-table .airport-unconfirmed .td-airport,
+#forecast-table .airport-unconfirmed .col-airport-type { font-weight: 500 !important; color: #94a3b8 !important; }
+#forecast-table .col-airport-type[contenteditable="true"] { cursor: text; outline: none; }
+#forecast-table .col-airport-type[contenteditable="true"]:focus { background: #fff; box-shadow: inset 0 0 0 2px #2563eb; color: #0f172a; }
+
 .results-wrapper { margin-top: 10px; }
 .result-card { background: white; padding: 30px; border-radius: var(--card-radius); box-shadow: var(--card-shadow); margin-bottom: 25px; border: 1px solid var(--border-color); }
 .result-card h3 { margin-top: 0; padding-bottom: 12px; color: var(--text-main); font-weight: 800; font-size: 1.3rem; border-bottom: 2px solid #F1F5F9; }
@@ -213,8 +222,10 @@ textarea:focus { border-color: var(--sf-red); outline: none; background: white; 
 
 /* 核心：低饱和度深灰蓝表头 */
 /* 🌟 时间轴表头已拆入 #pb-timeline-header，forecast-table 不再有 thead，无需 sticky 拼接 */
-#pb-timeline-header { background-color: #4B5563; }
-#pb-timeline-table th { border: 1px solid #95A5A6; background-color: #4B5563; color: #fff; white-space: nowrap; overflow: hidden; }
+#pb-timeline-header { background: inherit !important; overflow: hidden; box-sizing: border-box; line-height: 0; }
+#pb-timeline-table { background: transparent !important; display: table; margin-bottom: 0; border-spacing: 0; }
+#pb-timeline-table tbody { vertical-align: bottom; }
+#pb-timeline-table th { border: 1px solid rgba(148,163,184,.55); background: transparent !important; color: #fff; white-space: nowrap; overflow: hidden; line-height: normal; }
 #forecast-table .col-airport.hdr, #forecast-table .col-desc.hdr, #forecast-table .th-lead {
     background-color: #4B5563 !important; color: #FFFFFF !important; font-size: 13px; font-weight: bold; padding: 8px 4px; border-bottom: 2px solid #34495E !important;
 }
@@ -486,8 +497,9 @@ textarea:focus { border-color: var(--sf-red); outline: none; background: white; 
 #global-adopt-taf, #global-adopt-ec { background: #16A34A; color: #FFFFFF; }
 #global-adopt-all { background: #7C3AED; color: #FFFFFF; }
 
-/* 🌟 彻底清除悬停导致单元格变白/变灰的问题 */
-#forecast-table tbody tr:hover td.td-data { filter: none !important; opacity: 1 !important; }
+/* 行悬停统一轻微变暗，保留天气单元格各自的填充颜色。 */
+#forecast-table tbody tr td { transition: filter 0.12s ease; }
+#forecast-table tbody tr:hover td { filter: brightness(0.96) saturate(0.98) !important; opacity: 1 !important; }
 #forecast-table tbody tr.tr-edit:hover, 
 #forecast-table tbody tr.tr-taf:hover, 
 #forecast-table tbody tr.tr-nwp:hover { background-color: inherit !important; }
@@ -575,7 +587,6 @@ main.main-grid { gap: 0; }
 #forecast-table { border-bottom: 0 !important; }
 #forecast-table th { background: #f3f6fa !important; color: #334155 !important; border-color: #dce3eb !important; font-size: 11px; }
 #forecast-table td { border-color: #e5eaf0 !important; }
-#forecast-table tbody tr:hover td { background: #fffaf9 !important; }
 #pb-export-footer { border-color: #dce3eb !important; border-radius: 0 0 12px 12px; overflow: hidden; }
 #manual-forecast-input-area, #taf-selection-area { border-radius: 12px; box-shadow: var(--card-shadow); border-top-width: 3px; }
 .time-selection-row, .download-section, .recognition-bar-container { border-radius: 10px; border-color: #e1e7ef; background: #f8fafc; }
@@ -671,6 +682,187 @@ input:not([type="radio"]):not([type="checkbox"]):focus, select:focus, textarea:f
 #global-settings-modal .modal-content { background: #f7f9fc; padding: 30px; }
 #global-settings-modal h2, #global-settings-modal h3 { color: #20354d; letter-spacing: .02em; }
 #global-settings-modal .settings-group { box-shadow: 0 3px 10px rgba(23,32,51,.04); }
+
+/* System settings has its own application-shell layout. */
+#global-settings-modal { padding: 24px; box-sizing: border-box; }
+#global-settings-modal .system-settings-shell {
+    width: min(1180px, 96vw) !important;
+    height: min(88vh, 920px) !important;
+    border: 1px solid #dfe5ec;
+    border-radius: 12px !important;
+    background: #f6f8fb !important;
+    box-shadow: 0 28px 80px rgba(15,23,42,.28) !important;
+}
+#global-settings-modal .system-settings-sidebar {
+    width: 210px !important;
+    padding: 18px 12px;
+    gap: 4px;
+    color: #334155 !important;
+    background: #fff !important;
+    border-right: 1px solid #e3e8ef;
+    box-sizing: border-box;
+}
+#global-settings-modal .system-settings-brand {
+    padding: 10px 12px 20px !important;
+    margin-bottom: 10px;
+    border: 0 !important;
+    color: #111827;
+    font-size: 18px !important;
+    text-align: left !important;
+}
+#global-settings-modal .system-settings-brand::before {
+    content: '';
+    display: inline-block;
+    width: 4px;
+    height: 19px;
+    margin-right: 10px;
+    border-radius: 2px;
+    background: #c9362f;
+    vertical-align: -3px;
+}
+#global-settings-modal .set-nav {
+    padding: 11px 12px !important;
+    border: 0 !important;
+    border-radius: 6px;
+    color: #64748b !important;
+    font-size: 13px;
+    font-weight: 600 !important;
+    transition: background-color .15s ease, color .15s ease;
+}
+#global-settings-modal .set-nav:hover { background: #f3f5f8; color: #1f2937 !important; }
+#global-settings-modal .set-nav.active {
+    color: #9f241f !important;
+    background: #fdf0ef;
+    box-shadow: inset 3px 0 #c9362f;
+}
+#global-settings-modal .set-nav[data-target="pane-admin"] { margin-top: auto; color: #8a5b25 !important; background: #fffaf2; }
+#global-settings-modal .system-settings-main { min-width: 0; background: #f6f8fb !important; }
+#global-settings-modal .system-settings-topbar {
+    height: 58px !important;
+    padding: 0 22px !important;
+    justify-content: space-between !important;
+    color: #475569;
+    background: rgba(255,255,255,.96) !important;
+    border-bottom: 1px solid #e3e8ef;
+    box-shadow: none !important;
+}
+#global-settings-modal .system-settings-context { font-size: 12px; font-weight: 700; color: #64748b; }
+#global-settings-modal #close-global-settings {
+    min-width: 66px;
+    min-height: 30px;
+    padding: 5px 12px !important;
+    color: #475569 !important;
+    background: #fff !important;
+    border: 1px solid #d8dee8 !important;
+    border-radius: 6px !important;
+    font-size: 12px !important;
+}
+#global-settings-modal #close-global-settings:hover { color: #9f241f !important; border-color: #e7b4b1 !important; background: #fdf5f4 !important; }
+#global-settings-modal .system-settings-scroll { padding: 26px 30px 34px !important; scrollbar-gutter: stable; }
+#global-settings-modal .set-pane { max-width: 920px; margin: 0 auto; }
+#global-settings-modal .set-pane > h3 {
+    margin: 0 0 18px !important;
+    padding: 0 0 13px !important;
+    border-bottom: 1px solid #dfe5ec !important;
+    color: #172033 !important;
+    font-size: 18px;
+    letter-spacing: 0 !important;
+}
+#global-settings-modal .publish-filter-settings-card,
+#global-settings-modal #pane-pb > div[style*="border: 1px solid #ccc"] {
+    padding: 18px !important;
+    border: 1px solid #e1e6ed !important;
+    border-radius: 8px !important;
+    background: #fff !important;
+    box-shadow: 0 4px 14px rgba(23,32,51,.04);
+}
+#global-settings-modal .publish-settings-card-title { margin-bottom: 16px; color: #263449; font-size: 14px; }
+#global-settings-modal .publish-filter-settings-grid { gap: 10px; }
+#global-settings-modal .publish-filter-settings-group {
+    padding: 14px;
+    border-color: #e4e9ef;
+    border-radius: 6px;
+    background: #f8fafc;
+}
+#global-settings-modal .publish-setting-row { min-height: 32px; border-bottom: 1px solid #edf0f4; }
+#global-settings-modal .publish-setting-row:last-of-type { border-bottom: 0; }
+#global-settings-modal input[type="number"],
+#global-settings-modal input[type="text"],
+#global-settings-modal input[type="search"],
+#global-settings-modal select {
+    min-height: 32px;
+    border: 1px solid #d6dde7 !important;
+    border-radius: 6px !important;
+    background: #fff;
+    box-sizing: border-box;
+}
+#global-settings-modal input:focus, #global-settings-modal select:focus { border-color: #aeb9c8 !important; box-shadow: 0 0 0 3px rgba(71,85,105,.09) !important; }
+#global-settings-modal .settings-group {
+    padding: 0 !important;
+    border: 1px solid #e1e6ed !important;
+    border-radius: 8px !important;
+    background: #fff !important;
+    box-shadow: 0 4px 14px rgba(23,32,51,.04) !important;
+}
+#global-settings-modal .settings-group summary { padding: 14px 16px; color: #263449; font-size: 13px; }
+#global-settings-modal .settings-group-content { padding: 16px !important; margin-top: 0 !important; }
+#global-settings-modal .ap-group-item {
+    padding: 12px 14px !important;
+    border-color: #e1e6ed !important;
+    border-radius: 6px !important;
+    background: #fff !important;
+}
+#global-settings-modal #dict-table thead { background: #eef2f6 !important; color: #475569; }
+#global-settings-modal #dict-table tbody tr:hover { background: #f8fafc; }
+#global-settings-modal #pb-settings-save-btn { border-radius: 7px; box-shadow: 0 5px 12px rgba(201,54,47,.16); }
+#global-settings-modal .sync-period-control {
+    display: grid;
+    grid-template-columns: minmax(150px, 1fr) 120px 140px minmax(220px, 1.4fr);
+    gap: 10px;
+    align-items: end;
+    margin: 10px 0 18px;
+    padding: 14px;
+    border: 1px solid #e4e9ef;
+    border-radius: 8px;
+    background: #f8fafc;
+}
+#global-settings-modal .sync-period-heading { display: flex; flex-direction: column; gap: 3px; }
+#global-settings-modal .sync-period-heading span { color: #263449; font-size: 13px; font-weight: 800; }
+#global-settings-modal .sync-period-heading small { color: #94a3b8; font-size: 11px; }
+#global-settings-modal .sync-period-control label { display: flex; flex-direction: column; gap: 5px; color: #64748b; font-size: 11px; font-weight: 700; }
+#global-settings-modal .sync-period-control input,
+#global-settings-modal .sync-period-control select { width: 100% !important; min-height: 34px; padding: 6px 8px !important; }
+#global-settings-modal .sync-period-control .admin-block-btn { width: 100%; margin: 0; min-height: 34px; border-radius: 6px; }
+#global-settings-modal .admin-sub-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 22px 0 10px;
+    padding: 0 0 8px;
+    border-bottom: 1px solid #e4e9ef;
+    color: #263449;
+    font-size: 13px;
+    font-weight: 800;
+}
+#global-settings-modal .admin-sub-title::before { content: ''; width: 3px; height: 14px; border-radius: 2px; background: #c9362f; }
+#global-settings-modal .admin-block-btn { min-height: 34px; border-radius: 6px; box-shadow: none; transition: transform .15s ease, box-shadow .15s ease; }
+#global-settings-modal .admin-block-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 10px rgba(23,32,51,.12); }
+#global-settings-modal .admin-pill-btn { min-height: 30px; border-radius: 6px !important; border: 1px solid #d6dde7 !important; font-weight: 700; }
+#global-settings-modal #pane-ap > div[style*="max-height"] { box-shadow: 0 4px 14px rgba(23,32,51,.04); }
+
+@media (max-width: 760px) {
+    #global-settings-modal { padding: 10px; }
+    #global-settings-modal .system-settings-shell { width: 100% !important; height: 94vh !important; flex-direction: column; }
+    #global-settings-modal .system-settings-sidebar { width: 100% !important; padding: 10px; flex-direction: row !important; overflow-x: auto; border-right: 0; border-bottom: 1px solid #e3e8ef; }
+    #global-settings-modal .system-settings-brand { display: none; }
+    #global-settings-modal .set-nav { flex: 0 0 auto; white-space: nowrap; }
+    #global-settings-modal .set-nav[data-target="pane-admin"] { margin-top: 0; }
+    #global-settings-modal .system-settings-scroll { padding: 18px 14px 26px !important; }
+    #global-settings-modal .publish-filter-settings-grid { grid-template-columns: 1fr; }
+    #global-settings-modal .sync-period-control { grid-template-columns: 1fr 1fr; }
+    #global-settings-modal .sync-period-heading { grid-column: 1 / -1; }
+    #global-settings-modal .sync-period-control .admin-block-btn { grid-column: 1 / -1; }
+}
 
 @media (max-width: 900px) {
     .container { padding: 10px 10px 24px; }

@@ -129,6 +129,7 @@ const pbState = {
     running: new Set(), resident: new Set(), text: new Set(), table: new Set(), custom: new Set()
   },
   importedAirportTypes: {},
+  manualAirportTypes: {},
   expandedAirports: new Set(), 
   forceShowAirports: new Set(),
   textImportAirports: new Set(),
@@ -166,17 +167,11 @@ window.saveConfirmedDataToLocal = function() {
     const domOrder = Array.from(document.querySelectorAll('#forecast-table tr.tr-edit[data-icao]'))
         .map(row => row.dataset.icao).filter(Boolean);
     if (domOrder.length) pbState.importSequence = domOrder;
-    // 同步保存表格中显示的机场性质（包括分组性质/手动调整性质）。
-    document.querySelectorAll('#forecast-table tr.tr-edit[data-icao]').forEach(row => {
-        const icao = row.dataset.icao;
-        const typeCell = row.querySelector('.col-airport-type');
-        const type = String(typeCell?.textContent || '').trim();
-        if (icao && type) pbState.importedAirportTypes[icao] = type;
-    });
     const wrapper = { timestamp: Date.now(), user: curUser, data: pbState.confirmedData,
         draftData: pbState.draftData, importSequence: pbState.importSequence,
         manualAirportOrder: pbState.manualAirportOrder,
         importedAirportTypes: pbState.importedAirportTypes,
+        manualAirportTypes: pbState.manualAirportTypes,
         manuallyRemovedAirports: Array.from(pbState.manuallyRemovedAirports || []) };
     localStorage.setItem('sf_confirmed_forecasts_v3', JSON.stringify(wrapper));
     localStorage.setItem('sf_manually_removed_airports_v1', JSON.stringify(Array.from(pbState.manuallyRemovedAirports || [])));
@@ -273,14 +268,28 @@ function isAirportRegionEnabled(icao) {
 }
 
 function getSelectedAirportGroupInfo(icao) {
+    const normalizedIcao = String(icao || '').trim().toUpperCase();
     for (let groupIndex = 0; groupIndex < pbState.airportGroups.length; groupIndex++) {
         if (!pbState.selectedResidentGroups.has(String(groupIndex))) continue;
         const group = pbState.airportGroups[groupIndex];
-        const airportIndex = group.airports.indexOf(icao);
+        const airportIndex = (group.airports || []).findIndex(code => String(code || '').trim().toUpperCase() === normalizedIcao);
         if (airportIndex !== -1) return { group, groupIndex, airportIndex, pinned: !!group.alwaysShow };
     }
     return null;
 }
+
+function getAirportNatureLabel(airport) {
+    const icao = String(typeof airport === 'string' ? airport : airport?.icao || '').trim().toUpperCase();
+    if (!icao) return '普通';
+    const manualLabel = String(pbState.manualAirportTypes[icao] || '').trim();
+    if (manualLabel) return manualLabel;
+    const isTableImport = pbState.sourceAirports.table.has(icao) || pbState.confirmedData[icao]?.origin === 'table';
+    const importedLabel = String(pbState.importedAirportTypes[icao] || '').trim();
+    if (isTableImport && importedLabel) return importedLabel;
+    return String(getSelectedAirportGroupInfo(icao)?.group?.name || '').trim() || '普通';
+}
+
+window.getAirportNatureLabel = getAirportNatureLabel;
 
 function sortPublishAirportAnalysis(items) {
     const domesticRegions = Object.keys(AIRPORT_CFG.domestic);
@@ -476,6 +485,7 @@ window.initPublishModule = async function() {
             pbState.importSequence = Array.isArray(savedWrapper.importSequence) ? savedWrapper.importSequence : [];
             pbState.manualAirportOrder = Array.isArray(savedWrapper.manualAirportOrder) ? savedWrapper.manualAirportOrder : [];
             pbState.importedAirportTypes = savedWrapper.importedAirportTypes || {};
+            pbState.manualAirportTypes = savedWrapper.manualAirportTypes || {};
             if (Array.isArray(savedWrapper.manuallyRemovedAirports)) pbState.manuallyRemovedAirports = new Set(savedWrapper.manuallyRemovedAirports);
             pbState.confirmedUser = savedWrapper.user;
             
@@ -1629,6 +1639,7 @@ function saveModalForm() {
 }
 
 async function syncAirportsToServer() {
+    showPublishLoadingStatus('正在保存机场字典，请稍候...');
     try {
         // 直接向 Flask 后端派发最新状态，由后端执行文件物理覆写
         await fetch('/api/save_airports', {
@@ -1638,6 +1649,9 @@ async function syncAirportsToServer() {
         });
     } catch(e) {
         console.error("同步机场至服务器静态文件失败:", e);
+    } finally {
+        const loader = document.getElementById('publish-loading-indicator');
+        if (loader) loader.style.display = 'none';
     }
 }
 
@@ -1851,6 +1865,10 @@ if (dictSearch) dictSearch.addEventListener('input', (e) => renderDictTable(e.ta
 async function fetchActiveFlightAirports(startMs, endMs, setProgress) {
     if(setProgress) setProgress("正在向后端请求真实运行航班机场...");
     const token = (localStorage.getItem('sf_weather_token') || localStorage.getItem('mtws_token'));
+    if (!token) {
+        setProgress?.('内网 TAF/航班接口暂不可用，继续使用可用数据...', false);
+        return [];
+    }
     const d = new Date(startMs);
     const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 
@@ -1874,7 +1892,7 @@ async function fetchActiveFlightAirports(startMs, endMs, setProgress) {
         }
         return [];
     } catch (e) {
-        if(setProgress) setProgress(`❌ 航班请求异常: ${e.message}`, true);
+        if(setProgress) setProgress(`航班接口暂不可用，继续处理其他数据...`, false);
         return [];
     }
 }
@@ -1882,6 +1900,12 @@ async function fetchActiveFlightAirports(startMs, endMs, setProgress) {
 async function fetchTafDataForAirports(airports, startMs, endMs, setProgress) {
     if (airports.length === 0) return {};
     const token = (localStorage.getItem('sf_weather_token') || localStorage.getItem('mtws_token'));
+    if (!token) {
+        if (setProgress) setProgress('内网 TAF 接口暂不可用，继续解析 EC 数据...', false);
+        const tafMap = {};
+        airports.forEach(ap => tafMap[ap] = { raw: [], hourly: null });
+        return tafMap;
+    }
     const fmt = ms => {
         const d = new Date(ms + 8 * 3600000); // UTC to BJT
         return `${d.getUTCFullYear()}${String(d.getUTCMonth()+1).padStart(2,'0')}${String(d.getUTCDate()).padStart(2,'0')}${String(d.getUTCHours()).padStart(2,'0')}00`;
@@ -1926,8 +1950,10 @@ async function fetchTafDataForAirports(airports, startMs, endMs, setProgress) {
         }
         return tafMap;
     } catch(e) {
-        if(setProgress) setProgress(`❌ TAF 请求失败: ${e.message}`, true);
-        return {};
+        if(setProgress) setProgress(`TAF 接口暂不可用，继续使用 EC 数据...`, false);
+        const tafMap = {};
+        airports.forEach(ap => tafMap[ap] = { raw: [], hourly: null });
+        return tafMap;
     }
 }
 
@@ -2291,6 +2317,24 @@ function persistAllPublishDraftsFromDom() {
     });
 }
 
+function showPublishLoadingStatus(message) {
+    const loader = document.getElementById('publish-loading-indicator');
+    if (!loader) return;
+    loader.style.display = 'block';
+    loader.style.position = 'fixed';
+    loader.style.left = '50%';
+    loader.style.top = '50%';
+    loader.style.transform = 'translate(-50%, -50%)';
+    loader.style.width = 'min(520px, calc(100vw - 40px))';
+    loader.style.boxSizing = 'border-box';
+    loader.style.zIndex = '10002';
+    loader.style.margin = '0';
+    loader.style.boxShadow = '0 12px 40px rgba(15, 23, 42, 0.22)';
+    loader.style.color = '#005A9C';
+    loader.innerHTML = `<span class="spinner"></span> ${message}`;
+}
+window.showPublishLoadingStatus = showPublishLoadingStatus;
+
 // ==========================================
 // 🌟 核心引擎：数据加载与三行独立渲染
 // ==========================================
@@ -2302,10 +2346,19 @@ async function loadForecastData(retainOrder = false) {
     const setProgress = (msg, isError = false) => {
         if (!loader) return;
         loader.style.display = 'block'; loader.style.color = isError ? '#dc2626' : '#005A9C';
+        loader.style.position = 'fixed';
+        loader.style.left = '50%';
+        loader.style.top = '50%';
+        loader.style.transform = 'translate(-50%, -50%)';
+        loader.style.width = 'min(520px, calc(100vw - 40px))';
+        loader.style.boxSizing = 'border-box';
+        loader.style.zIndex = '10002';
+        loader.style.margin = '0';
+        loader.style.boxShadow = '0 12px 40px rgba(15, 23, 42, 0.22)';
         loader.innerHTML = isError ? `❌ ${msg}` : `<span class="spinner"></span> ${msg}`;
     };
 
-    if (!token) { PBLOG('loadForecastData 中止：无 token', 'WARN'); return; }
+    if (!token) PBLOG('loadForecastData：无内网 token，将跳过 TAF/航班接口并继续处理 EC 数据', 'WARN');
 
     pbState.specialConditionAirports = new Map();
     updateSpecialConditionFooter();
@@ -2511,23 +2564,15 @@ function renderPublishTableTriRow(apAnalysis, preserveDrafts = true) {
         // Region controls are presentation-only. They may hide pinned,
         // confirmed, or draft airports without deleting or refetching data.
         if (!isAirportRegionEnabled(apInfo.icao)) return false;
-        let apType = pbState.importedAirportTypes[apInfo.icao] || '普通';
-        let isAlwaysShow = false; // 🌟 新增：标记该机场是否具备常驻属性
-        
-        for (let groupIndex = 0; groupIndex < pbState.airportGroups.length; groupIndex++) {
-            const g = pbState.airportGroups[groupIndex];
-            if (pbState.selectedResidentGroups.has(String(groupIndex)) && g.airports.includes(apInfo.icao)) {
-                if (!pbState.importedAirportTypes[apInfo.icao]) apType = g.name;
-                if (g.alwaysShow) isAlwaysShow = true; // 置顶组机场不受空机场隐藏影响
-                break; 
-            } 
-        }
+        const groupInfo = getSelectedAirportGroupInfo(apInfo.icao);
+        const apType = getAirportNatureLabel(apInfo);
+        const isResidentAirport = !!groupInfo;
         if (pbState.confirmedData[apInfo.icao]) { apInfo._apType = apType; return true; }
         if (pbState.draftData[apInfo.icao]) { apInfo._apType = apType; return true; }
         
         // 🌟 修复 Bug：即便开启了隐藏空机场，只要它是常驻机场(isAlwaysShow)或手动追加机场，都绝不隐藏！
         // 文图互导模式下，机场列表由文本输入显式指定，因此不再受“空机场隐藏”影响。
-        if (pbState.filterHideEmptyAirports && !pbState.bulkActionInProgress && !apInfo.hasAlert && !pbState.forceShowAirports.has(apInfo.icao) && !isAlwaysShow) {
+        if (pbState.filterHideEmptyAirports && !pbState.bulkActionInProgress && !apInfo.hasAlert && !pbState.forceShowAirports.has(apInfo.icao) && !isResidentAirport) {
             return false;
         }
         
@@ -2554,7 +2599,7 @@ function renderPublishTableTriRow(apAnalysis, preserveDrafts = true) {
         const notesToRender = isConfirmed ? (cData.notes || [cData.note || '']) : (draftData?.notes || ['']);
 
         const trEdit = document.createElement('tr');
-        trEdit.className = `${gClass} tr-edit`;
+        trEdit.className = `${gClass} tr-edit ${isConfirmed ? 'airport-confirmed' : 'airport-unconfirmed'}`;
         trEdit.style.cssText = rowStyle;
         trEdit.dataset.confirmed = isConfirmed ? "true" : "false";
         trEdit.dataset.icao = icao;
@@ -2575,7 +2620,7 @@ function renderPublishTableTriRow(apAnalysis, preserveDrafts = true) {
 
         trEdit.innerHTML = `
             <td class="col-airport td-airport" rowspan="1" draggable="true" data-icao="${icao}" title="${tafRaw || '无TAF报文'}" style="font-weight:bold; vertical-align:middle; cursor:move; position:sticky; ${isGray?'color:#94a3b8;':''}">${apName}<button class="airport-delete-x" data-icao="${icao}" title="删除该机场">×</button></td>
-            <td rowspan="1" class="col-airport-type" style="vertical-align:middle; border-right:2px solid #cbd5e1;">${apType}</td>
+            <td rowspan="1" class="col-airport-type" contenteditable="true" spellcheck="false" title="点击修改机场性质" style="vertical-align:middle; border-right:2px solid #cbd5e1;">${apType}</td>
             ${srcOpHTML}
         `;
         for (let i = 0; i < numCells; i++) {
@@ -2593,6 +2638,16 @@ function renderPublishTableTriRow(apAnalysis, preserveDrafts = true) {
         const mainNoteInput = trEdit.querySelector('.edit-note-input');
         if (mainNoteInput) mainNoteInput.value = notesToRender[0] || '';
         tbody.appendChild(trEdit);
+        const natureCell = trEdit.querySelector('.col-airport-type');
+        natureCell?.addEventListener('blur', () => {
+            const value = String(natureCell.textContent || '').trim() || '普通';
+            natureCell.textContent = value;
+            pbState.manualAirportTypes[icao] = value;
+            window.saveConfirmedDataToLocal?.();
+        });
+        natureCell?.addEventListener('keydown', event => {
+            if (event.key === 'Enter') { event.preventDefault(); natureCell.blur(); }
+        });
 
         if (rowsToRender.length > 1) {
             for (let r = 1; r < rowsToRender.length; r++) {
@@ -2845,6 +2900,7 @@ function renderPublishTableTriRow(apAnalysis, preserveDrafts = true) {
     updateSpecialConditionFooter();
     // 🌟 表体渲染完成后，同步时间轴表头的总宽与横向滚动位置
     syncTimelineHeader();
+    bindTimelineResizeSync();
 }
 
 // 🌟 渲染时间轴表头（名称/性质/备注 + 逐小时列）到 #pb-timeline-header。
@@ -2860,7 +2916,7 @@ function renderTimelineHeader(numCells, sH, cellStyle, isWide) {
     for (let i = 0; i < numCells; i++) cols += `<col style="width:${hourW}px;">`;
     colgroup.innerHTML = cols;
 
-    const thBase = 'border:1px solid #95A5A6; background-color:#4B5563; color:#fff; box-sizing:border-box; padding:8px 4px; font-weight:bold;';
+    const thBase = 'border:1px solid rgba(148,163,184,.55); background-color:transparent; color:#fff; box-sizing:border-box; padding:8px 4px; font-weight:bold;';
     // 第一行：影响机场(colspan2) | 备注(colspan2, rowspan2) | 0h 1h 2h...
     let tr1 = `<tr><th colspan="2" style="${thBase} font-size:13px;">影响机场</th><th colspan="2" rowspan="2" style="${thBase} font-size:11px; color:#fff;">备注</th>`;
     for (let i = 0; i < numCells; i++) tr1 += `<th style="${thBase} font-size:11px;">${i}h</th>`;
@@ -2887,28 +2943,60 @@ function syncTimelineHeader() {
 
     const firstRow = table.querySelector('tbody tr');
     const cols = colgroup.querySelectorAll('col');
-    if (firstRow && cols.length) {
+    if (cols.length) {
         // 前导 4 列实测：名称(col-airport) / 性质(col-airport-type) / 编辑(col-source) / op(col-op)。
         // 备注区在未确认态是 col-source+col-op 两列；已确认态是 col-desc(colspan=2) 一列。
-        const lead = firstRow.querySelector('.col-desc')
+        const lead = firstRow && firstRow.querySelector('.col-desc')
             ? [ '.col-airport', '.col-airport-type', '.col-desc' ]   // 已确认：备注为合并单列
             : [ '.col-airport', '.col-airport-type', '.col-source', '.col-op' ];
         // 先一次性采集所有实测宽（避免边写边测导致 fixed 布局重算）
-        const leadWidths = lead.map(sel => {
+        const leadWidths = firstRow ? lead.map(sel => {
             const el = firstRow.querySelector(sel);
             return el ? el.getBoundingClientRect().width : 0;
-        });
-        const timeCells = firstRow.querySelectorAll('td.col-time');
-        const hourWidths = [...timeCells].map(c => c.getBoundingClientRect().width);
+        }) : [];
+        const tableWidth = table.getBoundingClientRect().width || (tw && tw.clientWidth) || 0;
+        const numHours = Math.max(0, cols.length - 4);
+        const fallbackLead = [72, 62, 86, 86];
+        const fallbackHour = Math.max(32, (tableWidth - fallbackLead.reduce((a, b) => a + b, 0)) / Math.max(1, numHours));
+        const timeCells = firstRow ? firstRow.querySelectorAll('td.col-time') : [];
+        const hourWidths = timeCells.length
+            ? [...timeCells].map(c => c.getBoundingClientRect().width)
+            : Array.from({length: numHours}, () => fallbackHour);
+
+        // Derive all widths from the rendered cell boundaries. This preserves
+        // fractional pixels and prevents cumulative drift across hourly columns.
+        if (firstRow && timeCells.length) {
+            const rowRect = firstRow.getBoundingClientRect();
+            const cells = [...firstRow.children];
+            const measured = [];
+            cells.forEach(cell => {
+                const rect = cell.getBoundingClientRect();
+                const span = Math.max(1, Number(cell.getAttribute('colspan')) || 1);
+                const width = rect.width / span;
+                for (let i = 0; i < span; i++) measured.push(width);
+            });
+            if (measured.length >= cols.length) {
+                const leadMeasured = measured.slice(0, 4);
+                const hoursMeasured = measured.slice(4, 4 + numHours);
+                if (leadMeasured.every(w => w > 0)) {
+                    leadWidths.splice(0, leadWidths.length, ...leadMeasured);
+                }
+                if (hoursMeasured.length === numHours) {
+                    hourWidths.splice(0, hourWidths.length, ...hoursMeasured);
+                }
+            }
+        }
 
         // 表头 colgroup 固定为 4 前导列：名称/性质/编辑/备注。
         // 未确认态：leadWidths 正好 4 个，逐一对应；已确认态：备注合并宽拆成表头编辑+备注两列。
         let headLead;
-        if (leadWidths.length === 4) {
+        if (leadWidths.length === 4 && leadWidths.every(w => w > 0)) {
             headLead = leadWidths;
+        } else if (!leadWidths.length) {
+            headLead = fallbackLead;
         } else {
-            const noteW = leadWidths[2] || 0;
-            headLead = [ leadWidths[0], leadWidths[1], Math.floor(noteW / 2), Math.ceil(noteW / 2) ];
+            const noteW = leadWidths[2] || fallbackLead[2] + fallbackLead[3];
+            headLead = [ leadWidths[0] || fallbackLead[0], leadWidths[1] || fallbackLead[1], Math.floor(noteW / 2), Math.ceil(noteW / 2) ];
         }
         let total = 0;
         headLead.forEach((w, i) => { if (cols[i]) cols[i].style.width = w + 'px'; total += w; });
@@ -2922,19 +3010,44 @@ function syncTimelineHeader() {
             // 保持可视全宽以便 overflow:hidden 裁剪 + scrollLeft 同步滚动，不能撑到 total。
             const header = document.getElementById('pb-timeline-header');
             if (header) {
-                // 先复位 wrapper 宽度再量可视全宽，避免上一次收紧后读到陈旧值
-                if (tw) tw.style.width = '';
                 const fullW = tw ? tw.getBoundingClientRect().width : total;
-                header.style.width = Math.min(total, fullW) + 'px';
-                // 🌟 正文 wrapper 也同步：内容窄时收紧到 total，使表头/正文/容器右边界统一；
-                // 内容超宽时保持 100% 以便 overflow-x 滚动。
-                if (tw && total <= fullW + 1) tw.style.width = total + 'px';
+                // Align the background container itself with the table wrapper.
+                // Reset the inline negative side margins before measuring.
+                header.style.marginLeft = '0';
+                header.style.marginRight = '0';
+                header.style.width = fullW + 'px';
+                header.style.position = 'relative';
+                header.style.left = '0';
+                const wrapperRect = tw ? tw.getBoundingClientRect() : table.getBoundingClientRect();
+                let headerRect = header.getBoundingClientRect();
+                header.style.left = (wrapperRect.left - headerRect.left) + 'px';
+                // 两个独立容器的边框/内边距在不同缩放比例下可能产生 1~数 px 偏移，
+                // 用当前实际几何位置校准时间轴左边界，避免依赖固定负 margin。
+                const tableRect = table.getBoundingClientRect();
+                headerRect = header.getBoundingClientRect();
+                const leftOffset = tableRect.left - headerRect.left;
+                tlTable.style.marginLeft = leftOffset + 'px';
             }
         }
     }
     // 横向滚动同步：初始对齐当前 scrollLeft
     const header = document.getElementById('pb-timeline-header');
     if (header && tw) header.scrollLeft = tw.scrollLeft;
+}
+
+let _timelineResizeObserver = null;
+function bindTimelineResizeSync() {
+    const tw = document.getElementById('table-wrapper');
+    const table = document.getElementById('forecast-table');
+    if (!tw || !table || typeof ResizeObserver === 'undefined') return;
+    if (_timelineResizeObserver) _timelineResizeObserver.disconnect();
+    let frame = 0;
+    _timelineResizeObserver = new ResizeObserver(() => {
+        cancelAnimationFrame(frame);
+        frame = requestAnimationFrame(() => syncTimelineHeader());
+    });
+    _timelineResizeObserver.observe(tw);
+    _timelineResizeObserver.observe(table);
 }
 
 function removeAirportFromPublish(icao) {
@@ -3296,6 +3409,16 @@ function isAirportVisibleInPublishTable(icao) {
         .some(row => String(row.dataset.icao || '').trim().toUpperCase() === normalized);
 }
 
+function resolveAirportInput(value) {
+    const input = String(value || '').trim();
+    const upper = input.toUpperCase();
+    if (window.AIRPORT_COORDS?.[upper]) return upper;
+    const matches = Object.keys(window.GLOBAL_AIRPORT_NAME_MAP || {}).filter(icao =>
+        String(window.GLOBAL_AIRPORT_NAME_MAP[icao] || '').trim() === input
+    );
+    return matches.length === 1 ? matches[0] : '';
+}
+
 function setupSearch() {
   const addBtn = document.getElementById('custom-airport-btn');
   const input = document.getElementById('custom-airport-input');
@@ -3303,9 +3426,17 @@ function setupSearch() {
   const soloBtn = document.getElementById('standalone-airport-btn');
 
   if(addBtn && input) {
+      input.placeholder = '输入四字码或机场名';
+      const suggestions = document.createElement('datalist');
+      suggestions.id = 'publish-airport-suggestions';
+      suggestions.innerHTML = Object.keys(window.AIRPORT_COORDS || {}).map(icao =>
+          `<option value="${icao}">${window.GLOBAL_AIRPORT_NAME_MAP?.[icao] || ''}</option>`
+      ).join('');
+      document.body.appendChild(suggestions);
+      input.setAttribute('list', suggestions.id);
       addBtn.onclick = async () => {
-          const icao = input.value.trim().toUpperCase();
-          if(icao.length !== 4) return alert("请输入4位ICAO");
+          const icao = resolveAirportInput(input.value);
+          if(!icao) return alert("请输入有效的四字码或机场名称");
           if(isAirportVisibleInPublishTable(icao)) return alert("该机场已经存在表格中");
           if (!window.AIRPORT_COORDS[icao]) return alert("坐标库中未收录此机场");
           
@@ -3317,8 +3448,8 @@ function setupSearch() {
           input.value = '';
       };
       soloBtn.onclick = async () => {
-          const icao = input.value.trim().toUpperCase();
-          if(icao.length !== 4) return alert("请输入4位ICAO");
+          const icao = resolveAirportInput(input.value);
+          if(!icao) return alert("请输入有效的四字码或机场名称");
           if (!window.AIRPORT_COORDS[icao]) return alert("坐标库中未收录此机场");
           
           pbState.customCoords[icao] = window.AIRPORT_COORDS[icao];
@@ -3407,7 +3538,7 @@ function setupAirportInteraction() {
       
       let html = `
           <td class="col-airport td-airport" style="padding:0;">
-              <input type="text" class="new-ap-input" placeholder="输完回车" style="width:100%; height:100%; min-height:30px; box-sizing:border-box; text-align:center; text-transform:uppercase; font-weight:bold; border:2px solid #0f766e; outline:none;">
+              <input type="text" class="new-ap-input" list="publish-airport-suggestions" placeholder="输入四字码或机场名，回车确认" style="width:100%; height:100%; min-height:30px; box-sizing:border-box; text-align:center; font-weight:bold; border:2px solid #0f766e; outline:none;">
           </td>
           <td class="col-airport-type" style="vertical-align:middle; border-right:2px solid #cbd5e1;">普通</td>
           <td colspan="2" class="col-desc td-desc" style="font-size:10px; color:#888;">(失焦取消)</td>
@@ -3431,8 +3562,8 @@ function setupAirportInteraction() {
       
       inp.addEventListener('keydown', async (ev) => {
           if (ev.key === 'Enter') {
-              const icao = inp.value.trim().toUpperCase();
-              if(icao.length !== 4 || !window.AIRPORT_COORDS[icao]) return alert("无效的四字码或系统未收录");
+              const icao = resolveAirportInput(inp.value);
+              if(!icao) return alert("请输入有效的四字码或机场名称");
               if (isAirportVisibleInPublishTable(icao)) {
                   eTr.remove();
                   alert('该机场已经存在表格中');
@@ -3450,6 +3581,9 @@ function setupAirportInteraction() {
               pbState.forceShowAirports.add(icao);
               pbState.manuallyRemovedAirports.delete(icao);
               registerSourceAirports('custom', [icao]);
+              showPublishLoadingStatus(`正在添加 ${window.GLOBAL_AIRPORT_NAME_MAP?.[icao] || icao}，获取 EC/TAF 数据...`);
+              // 先让浏览器绘制提示，再开始联网加载，避免回车后页面看起来像卡住。
+              await new Promise(resolve => requestAnimationFrame(resolve));
               await loadForecastData(true);
               window.saveConfirmedDataToLocal?.();
           }

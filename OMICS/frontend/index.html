@@ -21,20 +21,21 @@
             .admin-block-btn { display: block; width: 100%; border: none; border-radius: 4px; color: white; padding: 8px; font-size: 13px; font-weight: bold; cursor: pointer; margin-bottom: 10px; }
         </style>
         <div id="global-settings-modal" class="modal" style="display:none; z-index:9999;">
-            <div style="display:flex; width:950px; height: 85vh; background:#fff; border-radius:10px; overflow:hidden; box-shadow:0 20px 50px rgba(0,0,0,0.3);">
-                <div style="width: 170px; background: #1e293b; color: white; display: flex; flex-direction: column; flex-shrink: 0;">
-                    <div style="padding: 20px; font-weight: bold; font-size: 16px; border-bottom: 1px solid #334155; text-align: center;">⚙️ 系统设置</div>
+            <div class="system-settings-shell" style="display:flex; width:950px; height: 85vh; background:#fff; border-radius:10px; overflow:hidden; box-shadow:0 20px 50px rgba(0,0,0,0.3);">
+                <div class="system-settings-sidebar" style="width: 170px; background: #1e293b; color: white; display: flex; flex-direction: column; flex-shrink: 0;">
+                    <div class="system-settings-brand" style="padding: 20px; font-weight: bold; font-size: 16px; border-bottom: 1px solid #334155; text-align: center;">系统设置</div>
                     <div class="set-nav active" data-target="pane-pb" style="padding: 15px 20px; cursor: pointer; border-bottom: 1px solid #334155;">预报发布设置</div>
                     <div class="set-nav" data-target="pane-qa" style="padding: 15px 20px; cursor: pointer; border-bottom: 1px solid #334155;">质量评定设置</div>
                     <div class="set-nav" data-target="pane-ap" style="padding: 15px 20px; cursor: pointer; border-bottom: 1px solid #334155; color: #ffffff;">机场字典配置</div>
                     <div class="set-nav" data-target="pane-admin" style="padding: 15px 20px; cursor: pointer; border-bottom: 1px solid #334155; color: #f97316; font-weight:bold;">高级管理员配置</div>
                 </div>
-                <div style="flex: 1; display: flex; flex-direction: column; background: #f8f9fa; position: relative;">
-                    <div style="position: sticky; top: 0; background: #1e293b; height: 55px; display: flex; justify-content: flex-end; align-items: center; padding: 0 20px; flex-shrink: 0; z-index: 10; box-shadow: 0 2px 5px rgba(0,0,0,0.3);">
-                        <button id="close-global-settings" class="mini-btn" style="background:#dc2626; color:white; border-radius: 4px; border:none; padding:6px 15px; cursor:pointer; font-weight:bold; font-size:14px;">✖ 关 闭 面 板</button>
+                <div class="system-settings-main" style="flex: 1; display: flex; flex-direction: column; background: #f8f9fa; position: relative;">
+                    <div class="system-settings-topbar" style="position: sticky; top: 0; background: #1e293b; height: 55px; display: flex; justify-content: flex-end; align-items: center; padding: 0 20px; flex-shrink: 0; z-index: 10; box-shadow: 0 2px 5px rgba(0,0,0,0.3);">
+                        <span class="system-settings-context">配置中心</span>
+                        <button id="close-global-settings" class="mini-btn" style="background:#dc2626; color:white; border-radius: 4px; border:none; padding:6px 15px; cursor:pointer; font-weight:bold; font-size:14px;" aria-label="关闭系统设置">关闭</button>
                     </div>
 
-                    <div style="flex: 1; padding: 20px; overflow-y: auto;">
+                    <div class="system-settings-scroll" style="flex: 1; padding: 20px; overflow-y: auto;">
 
                         <div id="pane-pb" class="set-pane" style="display:block;">
                             <h3 style="color:#1e40af; margin-top:0; border-bottom: 2px solid #c8d5e5; padding-bottom: 10px;">⚙ 预报产品参数与过滤</h3>
@@ -223,7 +224,7 @@
                                     <input type="text" id="publish-export-path" readonly placeholder="留空则存至桌面 SF预报发布导出" style="flex:1; padding:4px; border:1px solid #ccc; border-radius:4px;">
                                     <button id="browse-publish-export-btn" class="admin-pill-btn" style="background: #005A9C;">浏览</button>
                                 </div>
-                                <label>年份 <input id="sync-excel-year" type="number" min="2000" max="2100" style="width:72px"></label><label>月份 <select id="sync-excel-month"><option value="">全部</option><option value="1">1月</option><option value="2">2月</option><option value="3">3月</option><option value="4">4月</option><option value="5">5月</option><option value="6">6月</option><option value="7">7月</option><option value="8">8月</option><option value="9">9月</option><option value="10">10月</option><option value="11">11月</option><option value="12">12月</option></select></label><button id="sync-excel-btn" class="admin-block-btn" style="background: #e65100;">🔄 从云盘 Excel 逆向同步</button>
+                                <div class="sync-period-control"><div class="sync-period-heading"><span>同步范围</span><small>选择云盘 Excel 的归档周期</small></div><label><span>年份</span><input id="sync-excel-year" type="number" min="2000" max="2100" placeholder="2026"></label><label><span>月份</span><select id="sync-excel-month"><option value="">全部月份</option><option value="1">1月</option><option value="2">2月</option><option value="3">3月</option><option value="4">4月</option><option value="5">5月</option><option value="6">6月</option><option value="7">7月</option><option value="8">8月</option><option value="9">9月</option><option value="10">10月</option><option value="11">11月</option><option value="12">12月</option></select></label><button id="sync-excel-btn" class="admin-block-btn" style="background: #e65100;">🔄 从云盘 Excel 逆向同步</button></div>
 
                                 <div class="admin-sub-title">默认数据及字典配置</div>
                                 <div style="display:flex; gap:10px; margin-bottom:10px; background:#f1f8ff; padding:8px; border-radius:4px; border:1px solid #b8daff;">
@@ -407,7 +408,7 @@
                             </div>
 
                             <!-- 🌟 时间轴表头：从 forecast-table 的 thead 拆出，视觉并入发布头部，与正文表格列宽对齐 -->
-                            <div id="pb-timeline-header" style="overflow: hidden; margin: 16px -20px -20px -20px;">
+                            <div id="pb-timeline-header" style="overflow: hidden; margin: 16px 0 -20px 0;">
                                 <table id="pb-timeline-table" style="border-collapse: collapse; table-layout: fixed; text-align: center; color: #fff;">
                                     <colgroup id="pb-timeline-colgroup"></colgroup>
                                     <tbody id="pb-timeline-body"></tbody>
