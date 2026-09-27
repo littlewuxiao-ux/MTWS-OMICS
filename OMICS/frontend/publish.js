@@ -134,7 +134,7 @@ const pbState = {
   forceShowAirports: new Set(),
   textImportAirports: new Set(),
   allowOtherCarriers: false,
-  carrierFilter: ['O3'],
+  carrierFilter: ['O3', '8K', 'YG'],
   defaultShowTaf: true, defaultShowEc: false,
   confirmedData: {},
   manuallyRemovedAirports: new Set(),
