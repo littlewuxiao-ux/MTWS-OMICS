@@ -1108,8 +1108,10 @@ function buildPublishExportText(timezone = 'auto') {
         });
         flushWeather(weatherPhrases.length - 1);
         const visibilityValues = hourlyValues.map(values => {
-            const list = visibilityForHour(values);
-            return list.length ? { min: Math.min(...list), max: Math.max(...list) } : null;
+            const raw = values.map(v => String(v)).join(' ');
+            const greater = Array.from(raw.matchAll(/\b(\d{3,4})\s*\+/g), m => Number(m[1]));
+            const list = visibilityForHour(values).concat(greater);
+            return list.length ? { min: Math.min(...list), max: Math.max(...list), greater: greater.length > 0 } : null;
         });
         const mergedVisibilityRanges = [];
         let visStart = null, visValues = [];
@@ -1117,7 +1119,8 @@ function buildPublishExportText(timezone = 'auto') {
             if (value == null) {
                 if (visStart !== null) {
                     const min = Math.min(...visValues), max = Math.max(...visValues);
-                    mergedVisibilityRanges.push(`${formatRange(visStart, index - 1)}能见度${min === max ? min : `${min}-${max}`}米`);
+                    const visibilityText = visValues.some(v => v >= 5000) ? '大于5000' : (visValues.some(v => v >= 4000) ? '大于4000' : (min === max ? min : `${min}-${max}`));
+                    mergedVisibilityRanges.push(`${formatRange(visStart, index - 1)}能见度${visibilityText}米`);
                 }
                 visStart = null; visValues = [];
             } else {
@@ -1127,7 +1130,8 @@ function buildPublishExportText(timezone = 'auto') {
         });
         if (visStart !== null) {
             const min = Math.min(...visValues), max = Math.max(...visValues);
-            mergedVisibilityRanges.push(`${formatRange(visStart, visibilityValues.length - 1)}能见度${min === max ? min : `${min}-${max}`}米`);
+            const visibilityText = visValues.some(v => v >= 5000) ? '大于5000' : (visValues.some(v => v >= 4000) ? '大于4000' : (min === max ? min : `${min}-${max}`));
+            mergedVisibilityRanges.push(`${formatRange(visStart, visibilityValues.length - 1)}能见度${visibilityText}米`);
         }
         const windValues = hourlyValues.map(values => windForHour(values));
         const mergedWindRanges = [];
