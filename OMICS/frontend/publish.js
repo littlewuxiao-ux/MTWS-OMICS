@@ -1577,6 +1577,7 @@ function populateModalForm() {
   const q = id => document.getElementById(id);
   if(q('cfg-allow-other-carriers')) q('cfg-allow-other-carriers').checked = pbState.allowOtherCarriers;
   if(q('cfg-carrier-filter')) q('cfg-carrier-filter').value = pbState.carrierFilter.join(', ');
+  renderCarrierFilterTags();
   if(q('cfg-default-taf')) q('cfg-default-taf').checked = pbState.defaultShowTaf;
   if(q('cfg-default-ec')) q('cfg-default-ec').checked = pbState.defaultShowEc;
 
@@ -1596,6 +1597,13 @@ function populateModalForm() {
   ALL_WX_PHENOMENA.forEach((wx, idx) => { const el = q(`filter-wx-${idx}`); if(el) el.checked = pbState.filterWx[wx] !== false; });
 }
 
+function renderCarrierFilterTags() {
+  const box = document.getElementById('cfg-carrier-tags');
+  if (!box) return;
+  box.innerHTML = pbState.carrierFilter.map(code => `<span data-carrier="${code}" style="display:inline-flex;align-items:center;gap:4px;padding:3px 7px;border:1px solid #bfdbfe;border-radius:12px;background:#eff6ff;color:#1e40af;font-size:11px;">${code}<button type="button" data-remove-carrier="${code}" style="border:0;background:transparent;color:#dc2626;cursor:pointer;padding:0;">×</button></span>`).join('');
+  box.querySelectorAll('[data-remove-carrier]').forEach(btn => btn.onclick = () => { pbState.carrierFilter = pbState.carrierFilter.filter(v => v !== btn.dataset.removeCarrier); renderCarrierFilterTags(); });
+}
+
 function saveModalForm() {
   const q = id => document.getElementById(id);
   const numberValue = (id, fallback) => {
@@ -1603,9 +1611,12 @@ function saveModalForm() {
       return Number.isFinite(value) ? value : fallback;
   };
   if(q('cfg-allow-other-carriers')) pbState.allowOtherCarriers = q('cfg-allow-other-carriers').checked;
-  if(q('cfg-carrier-filter')) {
-    pbState.carrierFilter = q('cfg-carrier-filter').value.split(/[,\s]+/).map(v => v.trim().toUpperCase()).filter(Boolean);
+  if(q('cfg-carrier-filter') && q('cfg-carrier-filter').value.trim()) {
+    const additions = q('cfg-carrier-filter').value.split(/[,\s]+/).map(v => v.trim().toUpperCase()).filter(Boolean);
+    pbState.carrierFilter = [...new Set([...pbState.carrierFilter, ...additions])];
+    q('cfg-carrier-filter').value = '';
   }
+  renderCarrierFilterTags();
   if(q('cfg-default-taf')) pbState.defaultShowTaf = q('cfg-default-taf').checked;
   if(q('cfg-default-ec')) pbState.defaultShowEc = q('cfg-default-ec').checked;
 
@@ -1710,6 +1721,13 @@ function setupModalEvents() {
       saveModalForm(); 
       globalModal.style.display = 'none';
       loadForecastData(); 
+  });
+  document.getElementById('cfg-carrier-add')?.addEventListener('click', () => {
+      const input = document.getElementById('cfg-carrier-filter');
+      const additions = (input?.value || '').split(/[,\s]+/).map(v => v.trim().toUpperCase()).filter(Boolean);
+      pbState.carrierFilter = [...new Set([...pbState.carrierFilter, ...additions])];
+      if (input) input.value = '';
+      renderCarrierFilterTags();
   });
 
   ['cfg-wind', 'cfg-vis', 'cfg-wx', 'cfg-temp', 'cfg-pressure'].forEach(id => {
@@ -2371,8 +2389,12 @@ async function loadForecastData(retainOrder = false) {
     const loader = document.getElementById('publish-loading-indicator');
     PBLOG(`loadForecastData 开始 | retainOrder=${retainOrder} | startDate=${pbState.startDate} startHour=${pbState.startHour} validity=${pbState.validityHours}h`);
     
+    const progressState = { flight: '等待', taf: '等待', metar: '等待', ec: '等待', parse: '等待', layout: '等待' };
     const setProgress = (msg, isError = false) => {
         if (!loader) return;
+        const lower = String(msg).toLowerCase();
+        const key = lower.includes('航班') ? 'flight' : lower.includes('taf') ? 'taf' : lower.includes('metar') ? 'metar' : lower.includes('数值') || lower.includes('ec') ? 'ec' : lower.includes('解析') ? 'parse' : lower.includes('排版') ? 'layout' : null;
+        if (key) progressState[key] = isError ? '失败' : msg;
         loader.style.display = 'block'; loader.style.color = isError ? '#dc2626' : '#005A9C';
         loader.style.position = 'fixed';
         loader.style.left = '50%';
@@ -2386,6 +2408,7 @@ async function loadForecastData(retainOrder = false) {
         loader.style.margin = '0';
         loader.style.boxShadow = '0 12px 40px rgba(15, 23, 42, 0.22)';
         loader.innerHTML = isError ? `❌ ${msg}` : `<span class="spinner"></span> ${msg}`;
+        loader.innerHTML += '<div style="text-align:left;font-size:12px;line-height:1.8;margin-top:8px;">' + [['flight','航班'],['taf','TAF'],['metar','METAR'],['ec','EC'],['parse','解析'],['layout','排版']].map(([k,label]) => '<div>' + label + '：' + progressState[k] + '</div>').join('') + '</div>';
     };
 
     if (!token) PBLOG('loadForecastData：无内网 token，将跳过 TAF/航班接口并继续处理 EC 数据', 'WARN');
