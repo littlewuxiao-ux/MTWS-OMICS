@@ -309,6 +309,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     let currentMode = 'manual';
     let baseDate = new Date();
     let storedMetars = {};
+    window.getPublishMetar = (icao) => (storedMetars[String(icao || '').toUpperCase()] || []).join('\n');
+    window.getPublishMetar = (icao) => (storedMetars[String(icao || '').toUpperCase()] || []).join('\n');
     // 🌟 需求3:从纯文本配置缓存中提取机场字典
     let savedAirportTextDict = localStorage.getItem('sf_custom_airport_text_dict');
     if (savedAirportTextDict) {

@@ -44,6 +44,8 @@
                                 <div class="publish-filter-settings-grid">
                                     <div class="publish-filter-settings-group">
                                         <span class="publish-settings-group-title">基础过滤</span>
+                                        <label class="publish-setting-row"><span>航班承运人代码</span><input id="cfg-carrier-filter" type="text" placeholder="O3, 5Y" style="width:100px;"></label>
+                                        <span class="publish-setting-hint">仅纳入承运人代码匹配且航班时间落在发布时段前1小时至后3小时内的机场。</span>
                                         <label class="publish-setting-row"><span>风速低于（隐藏）</span><span><input type="number" id="filter-wind-threshold"> m/s</span></label>
                                         <label class="publish-setting-row"><span>能见度高于（隐藏）</span><span><input type="number" id="filter-vis-threshold"> m</span></label>
                                         <label class="publish-hide-empty-option"><input type="checkbox" id="filter-hide-empty-airports"> 无要素时自动隐藏该机场</label>

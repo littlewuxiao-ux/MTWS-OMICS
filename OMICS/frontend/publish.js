@@ -134,6 +134,7 @@ const pbState = {
   forceShowAirports: new Set(),
   textImportAirports: new Set(),
   allowOtherCarriers: false,
+  carrierFilter: ['O3'],
   defaultShowTaf: true, defaultShowEc: false,
   confirmedData: {},
   manuallyRemovedAirports: new Set(),
@@ -1575,6 +1576,7 @@ function saveAirportGroupsConfig() {
 function populateModalForm() {
   const q = id => document.getElementById(id);
   if(q('cfg-allow-other-carriers')) q('cfg-allow-other-carriers').checked = pbState.allowOtherCarriers;
+  if(q('cfg-carrier-filter')) q('cfg-carrier-filter').value = pbState.carrierFilter.join(', ');
   if(q('cfg-default-taf')) q('cfg-default-taf').checked = pbState.defaultShowTaf;
   if(q('cfg-default-ec')) q('cfg-default-ec').checked = pbState.defaultShowEc;
 
@@ -1601,6 +1603,9 @@ function saveModalForm() {
       return Number.isFinite(value) ? value : fallback;
   };
   if(q('cfg-allow-other-carriers')) pbState.allowOtherCarriers = q('cfg-allow-other-carriers').checked;
+  if(q('cfg-carrier-filter')) {
+    pbState.carrierFilter = q('cfg-carrier-filter').value.split(/[,\s]+/).map(v => v.trim().toUpperCase()).filter(Boolean);
+  }
   if(q('cfg-default-taf')) pbState.defaultShowTaf = q('cfg-default-taf').checked;
   if(q('cfg-default-ec')) pbState.defaultShowEc = q('cfg-default-ec').checked;
 
@@ -1881,7 +1886,12 @@ async function fetchActiveFlightAirports(startMs, endMs, setProgress) {
         if (result.success && result.data) {
             const aps = new Set();
             result.data.forEach(flight => {
-                if (flight.carrier !== 'O3' && !pbState.allowOtherCarriers) return;
+                const carrier = String(flight.carrier || '').trim().toUpperCase();
+                if (!pbState.allowOtherCarriers && !pbState.carrierFilter.includes(carrier)) return;
+                const flightTimes = ['ptd','pta','std','sta','etd','eta','atd'].map(k => Number(flight[k])).filter(Number.isFinite);
+                const windowStart = startMs - 3600000;
+                const windowEnd = endMs + 3 * 3600000;
+                if (flightTimes.length && !flightTimes.some(t => t >= windowStart && t <= windowEnd)) return;
                 ['departureAirport','arrivalAirport','depApt','arrApt','airportCode'].forEach(k => {
                     if (flight[k]) aps.add(flight[k].toUpperCase());
                 });
@@ -2327,7 +2337,9 @@ function showPublishLoadingStatus(message) {
     loader.style.transform = 'translate(-50%, -50%)';
     loader.style.width = 'min(520px, calc(100vw - 40px))';
     loader.style.boxSizing = 'border-box';
-    loader.style.zIndex = '10002';
+    // Keep publish progress behind the login modal so a failed refresh
+    // cannot obscure the QR code when the user signs in again.
+    loader.style.zIndex = '1500';
     loader.style.margin = '0';
     loader.style.boxShadow = '0 12px 40px rgba(15, 23, 42, 0.22)';
     loader.style.color = '#005A9C';
@@ -2352,7 +2364,9 @@ async function loadForecastData(retainOrder = false) {
         loader.style.transform = 'translate(-50%, -50%)';
         loader.style.width = 'min(520px, calc(100vw - 40px))';
         loader.style.boxSizing = 'border-box';
-        loader.style.zIndex = '10002';
+        // The login modal uses the shared modal layer (z-index: 2000).
+        // Progress and error messages must remain below it.
+        loader.style.zIndex = '1500';
         loader.style.margin = '0';
         loader.style.boxShadow = '0 12px 40px rgba(15, 23, 42, 0.22)';
         loader.innerHTML = isError ? `❌ ${msg}` : `<span class="spinner"></span> ${msg}`;
@@ -2452,6 +2466,8 @@ async function loadForecastData(retainOrder = false) {
             nwpPromises.push(p);
         }
 
+        setProgress('正在调取 TAF 数据；正在调取 EC 数值预报数据（并行）...');
+        setProgress('正在调取 TAF 数据；正在调取 EC 数值预报数据（并行）...');
         const [tafDataMap, ...nwpChunks] = await Promise.all([
             fetchTafDataForAirports(validAps, startMs, flightEndMs, setProgress),
             ...nwpPromises
@@ -2619,7 +2635,7 @@ function renderPublishTableTriRow(apAnalysis, preserveDrafts = true) {
         }
 
         trEdit.innerHTML = `
-            <td class="col-airport td-airport" rowspan="1" draggable="true" data-icao="${icao}" title="${tafRaw || '无TAF报文'}" style="font-weight:bold; vertical-align:middle; cursor:move; position:sticky; ${isGray?'color:#94a3b8;':''}">${apName}<button class="airport-delete-x" data-icao="${icao}" title="删除该机场">×</button></td>
+            <td class="col-airport td-airport" rowspan="1" draggable="true" data-icao="${icao}" title="${tafRaw || '无TAF报文'}${window.getPublishMetar?.(icao) ? '\n\nMETAR:\n' + window.getPublishMetar(icao) : '\n\n暂无已导入METAR'}" style="font-weight:bold; vertical-align:middle; cursor:move; position:sticky; ${isGray?'color:#94a3b8;':''}">${apName}<button class="airport-delete-x" data-icao="${icao}" title="删除该机场">×</button></td>
             <td rowspan="1" class="col-airport-type" contenteditable="true" spellcheck="false" title="点击修改机场性质" style="vertical-align:middle; border-right:2px solid #cbd5e1;">${apType}</td>
             ${srcOpHTML}
         `;

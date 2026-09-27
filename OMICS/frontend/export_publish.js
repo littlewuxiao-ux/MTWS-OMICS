@@ -140,6 +140,11 @@
         let clonedTimeline = null;
         if (headerSrc) {
             const h = headerSrc.cloneNode(true);
+            // 导出图片保持第五版外观，隔离第六版页面专用的 ID/class 强制样式。
+            h.id = '';
+            h.style.background = '#4b5563';
+            h.style.backgroundColor = '#4b5563';
+            h.style.boxShadow = 'none';
             h.style.borderRadius = '0';
             // 🌟 底部 padding 置 0：消除时间轴与正文表之间露出的深色头部背景条（原本 28px padding-bottom + 时间轴 -20px margin 净剩 8px）
             h.style.padding = '14px 18px 0 18px';
@@ -152,6 +157,23 @@
                 clonedTlHeader.style.overflow = 'hidden';
                 // 🌟 清掉 syncTimelineHeader 给 live 元素设的内联 width，避免与导出 tableWidth 不一致被裁剪
                 clonedTlHeader.style.width = '';
+            }
+            const alertSummary = h.querySelector('.pb-alert-summary');
+            if (alertSummary) {
+                alertSummary.classList.remove('pb-alert-summary');
+                alertSummary.style.width = '75%';
+                alertSummary.style.gap = '8px';
+                alertSummary.style.margin = '0 auto 20px auto';
+                Array.from(alertSummary.children).forEach(item => {
+                    item.style.minWidth = '';
+                    item.style.borderRadius = '4px';
+                    item.style.boxShadow = 'none';
+                });
+            }
+            const headerMeta = h.querySelector('.pb-header-meta');
+            if (headerMeta) {
+                headerMeta.classList.remove('pb-header-meta');
+                headerMeta.style.borderTopColor = '#6b7280';
             }
             h.querySelectorAll('select,input').forEach(el => {
                 const display = document.createElement('span');
@@ -289,6 +311,9 @@
         const footerSrc = document.getElementById('pb-export-footer');
         if (footerSrc) {
             const f = footerSrc.cloneNode(true);
+            f.id = '';
+            f.style.borderRadius = '0';
+            f.style.overflow = 'visible';
             f.querySelectorAll('input').forEach(el => {
                 const span = document.createElement('span');
                 span.textContent = el.value || '无';
@@ -349,9 +374,16 @@
     }
 
     // ---- 预览弹窗状态 ----
-    const state = { mode: 'image', rows: [], publishRows: [], rawRows: [], images: [], pageSizes: [], rendering: false };
+    const state = { mode: 'image', rows: [], publishRows: [], rawRows: [], images: [], pageSizes: [], rendering: false, renderVersion: 0 };
+
+    function clearPageSizeControls() {
+        const box = document.getElementById('export-page-size-controls');
+        if (box) { box.innerHTML = ''; box.style.display = 'none'; }
+        state.pageSizes = [];
+    }
 
     function refreshPreview() {
+        const renderVersion = ++state.renderVersion;
         const body = document.getElementById('export-preview-body');
         const info = document.getElementById('export-page-info');
         if (!body) return;
@@ -388,6 +420,7 @@
             for (let i = 0; i < pages.length; i++) {
                 const node = buildPageNode(pages[i], i, pages.length);
                 const img = await renderPageImage(node);
+                if (renderVersion !== state.renderVersion) return;
                 state.images.push(img);
                 const card = document.createElement('div');
                 card.style.cssText = 'margin:0 auto 18px auto; max-width:100%; box-shadow:0 2px 8px rgba(0,0,0,0.15); background:#fff;';
@@ -397,9 +430,11 @@
                 card.appendChild(im);
                 frag.appendChild(card);
             }
+            if (renderVersion !== state.renderVersion) return;
             body.innerHTML = '';
             body.appendChild(frag);
         })().catch(e => {
+            if (renderVersion !== state.renderVersion) return;
             body.innerHTML = `<div style="color:#dc2626; padding:20px;">预览生成失败: ${e.message}</div>`;
         });
     }
@@ -538,9 +573,21 @@
         document.getElementById('close-export-preview')?.addEventListener('click', () => {
             document.getElementById('export-preview-modal').style.display = 'none';
         });
-        document.getElementById('export-split-toggle')?.addEventListener('change', () => { state.images = []; refreshPreview(); });
-        document.getElementById('export-pagecount')?.addEventListener('change', () => { state.images = []; refreshPreview(); });
-        document.getElementById('export-perpage')?.addEventListener('change', () => { state.images = []; refreshPreview(); });
+        document.getElementById('export-split-toggle')?.addEventListener('change', () => {
+            state.images = [];
+            clearPageSizeControls();
+            refreshPreview();
+        });
+        document.getElementById('export-pagecount')?.addEventListener('change', () => {
+            state.images = [];
+            clearPageSizeControls();
+            refreshPreview();
+        });
+        document.getElementById('export-perpage')?.addEventListener('change', () => {
+            state.images = [];
+            clearPageSizeControls();
+            refreshPreview();
+        });
         document.getElementById('export-preview-confirm')?.addEventListener('click', doExport);
 
         const importModal = document.getElementById('airport-import-modal');
@@ -1027,6 +1074,7 @@
     }
 
     async function importPublishWorkbook() {
+        window.showPublishLoadingStatus?.('正在读取并解析导入表格，请稍候...');
         const formData = new FormData();
         const file = document.getElementById('import-publish-excel-file')?.files?.[0];
         if (file) formData.append('file', file);
@@ -1064,6 +1112,7 @@
             }));
             window.pbState.confirmedData[icao] = { rows, notes: entry.notes || rows.map(() => '/'), origin: 'table' };
             window.pbState.importedAirportTypes[icao] = entry.nature || '普通';
+            delete window.pbState.manualAirportTypes[icao];
             window.pbState.forceShowAirports.add(icao);
             importedIcaos.push(icao);
             if (!window.currentApAnalysis.some(item => item.icao === icao)) {
@@ -1072,6 +1121,8 @@
         });
         window.registerPublishSourceAirports?.('table', importedIcaos);
         if (unresolved.length) alert('以下机场未能匹配机场字典，已跳过：\n' + unresolved.join('、'));
+        const loader = document.getElementById('publish-loading-indicator');
+        if (loader && !(window.currentApAnalysis || []).some(ap => importedIcaos.includes(ap.icao) && !ap.nwp)) loader.style.display = 'none';
         return { count: importedIcaos.length, icaos: importedIcaos };
     }
 
