@@ -394,17 +394,30 @@ class RadarAlertPipeline:
                 status='done',
                 finished_at=now,
             )
+            codes = [r['airport_4code'] for r in results]
+            previous = {
+                row.airport_4code: row
+                for row in AirportRadarAlert.objects.filter(airport_4code__in=codes)
+            }
             for r in results:
+                alert_33 = r.get('alert_33') or 'N'
+                alert_41 = r.get('alert_41') or 'N'
+                alert_highest = r.get('alert_highest') or 'N'
+                signature = f'{alert_33}|{alert_41}|{alert_highest}'
+                old = previous.get(r['airport_4code'])
+                handled = bool(old and old.handled and old.handled_signature == signature)
                 AirportRadarAlert.objects.update_or_create(
                     airport_4code=r['airport_4code'],
                     defaults={
                         'frame_time': frame_ts,
-                        'alert_33': r.get('alert_33') or 'N',
-                        'alert_41': r.get('alert_41') or 'N',
-                        'alert_highest': r.get('alert_highest') or 'N',
+                        'alert_33': alert_33,
+                        'alert_41': alert_41,
+                        'alert_highest': alert_highest,
                         'detail_33': r.get('detail_33'),
                         'detail_41': r.get('detail_41'),
                         'sector_stats': r.get('sector_stats'),
+                        'handled': handled,
+                        'handled_signature': signature if handled else '',
                         'updated_at': now,
                     },
                 )

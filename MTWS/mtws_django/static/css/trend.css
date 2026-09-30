@@ -218,6 +218,40 @@
   max-width: 64px;
 }
 
+.trend-table .trend-handle {
+  width: 76px;
+  min-width: 76px;
+  overflow: visible;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.trend-handle-btn {
+  border: 1px solid rgba(27, 40, 56, 0.12);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+  cursor: pointer;
+  color: #fff;
+}
+
+.trend-handle-btn.level-y:not(.is-handled) {
+  color: #1b2838;
+}
+
+.trend-handle-btn.is-handled {
+  background: #c5ced6;
+  border-color: #b7c0c8;
+  color: #4a5562;
+  cursor: default;
+}
+
+.trend-handle-btn:disabled {
+  opacity: 0.7;
+}
+
 .trend-code-box {
   position: relative;
   min-height: 22px;

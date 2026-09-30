@@ -90,6 +90,17 @@
     return cells;
   }
 
+  function trendHandleButton(airport) {
+    const color = airport.color;
+    if (color !== 'R' && color !== 'Y' && color !== 'G') return '';
+    const handled = !!airport.handled;
+    const bg = BAR_COLOR[color] || BAR_COLOR.G;
+    const fg = color === 'Y' ? '#1b2838' : '#fff';
+    const style = handled ? '' : ` style="background:${bg};color:${fg}"`;
+    const levelCls = color === 'Y' ? ' level-y' : '';
+    return `<button type="button" class="trend-handle-btn${handled ? ' is-handled' : ''}${levelCls}" data-code="${esc(airport.airport)}"${style}>${handled ? '已处理' : '未处理'}</button>`;
+  }
+
   function scoreBar(airport) {
     const score = Number(airport.score);
     if (!score || score <= 0) return '';
@@ -200,7 +211,7 @@
     bindStatHover();
     let badge = btn.querySelector('.trend-nav-badge');
     const colors = new Set(statColors());
-    const count = ((payload && payload.airports) || []).filter((item) => colors.has(item.color)).length;
+    const count = ((payload && payload.airports) || []).filter((item) => colors.has(item.color) && !item.handled).length;
     if (!count) {
       if (badge) badge.remove();
       return;
@@ -234,7 +245,7 @@
       return;
     }
     const dense = slots.length > 24 ? ' trend-dense' : '';
-    const head = slots.map((ms) => `<th>${esc(slotLabel(ms))}</th>`).join('');
+    const head = slots.map((ms) => `<th>${esc(slotLabel(ms))}</th>`).join('') + '<th class="trend-handle">处理</th>';
     const body = airports.map((airport) => {
       const source = airport.color === 'N' ? [] : (airport.rows || []);
       const kept = source.filter((row) => SHOWN_KEYS.has(row.key));
@@ -255,10 +266,35 @@
           const title = cell.speci ? ' title="最新特殊报"' : '';
           return `<td${cls}${title}>${esc(cell.text || '')}</td>`;
         }).join('');
-        return `<tr>${airportCell}<td class="trend-element">${esc(row.name || '')}</td>${cells}</tr>`;
+        const handleCell = index === 0
+          ? `<td class="trend-handle" rowspan="${rows.length}">${trendHandleButton(airport)}</td>`
+          : '';
+        return `<tr>${airportCell}<td class="trend-element">${esc(row.name || '')}</td>${cells}${handleCell}</tr>`;
       }).join('');
     }).join('');
     wrap.innerHTML = `<table class="trend-table${dense}"><thead><tr><th class="trend-airport">机场</th><th class="trend-element">要素</th>${head}</tr></thead><tbody>${body}</tbody></table>`;
+  }
+
+  async function markTrendHandled(btn) {
+    if (!btn || btn.classList.contains('is-handled') || btn.disabled) return;
+    const code = btn.getAttribute('data-code');
+    if (!code) return;
+    btn.disabled = true;
+    try {
+      const res = await fetch(apiUrl('trend-alert/handle/'), {
+        method: 'POST',
+        headers: Object.assign({ 'Content-Type': 'application/json' }, headers()),
+        body: JSON.stringify({ airport: code }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || '处理失败');
+      const airport = ((payload && payload.airports) || []).find((item) => item.airport === code);
+      if (airport) airport.handled = true;
+      render();
+    } catch (err) {
+      btn.disabled = false;
+      alert(err.message || '处理失败');
+    }
   }
 
   async function load() {
@@ -306,6 +342,11 @@
     if (half) half.addEventListener('change', render);
     const refresh = document.getElementById('trend-refresh');
     if (refresh) refresh.addEventListener('click', load);
+    const wrap = document.getElementById('trend-table-wrap');
+    if (wrap) wrap.addEventListener('click', (event) => {
+      const btn = event.target.closest('.trend-handle-btn');
+      if (btn) markTrendHandled(btn);
+    });
     const tz = document.getElementById('timezone-toggle-input');
     if (tz) tz.addEventListener('change', () => {
       if (panel.style.display !== 'none') render();

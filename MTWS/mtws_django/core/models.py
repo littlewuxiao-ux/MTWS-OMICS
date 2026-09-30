@@ -460,6 +460,8 @@ class AirportRadarAlert(models.Model):
     detail_33 = models.JSONField(blank=True, null=True, verbose_name='33dBZ明细')
     detail_41 = models.JSONField(blank=True, null=True, verbose_name='41dBZ明细')
     sector_stats = models.JSONField(blank=True, null=True, verbose_name='方位扇区统计')
+    handled = models.BooleanField(default=False, verbose_name='已处理')
+    handled_signature = models.CharField(max_length=16, blank=True, default='', verbose_name='已处理时的告警特征')
     updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
 
     class Meta:
@@ -470,6 +472,12 @@ class AirportRadarAlert(models.Model):
             models.Index(fields=['alert_highest']),
             models.Index(fields=['updated_at']),
         ]
+
+    def alert_signature(self):
+        return f"{self.alert_33 or 'N'}|{self.alert_41 or 'N'}|{self.alert_highest or 'N'}"
+
+    def is_handled_current(self):
+        return bool(self.handled and self.handled_signature == self.alert_signature())
 
     def __str__(self):
         return f'{self.airport_4code} {self.alert_33}/{self.alert_41}'
@@ -535,12 +543,21 @@ class AirportTrendAlert(models.Model):
     score = models.FloatField(default=0, verbose_name='总分')
     labels = models.JSONField(default=list, verbose_name='描述词')
     series = models.JSONField(default=list, verbose_name='要素序列')
+    handled = models.BooleanField(default=False, verbose_name='已处理')
+    handled_signature = models.CharField(max_length=8, blank=True, default='', verbose_name='已处理时的告警颜色')
     updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
 
     class Meta:
         db_table = 'airport_trend_alert'
         verbose_name = '机场实况趋势告警'
         verbose_name_plural = '机场实况趋势告警'
+
+    def is_handled_current(self):
+        return bool(
+            self.handled
+            and self.color in ('R', 'Y', 'G')
+            and self.handled_signature == self.color
+        )
 
     def __str__(self):
         return f'{self.airport_4code} {self.color}'

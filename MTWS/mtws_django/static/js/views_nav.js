@@ -231,7 +231,10 @@
     fetch(`/${mode}/api/radar/alerts/`, { headers })
       .then((r) => r.json())
       .then((data) => {
-        if (data && data.success) updateRadarAlarmNavBadge((data.alerts || []).length);
+        if (data && data.success) {
+          const count = (data.alerts || []).filter((item) => !item.handled).length;
+          updateRadarAlarmNavBadge(count);
+        }
       })
       .catch(() => {});
   }

@@ -26,7 +26,7 @@ let _radarPollTimer = null;
 let _radarBlinkCodes = new Set();
 let _radarListMode = 'alarm'; // alarm | observe
 let _rippleRaf = 0;
-const _RADAR_COL_LEN = 12;
+const _RADAR_VISIBLE_ROWS = 10;
 let _radarOverlayMeta = null;
 let _radarFramePath = null;
 
@@ -1261,19 +1261,40 @@ function _radarCodeColor(level) {
     return ({ R: '#e74c3c', Y: '#f39c12', G: '#27ae60' })[level] || '';
 }
 
-function _renderCodeColumns(list, emptyText) {
-    if (!list || !list.length) return `<div class="radar-alert-empty">${emptyText || '暂无'}</div>`;
-    const cols = [];
-    for (let i = 0; i < list.length; i += _RADAR_COL_LEN) {
-        const chunk = list.slice(i, i + _RADAR_COL_LEN);
-        cols.push(`<div class="radar-alert-col">${chunk.map(a => {
-            const color = _radarCodeColor(a.alert_highest);
-            const style = color ? ` style="color:${color}"` : '';
-            const code = a.airport_4code || '';
-            return `<div class="radar-alert-code" data-code="${code}" title="查看周边200公里雷达回波"${style}>${code}</div>`;
-        }).join('')}</div>`);
-    }
-    return `<div class="radar-alert-cols">${cols.join('')}</div>`;
+function _radarUnhandledCount(alerts) {
+    return (alerts || []).filter(a => !a.handled).length;
+}
+
+function _radarHandleButton(item) {
+    const code = item.airport_4code || '';
+    const handled = !!item.handled;
+    const level = item.alert_highest || 'Y';
+    const color = _radarCodeColor(level) || '#e74c3c';
+    const bg = handled ? '#6d7b8a' : color;
+    const fg = handled ? '#e6edf3' : (level === 'Y' ? '#1b2838' : '#fff');
+    const levelCls = !handled && level === 'Y' ? ' level-y' : '';
+    return `<button type="button" class="radar-handle-btn${handled ? ' is-handled' : ''}${levelCls}" data-code="${code}" style="--handle-bg:${bg};color:${fg}">${handled ? '已处理' : '未处理'}</button>`;
+}
+
+function _radarAlertRow(item, withHandle) {
+    const color = _radarCodeColor(item.alert_highest);
+    const codeStyle = color ? ` style="color:${color}"` : '';
+    const rowStyle = color ? ` style="--alert:${color}"` : '';
+    const code = item.airport_4code || '';
+    const handle = withHandle ? _radarHandleButton(item) : '';
+    return `<div class="radar-alert-row"${rowStyle}><div class="radar-alert-code" data-code="${code}" title="查看周边200公里雷达回波"${codeStyle}>${code}</div>${handle}</div>`;
+}
+
+function _renderAlarmList(list) {
+    if (!list || !list.length) return '<div class="radar-alert-empty">暂无告警</div>';
+    const scroll = list.length > _RADAR_VISIBLE_ROWS ? ' is-scroll' : '';
+    return `<div class="radar-alert-alarm-list${scroll}">${list.map(item => _radarAlertRow(item, true)).join('')}</div>`;
+}
+
+function _renderObserveList(list) {
+    if (!list || !list.length) return '<div class="radar-alert-empty">暂无观察项</div>';
+    const scroll = list.length > _RADAR_VISIBLE_ROWS * 2 ? ' is-scroll' : '';
+    return `<div class="radar-alert-observe-list${scroll}">${list.map(item => _radarAlertRow(item, false)).join('')}</div>`;
 }
 
 function _radarVisibleItems() {
@@ -1294,10 +1315,11 @@ function _renderRadarList() {
     const observes = _radarListMode === 'observe'
         ? (_radarAlertCache.observe || []).map(a => Object.assign({ kind: 'observe' }, a))
         : [];
-    let html = _renderCodeColumns(alarms, _radarListMode === 'observe' && observes.length ? '' : (_radarListMode === 'observe' ? '暂无告警或观察项' : '暂无告警'));
-    if (!alarms.length && observes.length) html = '';
-    if (observes.length) {
-        html += `<div class="radar-alert-observe-block">${_renderCodeColumns(observes)}</div>`;
+    const showObserve = _radarListMode === 'observe';
+    let html = '<div class="radar-alert-section">告警项</div>';
+    html += _renderAlarmList(alarms);
+    if (showObserve) {
+        html += `<div class="radar-alert-observe-block"><div class="radar-alert-section">观察项</div>${_renderObserveList(observes)}</div>`;
     }
     body.innerHTML = html;
     _syncRadarBlink();
@@ -1327,7 +1349,7 @@ function _applyRadarFloat(data) {
     }
     if (data.overlay) _radarOverlayMeta = data.overlay;
     if (typeof window.updateRadarAlarmNavBadge === 'function') {
-        window.updateRadarAlarmNavBadge((data.alerts || []).length);
+        window.updateRadarAlarmNavBadge(_radarUnhandledCount(data.alerts));
     }
     // 气象图层由左上角开关控制；仅在选中雷达时刷新贴图
     if (_wxLayerId === 'radar') _applyWxLayer('radar');
@@ -1365,6 +1387,36 @@ function _runRadarAlertFromFloat() {
         .finally(() => { if (btn) btn.disabled = false; });
 }
 
+function _markRadarHandled(btn) {
+    if (!btn || btn.classList.contains('is-handled') || btn.disabled) return;
+    const code = btn.getAttribute('data-code');
+    if (!code || typeof currentTimeMode === 'undefined') return;
+    btn.disabled = true;
+    fetch(`/${currentTimeMode}/api/radar/alerts/handle/`, {
+        method: 'POST',
+        headers: {
+            ...(typeof getRequestHeaders === 'function' ? getRequestHeaders() : {}),
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ airport_4code: code })
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) throw new Error(data.error || '处理失败');
+            (_radarAlertCache.alerts || []).forEach(item => {
+                if (item.airport_4code === code) item.handled = true;
+            });
+            _renderRadarList();
+            if (typeof window.updateRadarAlarmNavBadge === 'function') {
+                window.updateRadarAlarmNavBadge(_radarUnhandledCount(_radarAlertCache.alerts));
+            }
+        })
+        .catch(err => {
+            btn.disabled = false;
+            alert(err.message || '处理失败');
+        });
+}
+
 function _initRadarAlertFloat() {
     const drag = document.getElementById('radar-alert-float-drag');
     const panel = document.getElementById('radar-alert-float');
@@ -1396,23 +1448,29 @@ function _initRadarAlertFloat() {
         modeBox.addEventListener('mousedown', (e) => e.stopPropagation());
         const savedMode = localStorage.getItem('mtws_radar_list_mode');
         _radarListMode = savedMode === 'observe' ? 'observe' : 'alarm';
-        modeBox.querySelectorAll('button').forEach(btn => {
-            btn.classList.toggle('is-on', btn.getAttribute('data-mode') === _radarListMode);
-            btn.addEventListener('click', () => {
-                _radarListMode = btn.getAttribute('data-mode') === 'observe' ? 'observe' : 'alarm';
+        const observeBtn = modeBox.querySelector('button[data-mode="observe"]');
+        if (observeBtn) {
+            observeBtn.classList.toggle('is-on', _radarListMode === 'observe');
+            observeBtn.addEventListener('click', () => {
+                _radarListMode = _radarListMode === 'observe' ? 'alarm' : 'observe';
                 localStorage.setItem('mtws_radar_list_mode', _radarListMode);
-                modeBox.querySelectorAll('button').forEach(b => {
-                    b.classList.toggle('is-on', b.getAttribute('data-mode') === _radarListMode);
-                });
+                observeBtn.classList.toggle('is-on', _radarListMode === 'observe');
                 _renderRadarList();
                 updateMapAlert();
             });
-        });
+        }
     }
     const float = document.getElementById('radar-alert-float');
     if (float && !float.dataset.echoBound) {
         float.dataset.echoBound = '1';
         float.addEventListener('click', (e) => {
+            const handleBtn = e.target.closest('.radar-handle-btn');
+            if (handleBtn) {
+                e.preventDefault();
+                e.stopPropagation();
+                _markRadarHandled(handleBtn);
+                return;
+            }
             const codeEl = e.target.closest('.radar-alert-code');
             if (!codeEl) return;
             const code = codeEl.getAttribute('data-code');

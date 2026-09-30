@@ -119,6 +119,25 @@ def _radar_overlay_meta():
     }
 
 
+@require_http_methods(['POST'])
+@csrf_exempt
+def radar_alert_handle(request, time_mode='current'):
+    """把当前雷达告警标为已处理。告警等级变化后会重新变为未处理。"""
+    from core.models import AirportRadarAlert
+
+    data = _json_body(request)
+    code = str(data.get('airport_4code') or '').strip().upper()
+    if len(code) != 4:
+        return JsonResponse({'success': False, 'error': '无效的四字代码'}, status=400)
+    row = AirportRadarAlert.objects.filter(airport_4code=code).first()
+    if not row:
+        return JsonResponse({'success': False, 'error': '未找到该机场告警'}, status=404)
+    row.handled = True
+    row.handled_signature = row.alert_signature()
+    row.save(update_fields=['handled', 'handled_signature'])
+    return JsonResponse({'success': True, 'airport_4code': code, 'handled': True})
+
+
 @require_http_methods(['GET'])
 def radar_alerts(request, time_mode='current'):
     """返回当前雷达告警列表，供地图悬浮层使用。"""
@@ -141,6 +160,7 @@ def radar_alerts(request, time_mode='current'):
             'alert_highest': r.alert_highest or 'N',
             'frame_time': r.frame_time,
             'updated_at': r.updated_at.isoformat() if r.updated_at else None,
+            'handled': r.is_handled_current(),
         }
         if hit33 and hit41:
             item['kind'] = 'alarm'

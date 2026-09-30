@@ -43,6 +43,28 @@ def trend_alert_config(request, time_mode='current'):
     return JsonResponse({'success': True, 'config': config})
 
 
+@require_http_methods(['POST'])
+@csrf_exempt
+def trend_alert_handle(request, time_mode='current'):
+    """把当前趋势告警标为已处理。告警颜色变化后会重新变为未处理。"""
+    from core.models import AirportTrendAlert
+
+    identity = resolve_access_identity(request)
+    if not has_perm(identity, 'view_trend', 'display'):
+        return JsonResponse({'success': False, 'error': '无实况趋势告警查看权限'}, status=403)
+    data = _body(request)
+    code = str(data.get('airport') or data.get('airport_4code') or '').strip().upper()
+    if len(code) != 4:
+        return JsonResponse({'success': False, 'error': '无效的四字代码'}, status=400)
+    row = AirportTrendAlert.objects.filter(airport_4code=code).first()
+    if not row or row.color not in ('R', 'Y', 'G'):
+        return JsonResponse({'success': False, 'error': '未找到该机场趋势告警'}, status=404)
+    row.handled = True
+    row.handled_signature = row.color
+    row.save(update_fields=['handled', 'handled_signature'])
+    return JsonResponse({'success': True, 'airport': code, 'handled': True})
+
+
 @require_http_methods(['GET'])
 def trend_alert_results(request, time_mode='current'):
     identity = resolve_access_identity(request)

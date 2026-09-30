@@ -1054,17 +1054,28 @@ def refresh_airports(codes, now_ms: Optional[int] = None) -> None:
             snap = snapshot_from_row(row)
             if code in by_airport and snap is not None:
                 by_airport[code].append(snap)
+        previous = {
+            row.airport_4code: row
+            for row in AirportTrendAlert.objects.filter(airport_4code__in=inside)
+        }
         for code in inside:
             groups = groups_for_airport(config, code, universe)
             result = evaluate_airport(by_airport.get(code) or [], groups, now_ms, slots)
+            color = result['color']
+            old = previous.get(code)
+            handled = bool(
+                old and old.handled and old.handled_signature == color and color in ('R', 'Y', 'G')
+            )
             AirportTrendAlert.objects.update_or_create(
                 airport_4code=code,
                 defaults={
-                    'color': result['color'],
+                    'color': color,
                     'score': result['score'],
-                    'bar_color': result.get('bar_color') or result['color'],
+                    'bar_color': result.get('bar_color') or color,
                     'labels': result['labels'],
                     'series': _pack_series(result['rows'], slots),
+                    'handled': handled,
+                    'handled_signature': color if handled else '',
                 },
             )
     except Exception:
@@ -1092,6 +1103,7 @@ def build_results(scope: str, now_ms: Optional[int] = None) -> dict:
             'score': row.score,
             'bar_color': row.bar_color or row.color,
             'labels': row.labels or [],
+            'handled': row.is_handled_current(),
             'rows': _unpack_series(row.series or [], slots),
         })
     airports.sort(key=lambda item: (-COLOR_RANK.get(item['color'], 0), item['airport']))
