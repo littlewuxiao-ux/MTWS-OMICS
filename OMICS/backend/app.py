@@ -1767,15 +1767,17 @@ def import_publish_excel_api():
             entries = []
             current = None
             special_condition_text = ''
+            special_condition_markers = ('地面结冰', '地面积冰', '极寒条件', '极寒机场', '极寒')
             for r in range(1, ws.max_row + 1):
                 row_values = [cell_text(ws.cell(r, c).value) for c in range(1, ws.max_column + 1)]
                 joined = ' '.join(v for v in row_values if v)
-                if '地面结冰' in joined or '极寒' in joined:
-                    label_pos = next((i for i, v in enumerate(row_values) if '地面结冰' in v or '极寒' in v), 0)
+                if any(marker in joined for marker in special_condition_markers):
+                    label_pos = next((i for i, v in enumerate(row_values) if any(marker in v for marker in special_condition_markers)), 0)
                     tail = ' '.join(v for v in row_values[label_pos + 1:] if v)
+                    # 兼容标签与内容写在同一个单元格、以及没有括号分类的人工编辑文本。
                     special_condition_text = tail or joined
                     break
-            stop_labels = ('地面结冰', '颜色说明', '发布说明')
+            stop_labels = ('地面结冰', '地面积冰', '极寒条件', '极寒机场', '颜色说明', '发布说明')
             for row_idx in range(header_row + 1, ws.max_row + 1):
                 airport_name = cell_text(ws.cell(row_idx, 1).value)
                 nature = cell_text(ws.cell(row_idx, 2).value)
