@@ -2252,10 +2252,23 @@ function updateSpecialConditionFooter() {
       if (!grouped.has(reason)) grouped.set(reason, []);
       grouped.get(reason).push(name);
   });
-  const values = Array.from(grouped, ([reason, names]) => `${names.join('、')}（${reason}）`);
+  const conditionLabels = {
+      '地面结冰': '地面积冰条件',
+      '极寒': '极寒条件'
+  };
+  const values = Array.from(grouped, ([reason, names]) => {
+      const label = reason.split('/').map(item => conditionLabels[item] || item).join('/');
+      return `${names.join('、')}（${label}）`;
+  });
   input.value = values.length ? values.join('；') : '无';
   localStorage.setItem('pb_special_condition_text', input.value);
 }
+
+// 汇总说明允许人工调整（例如补充机场、修改条件文字），并随当前发布草稿保存。
+document.getElementById('pb-special-airports')?.addEventListener('input', event => {
+  localStorage.setItem('pb_special_condition_text', event.target.value);
+  window.saveConfirmedDataToLocal?.();
+});
 
 function analyzeCategory(val) {
     if (!val || val === '' || val === '—' || val === '适航') return [];
