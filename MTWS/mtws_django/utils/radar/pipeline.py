@@ -217,28 +217,18 @@ class RadarAlertPipeline:
 
     def _load_airports(self) -> List[dict]:
         from parsers.models import Flight
-        from core.models import AirportLocation
+        from utils.airport_coords import resolve_airport_coords
 
         codes = list(Flight.objects.filter(has_flight=True).values_list('airport_4code', flat=True))
         if not codes:
             return []
-        locs = {
-            r['airport_4code']: r
-            for r in AirportLocation.objects.filter(airport_4code__in=codes).values(
-                'airport_4code', 'latitude', 'longitude'
-            )
-        }
-        out = []
-        for code in codes:
-            loc = locs.get(code)
-            if not loc:
-                continue
-            out.append({
-                'code': code,
-                'lat': float(loc['latitude']),
-                'lon': float(loc['longitude']),
-            })
-        return out
+        found, coord_errors = resolve_airport_coords(codes)
+        if coord_errors:
+            logger.error("雷达机场坐标: " + "；".join(coord_errors))
+        return [
+            {'code': code, 'lat': lat, 'lon': lon}
+            for code, (lat, lon) in found.items()
+        ]
 
     def _ensure_tile_index(self, airports: List[dict]) -> dict:
         from core.models import RadarTileIndex

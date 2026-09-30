@@ -851,7 +851,9 @@ function _fetchCoordsAndRender() {
     })
         .then(r => r.json())
         .then(data => {
-            if (data.success) { _mapCoordCache = data.coords; updateMapAlert(); }
+            if (data.coords) { _mapCoordCache = data.coords; updateMapAlert(); }
+            if (data.error) alert(data.error);
+            else if (!data.success) alert('获取机场坐标失败');
         })
         .catch(err => console.error('[地图告警] 坐标接口失败', err));
 }
