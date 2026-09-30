@@ -7,6 +7,26 @@ from datetime import datetime
 
 DB_NAME = 'mtws_database.db'
 FIELDS_PER_PAGE = 15  # 每页显示的字段数
+ROWS_PER_PAGE = 100   # 数据表每页显示的行数
+
+
+def visible_page_numbers(total_pages, current_page):
+    """返回要展示的页码（从 0 起）。页数过多时用 '...' 省略中间页。"""
+    if total_pages <= 9:
+        return list(range(total_pages))
+    pages = {0, total_pages - 1}
+    for delta in range(-2, 3):
+        pp = current_page + delta
+        if 0 <= pp < total_pages:
+            pages.add(pp)
+    result = []
+    prev = -1
+    for pg in sorted(pages):
+        if prev >= 0 and pg - prev > 1:
+            result.append('...')
+        result.append(pg)
+        prev = pg
+    return result
 
 def get_tables(conn):
     cursor = conn.cursor()
@@ -255,6 +275,9 @@ class DatabaseViewer(tk.Tk):
         self.current_table = None
         self.current_columns = []
         self.rows_map = {}
+        self._all_rows = []
+        self._table_page = 0
+        self._total_pages = 1
 
         self.load_table_names()
 
@@ -269,16 +292,37 @@ class DatabaseViewer(tk.Tk):
         if not sel:
             return
         table_name = self.table_listbox.get(sel[0])
+        if table_name != self.current_table:
+            self._table_page = 0
         columns, rows = get_table_data(self.conn, table_name)
         self.current_table = table_name
         self.current_columns = columns
         self.show_table_data(columns, rows)
 
     def show_table_data(self, columns, rows):
+        self._all_rows = rows
+        total = len(rows)
+        self._total_pages = max(1, (total + ROWS_PER_PAGE - 1) // ROWS_PER_PAGE)
+        if self._table_page >= self._total_pages:
+            self._table_page = self._total_pages - 1
+        if self._table_page < 0:
+            self._table_page = 0
+        self._render_current_page()
+
+    def _render_current_page(self):
+        columns = self.current_columns
         for widget in self.data_frame.winfo_children():
             if widget is not self.button_frame:
                 widget.destroy()
         display_columns = [col for col in columns]
+
+        total = len(self._all_rows)
+        start = self._table_page * ROWS_PER_PAGE
+        end = min(start + ROWS_PER_PAGE, total)
+        page_rows = self._all_rows[start:end]
+
+        # 先放分页条，再让表格占满剩余空间（否则分页条会被挤出可视区域）
+        self._build_table_pager(total, start, end)
 
         # 用 Frame 装载 Treeview 和滚动条
         tree_frame = tk.Frame(self.data_frame)
@@ -302,11 +346,95 @@ class DatabaseViewer(tk.Tk):
             self.tree.column(col, anchor='center', width=150, stretch=True)
 
         self.rows_map = {}
-        for row in rows:
+        for row in page_rows:
             rowid = row[0]
             data = row[1:]
             iid = self.tree.insert('', tk.END, values=data)
             self.rows_map[iid] = rowid
+
+    def _build_table_pager(self, total, start, end):
+        """表格下方页码条：首页/末页、邻近页码、省略号，以及跳转到指定页。"""
+        pager = tk.Frame(self.data_frame, bd=1, relief='groove', bg='#f5f5f5')
+        pager.pack(side='bottom', fill='x', padx=4, pady=(2, 0))
+
+        page = self._table_page
+        pages = self._total_pages
+        if total == 0:
+            info = '共 0 条    第 1 / 1 页'
+        else:
+            info = f'共 {total} 条    第 {page + 1} / {pages} 页    （本页 {start + 1}–{end}）'
+
+        # 第一行：条数信息 + 跳转到指定页（避免和页码按钮挤在同一行被裁切）
+        info_row = tk.Frame(pager, bg='#f5f5f5')
+        info_row.pack(fill='x', padx=4, pady=(3, 0))
+        tk.Label(info_row, text=info, bg='#f5f5f5', font=('', 9)).pack(side='left', padx=4)
+
+        jump_box = tk.Frame(info_row, bg='#f5f5f5')
+        jump_box.pack(side='right', padx=4)
+        tk.Label(jump_box, text='跳至', bg='#f5f5f5').pack(side='left', padx=(0, 2))
+        jump_var = tk.StringVar()
+        jump_entry = tk.Entry(jump_box, textvariable=jump_var, width=6, justify='center')
+        jump_entry.pack(side='left')
+        jump_entry.bind('<Return>', lambda e: self._jump_to_page(jump_var.get()))
+        tk.Label(jump_box, text='页', bg='#f5f5f5').pack(side='left', padx=(2, 2))
+        tk.Button(
+            jump_box, text='前往', width=4,
+            command=lambda: self._jump_to_page(jump_var.get()),
+        ).pack(side='left', padx=1)
+
+        # 第二行：首页 / 上一页 / 页码 / 下一页 / 末页
+        nav_row = tk.Frame(pager, bg='#f5f5f5')
+        nav_row.pack(fill='x', pady=(0, 3))
+        nav = tk.Frame(nav_row, bg='#f5f5f5')
+        nav.pack(anchor='center')
+
+        def nav_btn(text, width, enabled, target):
+            tk.Button(
+                nav, text=text, width=width,
+                state='normal' if enabled else 'disabled',
+                command=(lambda t=target: self._goto_page(t)) if enabled else None,
+            ).pack(side='left', padx=1)
+
+        nav_btn('首页', 4, page > 0, 0)
+        nav_btn('上一页', 6, page > 0, page - 1)
+
+        for item in visible_page_numbers(pages, page):
+            if item == '...':
+                tk.Label(nav, text='…', bg='#f5f5f5').pack(side='left', padx=2)
+                continue
+            is_cur = (item == page)
+            tk.Button(
+                nav,
+                text=str(item + 1),
+                width=max(3, len(str(item + 1))),
+                relief='sunken' if is_cur else 'raised',
+                bg='#3a8ee6' if is_cur else 'SystemButtonFace',
+                fg='white' if is_cur else 'black',
+                command=(lambda: None) if is_cur else (lambda pn=item: self._goto_page(pn)),
+            ).pack(side='left', padx=1)
+
+        nav_btn('下一页', 6, page < pages - 1, page + 1)
+        nav_btn('末页', 4, page < pages - 1, pages - 1)
+
+    def _goto_page(self, page_num):
+        if page_num < 0 or page_num >= self._total_pages or page_num == self._table_page:
+            return
+        self._table_page = page_num
+        self._render_current_page()
+
+    def _jump_to_page(self, raw):
+        text = str(raw).strip()
+        if not text:
+            return
+        try:
+            page = int(text)
+        except ValueError:
+            messagebox.showinfo("提示", "请输入有效的页码数字")
+            return
+        if page < 1 or page > self._total_pages:
+            messagebox.showinfo("提示", f"页码范围为 1 到 {self._total_pages}")
+            return
+        self._goto_page(page - 1)
 
     # ── 新增行 ──────────────────────────────────────────────
 
