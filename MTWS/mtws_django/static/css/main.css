@@ -291,6 +291,16 @@ body {
 }
 
 /* 选中状态样式 */
+body.trend-alert-locked .filter-btn[data-group="alert"] {
+  pointer-events: none;
+  cursor: default;
+}
+
+body.trend-alert-locked .filter-btn[data-group="alert"]:hover {
+  opacity: 1;
+  transform: none;
+}
+
 .filter-btn.selected,
 .action-btn.selected {
   background-color: white;
@@ -3149,7 +3159,7 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
   border-top: 2px solid white;  /* 与上方功能区视觉分割 */
   z-index: 3000;
   box-sizing: border-box;
-  overflow: hidden;
+  overflow: visible;
 }
 
 /* 中国/世界切换开关浮层（绝对定位于地图顶部中央） */
@@ -3361,6 +3371,284 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
   min-height: 0;
   position: relative;
   width: 100%;
+  overflow: hidden;
+}
+
+.map-flight-toolbar .trend-toolbar-main {
+  flex: 0 0 auto;
+}
+
+.map-flight-toolbar .trend-title::before {
+  height: 22px;
+  align-self: center;
+  margin: 0;
+  flex: 0 0 auto;
+}
+
+.map-scope-module,
+.map-wx-module {
+  display: flex;
+  align-items: center;
+  align-self: stretch;
+  margin: 4px 0;
+  border-radius: 6px;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.map-scope-module {
+  margin-right: 8px;
+}
+
+.map-scope-module:hover,
+.map-wx-module:hover {
+  background: #d5e3f3;
+  box-shadow: inset 0 0 0 1px #b4c8de;
+}
+
+.map-wx-module {
+  gap: 8px;
+  padding: 0 10px;
+  background: transparent;
+  border-left: none;
+}
+
+.map-flight-toolbar.is-dark-map,
+.map-flight-toolbar.is-dark-map[data-scheme="slate_gray"] {
+  background: #1b2838;
+  border-bottom: none;
+  color: #d5e4f0;
+  box-shadow: inset 14px 0 18px -16px rgba(0, 0, 0, 0.9);
+}
+
+.map-flight-toolbar.is-dark-map + .map-chart-wrap::before,
+.map-flight-toolbar.is-dark-map + .map-chart-wrap::after {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.map-flight-toolbar.is-dark-map + .map-chart-wrap::before {
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 22px;
+  background: linear-gradient(to bottom, rgba(27, 40, 56, 0.92), rgba(27, 40, 56, 0));
+}
+
+.map-flight-toolbar.is-dark-map + .map-chart-wrap::after {
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 18px;
+  background: linear-gradient(to right, rgba(8, 12, 18, 0.42), rgba(8, 12, 18, 0));
+}
+
+.map-flight-toolbar.is-dark-map .trend-title,
+.map-flight-toolbar.is-dark-map .map-wx-module-title {
+  color: #d7e6f2;
+  border-right-color: #314556;
+}
+
+.map-flight-toolbar.is-dark-map .trend-title::before,
+.map-flight-toolbar.is-dark-map .map-wx-module-title::before {
+  background: #8eb6d6;
+}
+
+.map-flight-toolbar.is-dark-map .trend-switch {
+  background: #101820;
+  border-color: #3d5368;
+  color: #d5e4f0;
+}
+
+.map-flight-toolbar.is-dark-map .trend-switch:has(input:checked),
+.map-flight-toolbar.is-dark-map .map-wx-sat-btn.is-on {
+  background: #1a3348;
+  border-color: #6a9ec4;
+  color: #e8f3fb;
+}
+
+.map-flight-toolbar.is-dark-map .map-wx-box {
+  background: #101820;
+  border-color: #7f98ad;
+}
+
+.map-flight-toolbar.is-dark-map .map-wx-check:has(input:checked) .map-wx-box,
+.map-flight-toolbar.is-dark-map .map-wx-sat-btn.is-on .map-wx-box {
+  background: #2a6a9a;
+  border-color: #8ebfe0;
+}
+
+.map-flight-toolbar.is-dark-map .map-wx-module .map-wx-time {
+  color: #a9c0d2;
+}
+
+.map-flight-toolbar.is-dark-map .map-wx-module .map-wx-time.is-pending {
+  color: #7d92a4;
+}
+
+.map-flight-toolbar.is-dark-map .trend-hours {
+  color: #d5e4f0;
+}
+
+.map-flight-toolbar.is-dark-map .trend-hours input {
+  background: #101820;
+  border-color: #3d5368;
+  color: #d5e4f0;
+}
+
+.map-flight-toolbar.is-dark-map .map-wx-sat-menu {
+  background: #16202a;
+  border-color: #3d5368;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+}
+
+.map-flight-toolbar.is-dark-map .map-wx-sat-menu button {
+  background: transparent;
+  color: #d5e4f0;
+}
+
+.map-flight-toolbar.is-dark-map .map-wx-sat-menu button:hover,
+.map-flight-toolbar.is-dark-map .map-wx-sat-menu button.is-on {
+  background: #24384c;
+}
+
+.map-flight-toolbar.is-dark-map .map-scope-module:hover,
+.map-flight-toolbar.is-dark-map .map-wx-module:hover {
+  background: rgba(74, 130, 176, 0.28);
+  box-shadow: inset 0 0 0 1px rgba(142, 190, 224, 0.5);
+}
+
+.map-wx-module-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 700;
+  color: #1b2838;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.map-wx-module-title::before {
+  content: '';
+  width: 3px;
+  align-self: stretch;
+  height: 22px;
+  background: #1b2838;
+}
+
+.map-wx-check {
+  position: relative;
+}
+
+.map-wx-check input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.map-wx-box {
+  width: 13px;
+  height: 13px;
+  border-radius: 4px;
+  border: 1.5px solid #8aa0b4;
+  background: #fff;
+  box-sizing: border-box;
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.map-wx-box::after {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 0;
+  width: 4px;
+  height: 7px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg) scale(0);
+}
+
+.map-wx-check:has(input:checked) .map-wx-box,
+.map-wx-sat-btn.is-on .map-wx-box {
+  background: #1b2838;
+  border-color: #1b2838;
+}
+
+.map-wx-check:has(input:checked) .map-wx-box::after,
+.map-wx-sat-btn.is-on .map-wx-box::after {
+  transform: rotate(45deg) scale(1);
+}
+
+.map-wx-sat-btn.is-on {
+  border-color: #1b2838;
+  font-weight: 700;
+}
+
+.map-wx-sat {
+  position: relative;
+}
+
+.map-wx-sat-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  min-width: 100%;
+  padding: 4px 0;
+  background: #fff;
+  border: 1px solid #c5d2e0;
+  border-radius: 4px;
+  box-shadow: 0 6px 16px rgba(27, 40, 56, 0.12);
+}
+
+.map-wx-sat-menu[hidden] {
+  display: none;
+}
+
+.map-wx-sat-menu button {
+  border: none;
+  background: #fff;
+  color: #243140;
+  text-align: left;
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.map-wx-sat-menu button:hover,
+.map-wx-sat-menu button.is-on {
+  background: #f4f7fb;
+  font-weight: 700;
+}
+
+.map-wx-module .map-wx-time {
+  margin: 0;
+  font-size: 12px;
+  color: #5c6b7a;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.map-wx-module .map-wx-time.is-show {
+  display: inline;
+}
+
+.map-wx-module .map-wx-time.is-pending {
+  color: #9aa8b5;
+}
+
+.map-wx-module .map-wx-layer-tip {
+  margin: 0;
+  padding: 2px 6px;
+  font-size: 11px;
 }
 .map-chart-pane {
   width: 100%;
@@ -4315,8 +4603,10 @@ body:not(.flight-marks-mode) .flight-past-handle-float {
 /* 强对流雷达预警悬浮列表 */
 .radar-alert-float {
   position: absolute;
-  top: 48px;
-  right: 16px;
+  top: 50%;
+  left: 16px;
+  right: auto;
+  transform: translateY(-50%);
   width: max-content;
   min-width: 0;
   max-width: min(640px, 72vw);
@@ -4615,38 +4905,174 @@ body:not(.flight-marks-mode) .flight-past-handle-float {
   flex-wrap: wrap;
   margin-bottom: 10px;
 }
+#settings-pane-radar-alert > .radar-settings-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 8;
+  background: #fefefe;
+  margin: 0 0 10px;
+  padding: 12px 0 8px;
+  box-shadow: 0 1px 0 #e6ebf0;
+}
+.radar-alarm-colors {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.radar-alarm-colors-label {
+  font-size: 12px;
+  color: #5c6b7c;
+  margin-right: 2px;
+}
+.radar-alarm-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border: 1px solid #c5d2e0;
+  border-radius: 4px;
+  background: #fff;
+  color: #243140;
+  font-size: 12px;
+  line-height: 1.2;
+  cursor: pointer;
+}
+.radar-alarm-switch input {
+  margin: 0;
+  width: 13px;
+  height: 13px;
+  accent-color: #1b2838;
+}
+.radar-alarm-switch:has(input:checked) {
+  font-weight: 700;
+}
+.radar-alarm-switch-r { color: #a32020; }
+.radar-alarm-switch-y { color: #8a6a00; }
+.radar-alarm-switch-g { color: #1e7a45; }
+.radar-alarm-switch-r input { accent-color: #d64545; }
+.radar-alarm-switch-y input { accent-color: #e6b325; }
+.radar-alarm-switch-g input { accent-color: #2e9e5b; }
+.radar-alarm-switch-r:has(input:checked) { border-color: #d64545; background: #fdecec; }
+.radar-alarm-switch-y:has(input:checked) { border-color: #e6b325; background: #fff6dc; }
+.radar-alarm-switch-g:has(input:checked) { border-color: #2e9e5b; background: #e5f6ec; }
 .radar-matrix-actions {
   display: flex;
   gap: 8px;
   margin: 6px 0;
 }
 .radar-matrix-wrap {
-  overflow: visible;
+  overflow-x: auto;
 }
 .radar-matrix-table {
-  width: 100%;
-  table-layout: fixed;
+  width: max-content;
+  min-width: 100%;
+  table-layout: auto;
 }
 .radar-matrix-table th,
 .radar-matrix-table td {
   vertical-align: middle;
   white-space: nowrap;
   text-align: center;
-  padding: 4px 3px;
+  padding: 4px 6px;
   font-size: 11px;
 }
 .radar-matrix-table th:first-child,
 .radar-matrix-table td:first-child,
 .radar-matrix-table tr > th:first-child {
-  width: 112px;
+  width: 120px;
+  min-width: 120px;
   text-align: left;
 }
-.radar-color-sel {
-  width: 100%;
-  max-width: 52px;
-  padding: 2px 0;
-  text-align: center;
+.radar-ring-label,
+.radar-ring-m {
+  display: block;
+  line-height: 1.3;
 }
+.radar-ring-m {
+  font-weight: 500;
+  color: #607080;
+  font-size: 10px;
+}
+.radar-cell {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.radar-cell-count {
+  flex: 1 1 auto;
+  text-align: right;
+  color: #34495e;
+  font-variant-numeric: tabular-nums;
+}
+.radar-color-pick {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 52px;
+  width: 52px;
+}
+.radar-color-pick .radar-color-sel {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+.radar-color-btn {
+  width: 52px;
+  height: 22px;
+  padding: 0 14px 0 0;
+  border: none;
+  border-radius: 2px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 22px;
+  text-align: center;
+  cursor: pointer;
+  position: relative;
+}
+.radar-color-btn::after {
+  content: '';
+  position: absolute;
+  right: 5px;
+  top: 9px;
+  border: 4px solid transparent;
+  border-top-color: currentColor;
+}
+.radar-color-menu {
+  position: fixed;
+  z-index: 21000;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  background: #fff;
+  border: 1px solid #d5dde6;
+  box-shadow: 0 4px 12px rgba(27, 40, 56, 0.16);
+}
+.radar-color-menu[hidden] {
+  display: none;
+}
+.radar-color-opt {
+  margin: 0;
+  padding: 2px 0;
+  border: 1px solid transparent;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 18px;
+  text-align: center;
+  cursor: pointer;
+}
+.radar-color-opt:hover {
+  font-weight: 700;
+  border-color: #1b2838;
+}
+.radar-color-opt.radar-opt-R { background: #e74c3c; color: #fff; }
+.radar-color-opt.radar-opt-Y { background: #f39c12; color: #fff; }
+.radar-color-opt.radar-opt-G { background: #27ae60; color: #fff; }
+.radar-color-opt.radar-opt-N { background: #7f8c8d; color: #fff; }
 .radar-bin-pair,
 .radar-ring-pair {
   display: inline-flex;
@@ -4668,7 +5094,7 @@ body:not(.flight-marks-mode) .flight-past-handle-float {
   display: block;
   overflow-y: auto;
   min-height: 0;
-  padding: 12px 16px 24px;
+  padding: 0 16px 24px;
 }
 .radar-flow {
   margin: 8px 0 10px;
@@ -4857,8 +5283,8 @@ body:not(.flight-marks-mode) .flight-past-handle-float {
   width: 64px;
 }
 .radar-z7-levels {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   gap: 12px;
   margin-bottom: 12px;
 }
@@ -4871,6 +5297,19 @@ body:not(.flight-marks-mode) .flight-past-handle-float {
 }
 .radar-z7-level[data-level="0"] { border-top: 3px solid #2980b9; }
 .radar-z7-level[data-level="1"] { border-top: 3px solid #c0392b; }
+.radar-count-note {
+  margin-top: 2px;
+  padding: 10px 12px;
+  background: #f4f7f4;
+  border: 1px solid #d5e4d6;
+  border-radius: 6px;
+  color: #2c3e50;
+  font-size: 12px;
+  line-height: 1.55;
+}
+.radar-count-note p {
+  margin: 0;
+}
 .radar-z7-level-head {
   display: flex;
   flex-wrap: wrap;
@@ -4884,10 +5323,10 @@ body:not(.flight-marks-mode) .flight-past-handle-float {
   font-size: 14px;
   min-width: 72px;
 }
-.radar-color-sel.radar-c-R { background: #e74c3c; color: #fff; }
-.radar-color-sel.radar-c-Y { background: #f39c12; color: #fff; }
-.radar-color-sel.radar-c-G { background: #27ae60; color: #fff; }
-.radar-color-sel.radar-c-N { background: #7f8c8d; color: #fff; }
+.radar-color-btn.radar-c-R { background: #e74c3c; color: #fff; }
+.radar-color-btn.radar-c-Y { background: #f39c12; color: #fff; }
+.radar-color-btn.radar-c-G { background: #27ae60; color: #fff; }
+.radar-color-btn.radar-c-N { background: #7f8c8d; color: #fff; }
 .settings-section-label {
   display: block;
   font-weight: 700;

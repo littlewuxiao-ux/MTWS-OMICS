@@ -1,6 +1,7 @@
 /**
  * 实况趋势告警结果表。
- * 红黄绿勾选只统计左侧「趋势」上的数量；表格显示跟着主页的红黄绿无。
+ * 导航悬浮的红黄绿只统计左侧「趋势」数量。
+ * 进入本视图时顶部红/黄/绿锁定为选中、无告警取消，表格只显示这三色；离开后恢复进入前的勾选。
  */
 (function () {
   'use strict';
@@ -35,9 +36,30 @@
       .replace(/"/g, '&quot;');
   }
 
+  const HOURS_KEY = 'mtws_flight_future_hours';
+
   function scopeValue() {
     const picked = document.querySelector('input[name="trend-scope"]:checked');
     return picked ? picked.value : 'has_flight';
+  }
+
+  function readStoredHours() {
+    const raw = localStorage.getItem(HOURS_KEY);
+    const n = parseInt(raw == null || raw === '' ? '2' : raw, 10);
+    if (!Number.isFinite(n)) return 2;
+    return Math.max(0, Math.min(9, n));
+  }
+
+  function futureHours() {
+    const input = document.getElementById('trend-future-hours');
+    const n = input ? parseInt(input.value, 10) : readStoredHours();
+    if (!Number.isFinite(n)) return 2;
+    return Math.max(0, Math.min(9, n));
+  }
+
+  function syncHoursVisibility() {
+    const label = document.getElementById('trend-hours-label');
+    if (label) label.classList.toggle('is-on', scopeValue() === 'recent2h');
   }
 
   function statColors() {
@@ -303,8 +325,14 @@
     setStatus('');
     try {
       const scope = scopeValue();
+      const hours = futureHours();
       sessionStorage.setItem('mtws_trend_scope', scope);
-      const res = await fetch(apiUrl('trend-alert/results/?scope=' + encodeURIComponent(scope)), { headers: headers() });
+      localStorage.setItem(HOURS_KEY, String(hours));
+      syncHoursVisibility();
+      const res = await fetch(
+        apiUrl('trend-alert/results/?scope=' + encodeURIComponent(scope) + '&future_hours=' + hours),
+        { headers: headers() }
+      );
       const data = await res.json();
       if (!data.success) {
         payload = null;
@@ -335,6 +363,17 @@
       const radio = panel.querySelector(`input[name="trend-scope"][value="${stored}"]`);
       if (radio) radio.checked = true;
     }
+    const hoursInput = document.getElementById('trend-future-hours');
+    if (hoursInput) {
+      hoursInput.value = String(readStoredHours());
+      hoursInput.addEventListener('change', () => {
+        hoursInput.value = String(futureHours());
+        const mapHours = document.getElementById('map-future-hours');
+        if (mapHours) mapHours.value = hoursInput.value;
+        load();
+      });
+    }
+    syncHoursVisibility();
     panel.querySelectorAll('input[name="trend-scope"]').forEach((el) => {
       el.addEventListener('change', load);
     });
@@ -353,12 +392,28 @@
     });
   }
 
+  function lockHomeAlertForTrend() {
+    document.body.classList.add('trend-alert-locked');
+    document.querySelectorAll('.filter-btn[data-group="alert"]').forEach((btn) => {
+      const value = btn.getAttribute('data-value');
+      btn.classList.toggle('selected', value === 'red' || value === 'yellow' || value === 'green');
+    });
+  }
+
+  function unlockHomeAlertForTrend() {
+    document.body.classList.remove('trend-alert-locked');
+    if (typeof updateAlertButtonState === 'function') updateAlertButtonState();
+  }
+
   function startTrendView() {
     bindOnce();
+    lockHomeAlertForTrend();
     load();
   }
 
-  function stopTrendView() {}
+  function stopTrendView() {
+    unlockHomeAlertForTrend();
+  }
 
   window.startTrendView = startTrendView;
   window.stopTrendView = stopTrendView;

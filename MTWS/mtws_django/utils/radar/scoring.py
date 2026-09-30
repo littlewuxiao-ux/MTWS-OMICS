@@ -14,7 +14,7 @@ def higher_alert(a: str, b: str) -> str:
 
 
 def find_bin_for_count(c_n: float, m_n: float, bins: List[dict]) -> Optional[int]:
-    """C_n=0 不告警；N0 的 0 为开区间。"""
+    """像素数为 0 不入档。下限为 0 时按开区间，避免 0 个像素落入最低档。"""
     if c_n <= 0:
         return None
     for i, b in enumerate(bins):

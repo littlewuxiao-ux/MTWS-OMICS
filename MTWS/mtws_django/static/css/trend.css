@@ -55,6 +55,30 @@
   accent-color: #1b2838;
 }
 
+.trend-hours {
+  display: none;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #1b2838;
+}
+
+.trend-hours.is-on {
+  display: inline-flex;
+}
+
+.trend-hours input {
+  width: 42px;
+  height: 22px;
+  padding: 0 4px;
+  border: 1px solid #9aafc4;
+  border-radius: 4px;
+  background: #fff;
+  color: #1b2838;
+  font-size: 12px;
+  text-align: center;
+}
+
 .trend-switch:has(input:checked) {
   border-color: #1b2838;
   background: #e7eef6;

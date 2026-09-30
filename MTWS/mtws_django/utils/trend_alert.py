@@ -47,8 +47,6 @@ ROW_LABELS = {
 COLOR_RANK = {'G': 1, 'Y': 2, 'R': 3}
 HOUR_MS = 3600 * 1000
 DAY_MS = 24 * HOUR_MS
-TWO_HOUR_MS = 2 * HOUR_MS
-FUTURE_48_MS = 48 * HOUR_MS
 MAX_HOURS = 72
 EXTRA_SCORE_CAP = 3
 _CLOUD_RE = re.compile(r'\b(VV|FEW|SCT|BKN|OVC|NSC|SKC|CLR|NCD)(\d{3})?\b', re.I)
@@ -798,100 +796,11 @@ def groups_for_airport(config: dict, airport: str, universe: set) -> list:
     return selected
 
 
-def _recent_flight(events, en_route, dep_at, land_at, arr_link, now_ms: int) -> bool:
-    begin = now_ms - TWO_HOUR_MS
-    if events:
-        for event in events:
-            if not isinstance(event, dict):
-                continue
-            kind = event.get('kind')
-            at = event.get('at')
-            link = event.get('link')
-            if kind in ('off', 'dst') and at is not None and begin <= int(at) <= now_ms:
-                return True
-            if kind == 'lnd' and at is not None and begin <= int(at) <= now_ms:
-                return True
-            if kind in ('enr', 'oen'):
-                return True
-            if kind in ('arr', 'enr', 'oen') and link is not None and begin <= int(link) <= now_ms:
-                return True
-        return False
-    if en_route:
-        return True
-    for ts in (dep_at, land_at, arr_link):
-        if ts is not None and begin <= int(ts) <= now_ms:
-            return True
-    return False
+def airport_universe(scope: str, now_ms: Optional[int] = None, future_hours: int = 2) -> list:
+    """与雷达共用 airport_scope。后台保留未来 9 小时，避免较宽的本机设置被清掉。"""
+    from utils.airport_scope import airport_codes_for_scope
 
-
-def _in_next_48h(ts, now_ms: int) -> bool:
-    if ts is None:
-        return False
-    try:
-        value = int(ts)
-    except (TypeError, ValueError):
-        return False
-    return now_ms <= value <= now_ms + FUTURE_48_MS
-
-
-def _airport_has_future_flight(events, dep_at, land_at, arr_link, now_ms: int) -> bool:
-    """未来 48 小时内有本场起飞或到达时刻。"""
-    if isinstance(events, list) and events:
-        for event in events:
-            if isinstance(event, dict) and _in_next_48h(event.get('at'), now_ms):
-                return True
-        return False
-    return any(_in_next_48h(ts, now_ms) for ts in (dep_at, land_at, arr_link))
-
-
-def airport_universe(scope: str, now_ms: Optional[int] = None) -> list:
-    from parsers.models import Flight
-
-    now_ms = int(now_ms if now_ms is not None else time.time() * 1000)
-    if scope == 'has_flight':
-        found = set()
-        rows = Flight.objects.values(
-            'airport_4code', 'events',
-            'closest_departure_time_at_this_airport',
-            'closest_landing_time_of_arriving_flight',
-            'closest_departure_time_of_arriving_flight',
-        )
-        for row in rows:
-            code = str(row.get('airport_4code') or '').upper()
-            if not code:
-                continue
-            if _airport_has_future_flight(
-                row.get('events'),
-                row.get('closest_departure_time_at_this_airport'),
-                row.get('closest_landing_time_of_arriving_flight'),
-                row.get('closest_departure_time_of_arriving_flight'),
-                now_ms,
-            ):
-                found.add(code)
-        return sorted(found)
-    if scope != 'recent2h':
-        return []
-    found = set()
-    rows = Flight.objects.values(
-        'airport_4code', 'events', 'en_route',
-        'closest_departure_time_at_this_airport',
-        'closest_landing_time_of_arriving_flight',
-        'closest_departure_time_of_arriving_flight',
-    )
-    for row in rows:
-        code = str(row.get('airport_4code') or '').upper()
-        if not code:
-            continue
-        if _recent_flight(
-            row.get('events'),
-            row.get('en_route'),
-            row.get('closest_departure_time_at_this_airport'),
-            row.get('closest_landing_time_of_arriving_flight'),
-            row.get('closest_departure_time_of_arriving_flight'),
-            now_ms,
-        ):
-            found.add(code)
-    return sorted(found)
+    return airport_codes_for_scope(scope, future_hours, now_ms)
 
 
 def max_lookback_ms(groups: list) -> int:
@@ -1005,7 +914,11 @@ def _unpack_series(packed: list, slots: list) -> list:
 
 
 def _active_universe(now_ms: int) -> set:
-    return set(airport_universe('has_flight', now_ms)) | set(airport_universe('recent2h', now_ms))
+    from utils.airport_scope import FUTURE_HOURS_MAX
+
+    return set(airport_universe('has_flight', now_ms)) | set(
+        airport_universe('recent2h', now_ms, FUTURE_HOURS_MAX)
+    )
 
 
 def clear_airports(codes) -> None:
@@ -1088,11 +1001,11 @@ def refresh_active_airports(now_ms: Optional[int] = None) -> None:
     refresh_airports(sorted(_active_universe(now_ms)), now_ms)
 
 
-def build_results(scope: str, now_ms: Optional[int] = None) -> dict:
+def build_results(scope: str, now_ms: Optional[int] = None, future_hours: int = 2) -> dict:
     from core.models import AirportTrendAlert
 
     now_ms = int(now_ms if now_ms is not None else time.time() * 1000)
-    universe = airport_universe(scope, now_ms)
+    universe = airport_universe(scope, now_ms, future_hours)
     slots = build_slots(now_ms)
     stored = AirportTrendAlert.objects.filter(airport_4code__in=universe)
     airports = []
@@ -1280,9 +1193,6 @@ def _self_check() -> None:
     assert with_speci[0]['latest']['text'] == '9' and with_speci[0]['latest']['speci']
     quiet = evaluate_airport(only_hour, [], now, [hour_slot, half_slot])
     assert quiet['color'] == 'N' and quiet['rows'] == []
-    assert _in_next_48h(now + HOUR_MS, now)
-    assert not _in_next_48h(now - HOUR_MS, now)
-    assert not _in_next_48h(now + 49 * HOUR_MS, now)
     merged = merge_hits([
         {'color': 'Y', 'score': 9, 'labels': ['甲'], 'rows': ['temperature']},
         {'color': 'R', 'score': 4, 'labels': ['乙'], 'rows': ['wind']},

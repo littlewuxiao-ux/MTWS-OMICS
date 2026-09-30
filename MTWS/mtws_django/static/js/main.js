@@ -1591,6 +1591,7 @@ function handleFilterClick(button) {
             }
         }
     } else if (group === 'alert') {
+        if (document.body.classList.contains('trend-alert-locked')) return;
         // 告警等级筛选：特殊逻辑
         handleAlertFilter(value);
 

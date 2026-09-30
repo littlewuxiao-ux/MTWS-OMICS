@@ -26,7 +26,7 @@ def _default_rings_km() -> List[List[float]]:
 
 def _default_count_bins() -> List[dict]:
     return [
-        {'id': 'N0', 'lo': 0, 'hi': 5, 'lo_open': True},
+        {'id': 'N0', 'lo': 1, 'hi': 5, 'lo_open': False},
         {'id': 'N1', 'lo': 6, 'hi': 10, 'lo_open': False},
         {'id': 'N2', 'lo': 11, 'hi': 15, 'lo_open': False},
         {'id': 'N3', 'lo': 16, 'hi': 20, 'lo_open': False},
@@ -97,6 +97,8 @@ def default_radar_config() -> Dict[str, Any]:
         'smooth': 0,
         'snow': 0,
         'color_scheme': 2,
+        # 计入告警的颜色：默认红、黄（Y 及以上）
+        'alarm_colors': ['R', 'Y'],
     }
 
 
@@ -153,6 +155,20 @@ def _normalize_z7_levels(cfg: Dict[str, Any], defaults: Dict[str, Any]) -> List[
     return levels
 
 
+def _normalize_alarm_colors(raw, present: bool) -> List[str]:
+    """勾选集始终是从红往下的一段：仅红、红黄、或红黄绿。未保存过则默认红黄。"""
+    if not present or not isinstance(raw, (list, tuple)):
+        return ['R', 'Y']
+    picked = {c for c in raw if c in ('R', 'Y', 'G')}
+    if 'G' in picked:
+        return ['R', 'Y', 'G']
+    if 'Y' in picked:
+        return ['R', 'Y']
+    if 'R' in picked:
+        return ['R']
+    return []
+
+
 def merge_config(stored: Dict[str, Any] | None) -> Dict[str, Any]:
     """用默认值补齐缺失键；radius_km 始终等于最大环外半径。"""
     cfg = default_radar_config()
@@ -174,4 +190,6 @@ def merge_config(stored: Dict[str, Any] | None) -> Dict[str, Any]:
     out['count_bins'] = deepcopy(out['z7_levels'][0]['count_bins'])
     out['color_matrix'] = deepcopy(out['z7_levels'][0]['color_matrix'])
     out['radius_km'] = max_ring_radius_km(out.get('rings_km'))
+    stored_has_colors = isinstance(stored, dict) and 'alarm_colors' in stored
+    out['alarm_colors'] = _normalize_alarm_colors(out.get('alarm_colors'), stored_has_colors)
     return out

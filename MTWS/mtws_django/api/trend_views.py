@@ -70,8 +70,11 @@ def trend_alert_results(request, time_mode='current'):
     identity = resolve_access_identity(request)
     if not has_perm(identity, 'view_trend', 'display'):
         return JsonResponse({'success': False, 'error': '无实况趋势告警查看权限'}, status=403)
+    from utils.airport_scope import clamp_future_hours
+
     scope = (request.GET.get('scope') or 'has_flight').strip()
     if scope not in ('has_flight', 'recent2h'):
         return JsonResponse({'success': False, 'error': '机场范围无效'}, status=400)
-    result = build_results(scope)
+    future_hours = clamp_future_hours(request.GET.get('future_hours'))
+    result = build_results(scope, future_hours=future_hours)
     return JsonResponse({'success': True, **result})
