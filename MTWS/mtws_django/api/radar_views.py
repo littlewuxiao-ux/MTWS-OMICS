@@ -65,23 +65,19 @@ def radar_alert_run(request, time_mode='current'):
 @require_http_methods(['POST'])
 @csrf_exempt
 def radar_rebuild_tile_index(request, time_mode='current'):
-    from core.models import RadarTileIndex, RadarAlertConfig, AirportLocation
+    from core.models import RadarTileIndex, RadarAlertConfig
     from parsers.models import Flight
     from utils.radar.tiles import build_airport_tile_index
 
     row = RadarAlertConfig.objects.order_by('id').first()
     cfg = merge_config(row.config if row else None)
 
+    from utils.airport_coords import resolve_airport_coords
     codes = list(Flight.objects.filter(has_flight=True).values_list('airport_4code', flat=True))
-    locs = {
-        r['airport_4code']: r
-        for r in AirportLocation.objects.filter(airport_4code__in=codes).values(
-            'airport_4code', 'latitude', 'longitude'
-        )
-    }
+    found, coord_errors = resolve_airport_coords(codes)
     airports = [
-        {'code': c, 'lat': float(locs[c]['latitude']), 'lon': float(locs[c]['longitude'])}
-        for c in codes if c in locs
+        {'code': c, 'lat': lat, 'lon': lon}
+        for c, (lat, lon) in found.items()
     ]
     zooms = [int(cfg['overview_z']), int(cfg['mid_z']), int(cfg['final_z'])]
     index = build_airport_tile_index(airports, float(cfg['radius_km']), zooms)
@@ -92,11 +88,14 @@ def radar_rebuild_tile_index(request, time_mode='current'):
     }
     RadarTileIndex.objects.all().delete()
     RadarTileIndex.objects.create(index_data=index, fingerprint=fingerprint)
-    return JsonResponse({
+    payload = {
         'success': True,
         'airport_count': len(airports),
         'unions': {k: len(v) for k, v in (index.get('unions') or {}).items()},
-    })
+    }
+    if coord_errors:
+        payload['error'] = '；'.join(coord_errors)
+    return JsonResponse(payload)
 
 
 def _radar_overlay_meta():
@@ -185,7 +184,7 @@ def _echo_waiting(seconds: float):
 @require_http_methods(['GET'])
 def radar_echo(request, time_mode='current'):
     """机场周边 200 公里、Z7 雷达回波。达到每分钟上限时返回等待秒数，不下载瓦片。"""
-    from core.models import AirportLocation, RadarAlertConfig
+    from core.models import RadarAlertConfig
     from utils.radar.config_defaults import merge_config
     from utils.radar.echo import (
         EchoError, EchoWaiting, cache_get, cache_put, compose_echo, tiles_for_pixel_box,
@@ -198,9 +197,12 @@ def radar_echo(request, time_mode='current'):
     if len(code) != 4 or not code.isalnum():
         return JsonResponse({'success': False, 'error': '无效的四字代码'}, status=400)
 
-    loc = AirportLocation.objects.filter(airport_4code=code).first()
-    if not loc or loc.latitude is None or loc.longitude is None:
-        return JsonResponse({'success': False, 'error': '未找到该机场坐标'}, status=404)
+    from utils.airport_coords import resolve_airport_coords
+    found, coord_errors = resolve_airport_coords([code])
+    if code not in found:
+        detail = coord_errors[0] if coord_errors else '未找到该机场坐标'
+        return JsonResponse({'success': False, 'error': detail}, status=404)
+    lat, lon = found[code]
 
     cfg_row = RadarAlertConfig.objects.order_by('id').first()
     cfg = merge_config(cfg_row.config if cfg_row else None)
@@ -226,8 +228,6 @@ def radar_echo(request, time_mode='current'):
             host, path, frame_time = client.latest_frame_reserved()
             host = host.rstrip('/')
 
-        lat = float(loc.latitude)
-        lon = float(loc.longitude)
         mpp = meters_per_pixel(lat, z, tile_size)
         full_side = max(2, int(round(_ECHO_RADIUS_KM * 1000.0 / mpp * 2)))
         cx = lon_to_x(lon, z) * tile_size

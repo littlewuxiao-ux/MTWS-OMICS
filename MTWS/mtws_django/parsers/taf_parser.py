@@ -5,8 +5,8 @@ TAF报文解析程序
 完整移植自原始的mtws_03_taf解析.py，适配Django项目
 """
 
-from avwx_custom import Taf as AvwxTaf
-#  使用本地移植的avwx-engine代码，避免外部依赖
+from avwx_custom.current.taf import parse as parse_taf_report
+#  直接解析报文原文，不构造 Taf(机场代码)，因此不读取 stations.json
 import math
 import re
 import logging
@@ -20,6 +20,13 @@ from core.models import AirportAlertThresholds, AirportInfo, WeatherAlertLevels
 from data_adapters.adapter_factory import AdapterFactory
 
 logger = logging.getLogger('mtws.parsers')
+
+
+class _ParsedTaf:
+    """只保留入库所需的解析结果，避免构造 avwx 的 Taf 对象。"""
+
+    def __init__(self, data):
+        self.data = data
 
 def calc_taf_expected_issue_ms(now_ms, taf_init_time, taf_max_delay, import_check_interval, leeway_minutes):
     """
@@ -530,25 +537,21 @@ class TafParser:
             # 存储原始报文
             self.content = taf_text.strip()
             
-            # 使用AVWX解析
-            if station_code:
-                self.taf_obj = AvwxTaf(station_code)
-                parsed = self.taf_obj.parse(taf_text)
-            else:
-                # 从报文中提取机场代码
+            # 直接解析原文。单位按四字码前缀判断，不查 stations.json。
+            if not station_code:
                 words = taf_text.split()
-                station_from_text = None
                 for word in words:
                     if len(word) == 4 and word.isalpha() and word.upper() not in ['TAF', 'AMD', 'COR']:
-                        station_from_text = word.upper()
+                        station_code = word.upper()
                         break
-                
-                if station_from_text:
-                    self.taf_obj = AvwxTaf(station_from_text)
-                    parsed = self.taf_obj.parse(taf_text)
-                else:
-                    parsed = False
-                    self.taf_obj = None
+
+            self.taf_obj = None
+            parsed = False
+            if station_code:
+                data, _units, _sanitization = parse_taf_report(station_code, self.content)
+                if data is not None:
+                    self.taf_obj = _ParsedTaf(data)
+                    parsed = True
             
             if not parsed or not self.taf_obj or not self.taf_obj.data:
                 self.abnormal_label = 'FAIL'

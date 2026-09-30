@@ -115,7 +115,7 @@ def airport_report_text(request, airport_code, time_mode='current'):
 @require_http_methods(["GET"])
 def airport_coords(request, time_mode=None):
     """
-    按机场代码列表返回经纬度坐标（来自 airport_location 表）。
+    按机场代码列表返回经纬度。先读 airport_location，本次请求中缺失的机场再访问跑道接口并写回。
     参数：codes=ZBAA,ZSSS,ZGGG,...（逗号分隔，必填）
     响应：{ success: true, coords: { "ZBAA": { lat, lon }, ... } }
     """
@@ -128,38 +128,21 @@ def airport_coords(request, time_mode=None):
         if not codes:
             return JsonResponse({'success': True, 'coords': {}})
 
-        from core.models import AirportLocation
-        qs = AirportLocation.objects.filter(
-            airport_4code__in=codes
-        ).values('airport_4code', 'latitude', 'longitude')
-
+        from utils.airport_coords import resolve_airport_coords
+        found, errors = resolve_airport_coords(codes)
         coords = {
-            row['airport_4code']: {
-                'lat': float(row['latitude']),
-                'lon': float(row['longitude'])
-            }
-            for row in qs
+            code: {'lat': lat, 'lon': lon}
+            for code, (lat, lon) in found.items()
         }
-        return JsonResponse({'success': True, 'coords': coords})
+        if errors and not coords:
+            return JsonResponse({'success': False, 'error': '；'.join(errors)}, status=404)
+        payload = {'success': True, 'coords': coords}
+        if errors:
+            payload['error'] = '；'.join(errors)
+        return JsonResponse(payload)
     except Exception as e:
         logger.error(f'获取机场坐标失败: {e}')
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
-
-
-def _get_coords_from_db(airport_code: str) -> tuple[float, float] | tuple[None, None]:
-    """
-    优先从 airport_location 数据表获取机场坐标。
-    找到返回 (lat, lon)，否则返回 (None, None)。
-    """
-    try:
-        from core.models import AirportLocation
-        loc = AirportLocation.objects.filter(airport_4code=airport_code).values('latitude', 'longitude').first()
-        if loc:
-            logger.info(f"机场{airport_code} 坐标来自数据库: lat={loc['latitude']}, lon={loc['longitude']}")
-            return loc['latitude'], loc['longitude']
-    except Exception as e:
-        logger.warning(f"从数据库获取机场{airport_code}坐标失败: {str(e)}")
-    return None, None
 
 
 def _get_coords_from_api(airport_code: str) -> tuple[float | None, float | None, list]:
@@ -167,19 +150,9 @@ def _get_coords_from_api(airport_code: str) -> tuple[float | None, float | None,
     从 aviationweather.gov API 获取机场坐标及跑道信息。
     返回 (lat, lon, runways)；请求失败时抛出 requests.RequestException。
     """
-    api_url = f"https://aviationweather.gov/api/data/airport?ids={airport_code}&format=json"
-    response = requests.get(api_url, timeout=10)
-    response.raise_for_status()
-    airport_data = response.json()
-
-    if not airport_data:
-        return None, None, []
-
-    airport_info = airport_data[0]
-    lat = airport_info.get('lat')
-    lon = airport_info.get('lon')
-    runways = airport_info.get('runways', [])
-    return lat, lon, runways
+    from utils.airport_coords import fetch_aviationweather_airport
+    info = fetch_aviationweather_airport(airport_code)
+    return info['lat'], info['lon'], info['runways']
 
 
 def _calc_sun_times(lat: float, lon: float, airport_code: str) -> dict:
@@ -211,34 +184,39 @@ def airport_extra_info(request, airport_code, time_mode='current'):
 
     坐标获取策略：
       1. 优先查询 airport_location 数据表；
-      2. 数据表中无记录时，回退到 aviationweather.gov API。
-    跑道信息始终来自 aviationweather.gov API。
+      2. 本次调用发现表中没有或读取失败时，用跑道接口的坐标补写后再使用。
+    跑道信息始终来自 aviationweather.gov API。不做坐标巡检。
     """
     try:
-        # ── Step 1: 从数据库获取坐标（优先） ──────────────────────────
-        lat, lon = _get_coords_from_db(airport_code)
-        coord_source = 'db'
+        from utils.airport_coords import read_local_coord, store_airport_coord
 
-        # ── Step 2: 从外部 API 获取跑道信息，坐标按需补全 ────────────
+        code = airport_code.upper()
+        local = read_local_coord(code)
+        lat, lon = local if local else (None, None)
+        coord_source = 'db' if local else None
+
+        # 跑道每次都向该接口取。本地没有坐标时，用同一次响应补写，避免再请求一次。
         runway_ids = []
         try:
-            api_lat, api_lon, runways = _get_coords_from_api(airport_code)
+            api_lat, api_lon, runways = _get_coords_from_api(code)
             runway_ids = [r.get('id', '') for r in runways if r.get('id')]
-
-            if lat is None or lon is None:
-                # 数据库未找到坐标，使用 API 返回值
-                lat, lon = api_lat, api_lon
+            if local is None and api_lat is not None and api_lon is not None:
+                store_airport_coord(code, api_lat, api_lon)
+                lat, lon = float(api_lat), float(api_lon)
                 coord_source = 'api'
-                if lat is not None:
-                    logger.info(f"机场{airport_code} 坐标回退至外部API: lat={lat}, lon={lon}")
-                else:
-                    logger.warning(f"机场{airport_code} 外部API亦未返回坐标")
-
         except requests.RequestException as e:
             logger.error(f"请求aviationweather.gov API失败: {str(e)}")
             if lat is None:
-                # 数据库和 API 均无坐标，无法继续
-                return JsonResponse({'success': False, 'error': 'API请求失败且数据库中无机场坐标'})
+                return JsonResponse({
+                    'success': False,
+                    'error': f'未能获取机场 {code} 的坐标：{e}',
+                })
+
+        if lat is None or lon is None:
+            return JsonResponse({
+                'success': False,
+                'error': f'未能获取机场 {code} 的坐标：接口未返回坐标',
+            })
 
         # ── Step 3: 计算日出日落 ───────────────────────────────────────
         sun_times = {'sunrise': None, 'sunset': None, 'sunrise_utc': None, 'sunset_utc': None}

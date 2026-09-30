@@ -3,8 +3,7 @@
 从 open-meteo API 获取各有航班机场的温度预报数据，
 截取当前时刻起 48 小时内符合极端温度阈值的数据并缓存。
 
-机场坐标来源：airport_location 数据表（core.AirportLocation），
-坐标已在导入时转换为十进制度数，无需运行时格式转换。
+机场坐标来源：airport_location。本次解析用到、而表中没有的机场，才请求跑道接口并写回。
 """
 
 import logging
@@ -85,23 +84,26 @@ class NwpParser:
             _nwp_last_updated = datetime.now(timezone.utc)
             return {'success': True, 'airport_count': 0, 'record_count': 0, 'data': {}}
 
-        # ── Step 2: 从数据库获取机场坐标 ──
+        # ── Step 2: 按需获取机场坐标（本地表优先，缺失时写回接口结果）──
         try:
-            from core.models import AirportLocation
-            loc_qs = AirportLocation.objects.filter(
-                airport_4code__in=airport_codes
-            ).values('airport_4code', 'latitude', 'longitude')
-            locations = {row['airport_4code']: row for row in loc_qs}
+            from utils.airport_coords import resolve_airport_coords
+            found, coord_errors = resolve_airport_coords(airport_codes)
         except Exception as e:
             logger.error(f"NWP解析: 查询机场坐标失败: {e}")
             return {'success': False, 'message': f'查询机场坐标失败: {e}',
                     'airport_count': 0, 'record_count': 0, 'data': {}}
 
-        if not locations:
-            logger.warning("NWP解析: airport_location 表中未找到任何匹配机场，跳过解析")
-            _nwp_cache = {}
-            _nwp_last_updated = datetime.now(timezone.utc)
-            return {'success': True, 'airport_count': 0, 'record_count': 0, 'data': {}}
+        if coord_errors:
+            logger.error("NWP解析: " + "；".join(coord_errors))
+        if not found:
+            message = "；".join(coord_errors) or "未能获取机场坐标"
+            return {'success': False, 'message': message,
+                    'airport_count': 0, 'record_count': 0, 'data': {}}
+
+        locations = {
+            code: {'latitude': lat, 'longitude': lon}
+            for code, (lat, lon) in found.items()
+        }
 
         logger.info(
             f"NWP解析: 找到 {len(locations)} 个机场坐标"
