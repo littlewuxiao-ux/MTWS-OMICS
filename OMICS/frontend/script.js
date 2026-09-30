@@ -1363,6 +1363,25 @@ document.addEventListener('DOMContentLoaded', async () => {
         downloadAirports.disabled = isAll;
         if (!isAll && manualAirportDefault?.checked) downloadAirports.value = localStorage.getItem('sf_def_manual_aps') || 'ZBAA ZGSZ ZHEC ZSHC';
     }
+    function showManualEvalPersonChoice(publishDateText = '') {
+        const personContainer = document.getElementById('eval-person-container');
+        const publishDate = document.getElementById('manual-forecast-publish-date');
+        if (publishDate) publishDate.textContent = publishDateText;
+        if (evalPersonSelect) evalPersonSelect.value = '';
+        if (personContainer) {
+            personContainer.style.display = 'flex';
+            personContainer.classList.remove('hidden');
+        }
+    }
+    async function downloadManualObservationsOnly(requested, reason = '') {
+        showManualEvalPersonChoice();
+        await new Promise(resolve => downloadData(startTimeHidden.value, endTimeHidden.value, requested.join(' '), ['SA', 'SP'], data => {
+            const lines = typeof data === 'string' ? data.split('\n').filter(line => line.trim().length > 10) : Object.values(data || {}).flat().filter(Boolean);
+            if (lines.length) { metarInput.value = lines.join('\n'); addMetarBtn?.click(); }
+            resolve();
+        }));
+        alert(reason ? `扫描预报失败：${reason}\n已回退按目标机场下载实况，请选择预报发布人后手动录入预报。` : '已按目标机场下载实况，请选择预报发布人后手动录入预报。');
+    }
     manualAirportDefault?.addEventListener('change', syncManualAirportChoice);
     manualAirportAll?.addEventListener('change', syncManualAirportChoice);
     downloadAirports?.addEventListener('input', () => {
@@ -1374,7 +1393,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         const evaluationDate = datePickerInput?.value || '';
         const root = document.getElementById('manual-forecast-path')?.value.trim() || (currentMode === 'taf' ? '.' : '');
         if (!evaluationDate) return alert('请先选择评定日期');
-        if (!root) return alert('请先在高级设置中配置“席位预报24小时预报路径”');
 
         const scope = manualAirportAll?.checked && isTwentyFourHourRange() ? 'all' : 'default';
         const requested = downloadAirports.value.split(/[\s,]+/).map(v => v.trim().toUpperCase()).filter(Boolean);
@@ -1390,12 +1408,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                     const utc = new Date(Date.UTC(y, m, d, h - 8));
                     return `${utc.getUTCFullYear()}${String(utc.getUTCMonth() + 1).padStart(2, '0')}${String(utc.getUTCDate()).padStart(2, '0')}${String(utc.getUTCHours()).padStart(2, '0')}00`;
                 };
+                showManualEvalPersonChoice();
                 await new Promise(resolve => downloadData(toUtc(startTimeHidden.value), toUtc(endTimeHidden.value), requested.join(' '), ['SA', 'SP'], data => {
                     const lines = typeof data === 'string' ? data.split('\n').filter(line => line.trim().length > 10) : Object.values(data || {}).flat().filter(Boolean);
                     if (lines.length) { metarInput.value = lines.join('\n'); addMetarBtn?.click(); }
                     resolve();
                 }));
-                alert('已按目标机场下载实况。');
+                alert('已按目标机场下载实况，请选择预报发布人后手动录入预报。');
                 return;
             }
             if (currentMode === 'taf') {
@@ -1412,6 +1431,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 alert('鎵弿棰勬姤澶辫触，已回退为按目标机场下载实况。');
                 return;
             }
+            if (!root) {
+                await downloadManualObservationsOnly(requested, '未配置席位预报24小时预报路径');
+                return;
+            }
             const form = new FormData();
             form.append('manual_forecast_path', root);
             form.append('evaluation_date', evaluationDate);
@@ -1419,23 +1442,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const result = await response.json();
             if (!result.success) {
                 const reason = result.error || '扫描预报失败';
-                await new Promise(resolve => downloadData(startTimeHidden.value, endTimeHidden.value, requested.join(' '), ['SA', 'SP'], data => {
-                    const lines = typeof data === 'string' ? data.split('\n').filter(line => line.trim().length > 10) : Object.values(data || {}).flat().filter(Boolean);
-                    if (lines.length) { metarInput.value = lines.join('\n'); addMetarBtn?.click(); }
-                    resolve();
-                }));
-                alert(`扫描预报失败：${reason}\n已回退按目标机场下载实况。`);
-                return;
-            }
-            if (!result.success) throw new Error(result.error || '扫描24小时预报失败');
-            if (!result.success) {
-                const reason = result.error || '扫描预报失败';
-                await new Promise(resolve => downloadData(startTimeHidden.value, endTimeHidden.value, requested.join(' '), ['SA', 'SP'], data => {
-                    const lines = typeof data === 'string' ? data.split('\n').filter(line => line.trim().length > 10) : Object.values(data || {}).flat().filter(Boolean);
-                    if (lines.length) { metarInput.value = lines.join('\n'); addMetarBtn?.click(); }
-                    resolve();
-                }));
-                alert(`扫描预报失败：${reason}\n已回退按目标机场下载实况。`);
+                await downloadManualObservationsOnly(requested, reason);
                 return;
             }
             const data = result.data || {};
@@ -1502,12 +1509,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         } catch (error) {
             alert(`扫描预报/下载实况失败：${error.message}`);
             if (currentMode === 'manual' && scanStage === 'scan') {
-                await new Promise(resolve => downloadData(startTimeHidden.value, endTimeHidden.value, requested.join(' '), ['SA', 'SP'], data => {
-                    const lines = typeof data === 'string' ? data.split('\n').filter(line => line.trim().length > 10) : Object.values(data || {}).flat().filter(Boolean);
-                    if (lines.length) { metarInput.value = lines.join('\n'); addMetarBtn?.click(); }
-                    resolve();
-                }));
-                alert(`扫描预报失败：${error.message}\n已回退按目标机场下载实况。`);
+                await downloadManualObservationsOnly(requested, error.message);
             } else {
                 alert(`下载实况失败：${error.message}`);
             }
