@@ -9,12 +9,13 @@ from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt
 from django.conf import settings
 from django.db.models import Q
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import json
 import logging
 
 from core.models import AirportInfo, AirportAlertThresholds, Carrier, WeatherAlertLevels, AreaOptions, DataRefreshTimer
 from parsers.models import Flight, Metar, Taf, ParseLog
+from parsers.taf_parser import calc_taf_expected_issue_ms
 from parsers.parsing_manager import ParsingManager
 from utils.time_manager import TimeManager
 from utils.marks_alert_calculator import computed_alerts_from_flight
@@ -1305,22 +1306,39 @@ def get_taf_import_alerts(request, time_mode):
         total_unhandled = len(unhandled)
         sorted_alerts = (unhandled + handled)[: MAX_PAGES * PAGE_SIZE]
 
-        # 批量查询 airport_info.taf_init_time 用于生成 taf_type
+        # 机场发布时刻：taf_type，以及与入库告警相同公式的应发时间
         airport_codes = list({t.airport_4code for t in sorted_alerts})
-        init_time_map = {
-            a.airport_4code: a.taf_init_time
+        airport_cfg = {
+            a.airport_4code: a
             for a in AirportInfo.objects.filter(airport_4code__in=airport_codes).only(
-                'airport_4code', 'taf_init_time'
+                'airport_4code', 'taf_init_time', 'taf_max_delay', 'import_check_interval'
             )
         }
+        try:
+            leeway_minutes = settings.MTWS_CONFIG['TAF_IMPORT_ALERT']['TAF_ISSUE_LEEWAY_MINUTES']
+        except (KeyError, TypeError):
+            leeway_minutes = 30
 
         def _taf_type(airport_code):
-            init_t = init_time_map.get(airport_code)
+            cfg = airport_cfg.get(airport_code)
+            init_t = cfg.taf_init_time if cfg else None
             if init_t == 6:
                 return 'FT'
             elif init_t == 3:
                 return 'FC'
             return 'TAF'
+
+        def _expected_issue_time(t):
+            cfg = airport_cfg.get(t.airport_4code)
+            if not cfg:
+                return None
+            # 未处理随当前时刻滚动；已处理停在告警发生时算出的那个应发点
+            ref_ms = t.import_alert_time if t.import_alert_handle_time else int(datetime.now(timezone.utc).timestamp() * 1000)
+            if not ref_ms:
+                return None
+            return calc_taf_expected_issue_ms(
+                ref_ms, cfg.taf_init_time, cfg.taf_max_delay, cfg.import_check_interval, leeway_minutes
+            )
 
         total_count = len(sorted_alerts)
         total_pages = max(1, (total_count + PAGE_SIZE - 1) // PAGE_SIZE)
@@ -1337,6 +1355,7 @@ def get_taf_import_alerts(request, time_mode):
                 'taf_type': _taf_type(t.airport_4code),
                 'import_alert_time': t.import_alert_time,
                 'taf_observation_time': t.taf_observation_time,
+                'expected_issue_time': _expected_issue_time(t),
                 'created_at': t.created_at,
                 'handle_status': t.handle_status if t.handle_status is not None else '',
                 'import_alert_handle_time': t.import_alert_handle_time,

@@ -985,7 +985,7 @@ function _applyMarksLegendPos(el, pos) {
 }
 
 function ensureFlightMarksLegend() {
-    if (!isFlightMarksMode()) {
+    if (!isFlightMarksMode() || window._viewMode === 'map' || window._viewMode === 'plain') {
         hideFlightMarksLegend();
         return;
     }

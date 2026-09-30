@@ -254,5 +254,26 @@ def start_scheduler() -> None:
         _scheduler_started = True
         logger.info("APScheduler 后端调度器已启动")
 
+        # 雷达告警：按配置 interval_minutes（默认 15）独立调度
+        try:
+            from core.models import RadarAlertConfig
+            from utils.radar.config_defaults import merge_config
+            from utils.radar import trigger_radar_job
+
+            row = RadarAlertConfig.objects.order_by('id').first()
+            cfg = merge_config(row.config if row else None)
+            if cfg.get('enabled', True):
+                interval = float(cfg.get('interval_minutes', 15) or 15)
+                scheduler.add_job(
+                    func=lambda: trigger_radar_job(force=False),
+                    trigger=IntervalTrigger(minutes=interval),
+                    id='scheduled_radar_alert',
+                    replace_existing=True,
+                    misfire_grace_time=120,
+                )
+                logger.info(f'雷达告警调度已注册：间隔 {interval} 分钟')
+        except Exception as radar_err:
+            logger.warning(f'雷达告警调度注册失败：{radar_err}')
+
     except Exception as e:
         logger.error(f"APScheduler 启动失败：{e}", exc_info=True)

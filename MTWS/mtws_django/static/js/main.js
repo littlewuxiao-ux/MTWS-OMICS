@@ -157,10 +157,9 @@ function refreshAllTimezoneDisplays() {
     if (typeof syncAirportDetailTimelineLabel === 'function') {
         syncAirportDetailTimelineLabel();
     }
-    // 若告警面板已打开，重新渲染以反映新时区
-    const alertPanel = document.getElementById('import-alert-panel');
-    if (alertPanel && alertPanel.classList.contains('open')) {
-        if (typeof _renderAlertPanel === 'function') _renderAlertPanel();
+    // 入库视图打开时，重新渲染以反映新时区
+    if (typeof currentView === 'function' && currentView() === 'import' && typeof _renderAlertPanel === 'function') {
+        _renderAlertPanel();
     }
 }
 
@@ -1974,6 +1973,7 @@ function renderCurrentView(airports) {
 }
 
 function applyFilters() {
+    if (typeof window.syncTrendHomeFilter === 'function') window.syncTrendHomeFilter();
     if (!airportData || airportData.length === 0) {
         renderCurrentView([]);
         return;
@@ -2263,6 +2263,10 @@ function displayAirports(airports) {
                 <div class="empty-state-message">暂无符合条件的机场数据</div>
             </div>
         `;
+        // 过去 2 小时竖条挂在 body 上，筛选清空当前页时要马上收起，不能等 30 秒轮询
+        if (typeof ensureFlightPastHandleFloat === 'function') {
+            ensureFlightPastHandleFloat();
+        }
         return;
     }
 

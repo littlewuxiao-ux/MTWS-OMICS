@@ -21,6 +21,33 @@ from data_adapters.adapter_factory import AdapterFactory
 
 logger = logging.getLogger('mtws.parsers')
 
+def calc_taf_expected_issue_ms(now_ms, taf_init_time, taf_max_delay, import_check_interval, leeway_minutes):
+    """
+    按入库告警同一公式计算预报应发时间（UTC 毫秒）。
+    起点为参考时刻当天 UTC 0 点 + 首份发布整点，步长为发布间隔。
+    未到第一个检查窗口，或步长无效时返回 None。
+    """
+    try:
+        now_ms = int(now_ms)
+        taf_init_time = int(taf_init_time or 0)
+        taf_max_delay = int(taf_max_delay or 0)
+        import_check_interval = int(import_check_interval or 1)
+        leeway_minutes = int(30 if leeway_minutes is None else leeway_minutes)
+    except (TypeError, ValueError):
+        return None
+
+    now_dt = datetime.fromtimestamp(now_ms / 1000, tz=timezone.utc)
+    ms_0 = int(now_dt.replace(hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000)
+    delay_ms = leeway_minutes * 60_000 + taf_max_delay * 60_000
+    origin = ms_0 + taf_init_time * 3_600_000
+    step = import_check_interval * 3_600_000
+    if step <= 0:
+        return None
+    n_val = math.floor((now_ms - origin - delay_ms) / step)
+    if n_val < 0:
+        return None
+    return origin + step * n_val
+
 # 告警级别常量定义
 ALERT_RED = 'R'         # 红色告警
 ALERT_YELLOW = 'Y'      # 黄色告警
@@ -1886,10 +1913,6 @@ class TafParser:
         except (KeyError, TypeError):
             m = 30
 
-        # 当日 00:00:00 UTC 毫秒时间戳
-        now_dt = datetime.fromtimestamp(now_ms / 1000, tz=timezone.utc)
-        ms_0 = int(now_dt.replace(hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000)
-
         # 批量查询所有受监控机场中 data_status=N 且尚未告警的行
         rows_to_check = list(
             Taf.objects.filter(
@@ -1916,23 +1939,12 @@ class TafParser:
             if not cfg:
                 continue
 
-            taf_init_time         = cfg.taf_init_time or 0
-            taf_max_delay         = cfg.taf_max_delay or 0
-            import_check_interval = cfg.import_check_interval or 1
-
-            delay_ms = m * 60_000 + taf_max_delay * 60_000
-            origin   = ms_0 + taf_init_time * 3_600_000
-            step     = import_check_interval * 3_600_000
-
-            if step <= 0:
+            check_obs_time = calc_taf_expected_issue_ms(
+                now_ms, cfg.taf_init_time, cfg.taf_max_delay, cfg.import_check_interval, m
+            )
+            if check_obs_time is None:
                 continue
 
-            n_val = math.floor((now_ms - origin - delay_ms) / step)
-            if n_val < 0:
-                # 尚未到达第一个检查窗口，无需告警
-                continue
-
-            check_obs_time = origin + step * n_val
             taf_obs_time   = row['taf_observation_time']
 
             if taf_obs_time is not None and taf_obs_time < check_obs_time:
