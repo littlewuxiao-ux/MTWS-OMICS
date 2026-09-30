@@ -410,3 +410,137 @@ class NonLocalQrBlacklist(models.Model):
 
     def __str__(self):
         return self.user_id
+
+
+class RadarAlertConfig(models.Model):
+    """雷达告警可配置参数（单行有效，JSON 存整表）。"""
+
+    config = models.JSONField(default=dict, verbose_name='配置JSON')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
+
+    class Meta:
+        db_table = 'radar_alert_config'
+        verbose_name = '雷达告警配置'
+        verbose_name_plural = '雷达告警配置'
+
+    def __str__(self):
+        return f'RadarAlertConfig#{self.pk}'
+
+
+class RadarTileIndex(models.Model):
+    """机场→瓦片索引缓存（启动/变更时重建）。"""
+
+    index_data = models.JSONField(default=dict, verbose_name='索引数据')
+    fingerprint = models.JSONField(default=dict, verbose_name='指纹')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
+
+    class Meta:
+        db_table = 'radar_tile_index'
+        verbose_name = '雷达瓦片索引'
+        verbose_name_plural = '雷达瓦片索引'
+
+
+class AirportRadarAlert(models.Model):
+    """机场最新雷达告警结果。"""
+
+    ALERT_CHOICES = [
+        ('R', '红色'),
+        ('Y', '黄色'),
+        ('G', '绿色'),
+        ('N', '无告警'),
+    ]
+
+    airport_4code = models.CharField(max_length=4, primary_key=True, verbose_name='机场四字代码')
+    frame_time = models.BigIntegerField(blank=True, null=True, verbose_name='RainViewer帧Unix时间')
+    alert_33 = models.CharField(max_length=1, default='N', choices=ALERT_CHOICES, verbose_name='33dBZ告警')
+    alert_41 = models.CharField(max_length=1, default='N', choices=ALERT_CHOICES, verbose_name='41dBZ告警')
+    alert_highest = models.CharField(max_length=1, default='N', choices=ALERT_CHOICES, verbose_name='综合最高')
+    detail_33 = models.JSONField(blank=True, null=True, verbose_name='33dBZ明细')
+    detail_41 = models.JSONField(blank=True, null=True, verbose_name='41dBZ明细')
+    sector_stats = models.JSONField(blank=True, null=True, verbose_name='方位扇区统计')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
+
+    class Meta:
+        db_table = 'airport_radar_alert'
+        verbose_name = '机场雷达告警'
+        verbose_name_plural = '机场雷达告警'
+        indexes = [
+            models.Index(fields=['alert_highest']),
+            models.Index(fields=['updated_at']),
+        ]
+
+    def __str__(self):
+        return f'{self.airport_4code} {self.alert_33}/{self.alert_41}'
+
+
+class RadarJobRun(models.Model):
+    """雷达任务运行记录。"""
+
+    frame_time = models.BigIntegerField(verbose_name='帧时间')
+    host = models.CharField(max_length=255, blank=True, null=True)
+    path = models.CharField(max_length=255, blank=True, null=True)
+    airport_count = models.IntegerField(default=0)
+    status = models.CharField(max_length=20, default='done')
+    message = models.TextField(blank=True, null=True)
+    finished_at = models.DateTimeField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'radar_job_run'
+        verbose_name = '雷达任务记录'
+        verbose_name_plural = '雷达任务记录'
+        ordering = ['-created_at']
+
+
+class MapStyleConfig(models.Model):
+    """地图样式可配置参数（单行有效，JSON 存整表）。"""
+
+    config = models.JSONField(default=dict, verbose_name='配置JSON')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
+
+    class Meta:
+        db_table = 'map_style_config'
+        verbose_name = '地图样式配置'
+        verbose_name_plural = '地图样式配置'
+
+    def __str__(self):
+        return f'MapStyleConfig#{self.pk}'
+
+
+class TrendAlertConfig(models.Model):
+    """实况趋势告警规则（单行，JSON 存全部规则组）。"""
+
+    config = models.JSONField(default=dict, verbose_name='配置JSON')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
+
+    class Meta:
+        db_table = 'trend_alert_config'
+        verbose_name = '实况趋势告警配置'
+        verbose_name_plural = '实况趋势告警配置'
+
+    def __str__(self):
+        return f'TrendAlertConfig#{self.pk}'
+
+
+class AirportTrendAlert(models.Model):
+    """机场实况趋势告警的最近一次结果。仅在航班变化或新实况入库时重算。"""
+
+    airport_4code = models.CharField(max_length=4, primary_key=True, verbose_name='机场四字代码')
+    color = models.CharField(max_length=1, verbose_name='告警颜色')
+    bar_color = models.CharField(max_length=1, blank=True, default='', verbose_name='分数色条颜色')
+    score = models.FloatField(default=0, verbose_name='总分')
+    labels = models.JSONField(default=list, verbose_name='描述词')
+    series = models.JSONField(default=list, verbose_name='要素序列')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
+
+    class Meta:
+        db_table = 'airport_trend_alert'
+        verbose_name = '机场实况趋势告警'
+        verbose_name_plural = '机场实况趋势告警'
+
+    def __str__(self):
+        return f'{self.airport_4code} {self.color}'

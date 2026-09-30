@@ -28,6 +28,12 @@ from .access_views import (
     access_admin_groups, access_admin_group_detail,
     access_admin_blacklist, access_admin_blacklist_detail,
 )
+from .radar_views import (
+    radar_alert_config, radar_alert_status, radar_alert_run,
+    radar_rebuild_tile_index, radar_alerts, radar_echo,
+)
+from .map_style_views import map_style_config
+from .trend_views import trend_alert_config, trend_alert_results
 
 app_name = 'api'
 
@@ -123,4 +129,17 @@ urlpatterns = [
     path('access/admin/groups/<int:group_id>/', access_admin_group_detail, name='access_admin_group_detail'),
     path('access/admin/blacklist/', access_admin_blacklist, name='access_admin_blacklist'),
     path('access/admin/blacklist/<int:item_id>/', access_admin_blacklist_detail, name='access_admin_blacklist_detail'),
+
+    # 雷达告警
+    path('radar/config/', radar_alert_config, name='radar_alert_config'),
+    path('radar/status/', radar_alert_status, name='radar_alert_status'),
+    path('radar/run/', radar_alert_run, name='radar_alert_run'),
+    path('radar/rebuild-index/', radar_rebuild_tile_index, name='radar_rebuild_tile_index'),
+    path('radar/alerts/', radar_alerts, name='radar_alerts'),
+    path('radar/echo/', radar_echo, name='radar_echo'),
+    path('map-style/config/', map_style_config, name='map_style_config'),
+
+    # 实况趋势告警
+    path('trend-alert/config/', trend_alert_config, name='trend_alert_config'),
+    path('trend-alert/results/', trend_alert_results, name='trend_alert_results'),
 ] 

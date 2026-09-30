@@ -255,6 +255,12 @@ class MetarParser:
 
         # 主循环结束后，统一执行入库告警检查
         self._check_metar_import_alert(airport_codes, now_ms, config)
+        if updated_airports:
+            try:
+                from utils.trend_alert import refresh_airports
+                refresh_airports(updated_airports)
+            except Exception as trend_error:
+                logger.error(f"实况趋势告警跟随实况入库失败: {trend_error}")
 
         return success_count, error_count, updated_airports
 

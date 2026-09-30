@@ -23,6 +23,8 @@ ACCESS_MODULES: List[Dict[str, Any]] = [
      'hint_display': '导航栏显示并可进入地图模式'},
     {'code': 'view_plain', 'name': '视图：中文模式', 'category': 'views', 'has_activate': True, 'has_write': False,
      'hint_display': '导航栏显示并可进入中文模式', 'hint_activate': '允许中文模式触发后台解析'},
+    {'code': 'view_trend', 'name': '视图：实况趋势告警', 'category': 'views', 'has_activate': False, 'has_write': False,
+     'hint_display': '导航栏显示并可进入实况趋势告警'},
     {'code': 'flight_marks', 'name': '航班时刻（marks）', 'category': 'home', 'has_activate': False, 'has_write': False,
      'hint_display': '允许使用 ?flight=marks 航班时刻图标模式'},
     {'code': 'login_user', 'name': '登录的用户/登出按钮', 'category': 'home', 'has_activate': True, 'has_write': False,
@@ -83,6 +85,8 @@ ACCESS_MODULES: List[Dict[str, Any]] = [
      'hint_display': '设置中显示天气告警等级', 'hint_write': '可改天气告警等级（全站仅一组）'},
     {'code': 'settings_airport_location', 'name': '机场坐标', 'category': 'settings', 'has_activate': False, 'has_write': True, 'settings_write_exclusive': True,
      'hint_display': '设置中显示机场坐标', 'hint_write': '可改机场坐标（全站仅一组）'},
+    {'code': 'settings_trend_alert', 'name': '实况趋势告警', 'category': 'settings', 'has_activate': False, 'has_write': True, 'settings_write_exclusive': True,
+     'hint_display': '设置中显示实况趋势告警', 'hint_write': '可改实况趋势告警规则（全站仅一组）'},
 ]
 
 MODULE_CATEGORIES = [
@@ -98,8 +102,8 @@ MODULE_CATEGORIES = [
 MODULE_BY_CODE = {m['code']: m for m in ACCESS_MODULES}
 SETTINGS_WRITE_EXCLUSIVE = {m['code'] for m in ACCESS_MODULES if m.get('settings_write_exclusive')}
 
-# 三个显示视图，顺序即导航栏顺序，也是无权限回落的优先级
-VIEW_MODULE_CODES = ('view_home', 'view_map', 'view_plain')
+# 显示视图，顺序即导航栏顺序，也是无权限回落的优先级
+VIEW_MODULE_CODES = ('view_home', 'view_map', 'view_plain', 'view_trend')
 
 LOCAL_GROUP_CODE = 'local'
 SUPERUSER_CONFIG_TYPE = 'access_control'
@@ -122,6 +126,7 @@ SETTINGS_MODULE_MAP = {
     'weather_type': 'settings_weather_type',
     'weather_alert': 'settings_weather_alert',
     'airport_location': 'settings_airport_location',
+    'trend_alert': 'settings_trend_alert',
 }
 
 _lock = threading.Lock()
@@ -468,7 +473,7 @@ def validate_group_permission_payload(group, perms_payload: dict, is_local_group
 
     # 三个显示视图不得全部关闭，否则该组登录后无处可去
     if not any(r['can_display'] for r in rows if r['module_code'] in VIEW_MODULE_CODES):
-        return False, '主页、地图模式、中文模式至少需要保留一个显示权限', []
+        return False, '主页、地图、翻译、实况趋势告警至少需要保留一个显示权限', []
 
     require_qr = bool(getattr(group, 'require_qr', False)) if group else False
     # 写入强制扫码（非本机）

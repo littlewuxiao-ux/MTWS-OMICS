@@ -92,6 +92,7 @@ class FlightParser:
             marks_full_airports = []
             marks_changed_keys = {}
             new_airports = set()
+            trend_changed = []
 
             for airport in airports:
                 try:
@@ -124,6 +125,7 @@ class FlightParser:
                             closest_arr, closest_dep, closest_lnd,
                         ):
                             processed_count += 1
+                            trend_changed.append(airport)
                     else:
                         processed_count += 1
 
@@ -144,6 +146,14 @@ class FlightParser:
             if stale:
                 Flight.objects.filter(airport_4code__in=stale).delete()
                 logger.info(f"已删除无数据机场航班行: {sorted(stale)}")
+            try:
+                from utils.trend_alert import clear_airports, refresh_airports
+                if stale:
+                    clear_airports(stale)
+                if trend_changed:
+                    refresh_airports(trend_changed)
+            except Exception as trend_error:
+                logger.error(f"实况趋势告警跟随航班更新失败: {trend_error}")
             
             # 输出简化的日志
             current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')

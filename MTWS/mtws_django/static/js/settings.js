@@ -94,6 +94,11 @@
       case 'weather-type': await loadWeatherType(); break;
       case 'weather-alert': await loadWeatherAlert(); break;
       case 'airport-location': await loadAirportLocation(); break;
+      case 'radar-alert': await loadRadarAlertSettings(); break;
+      case 'map-style': await loadMapStyleSettings(); break;
+      case 'trend-alert':
+        if (window.TrendAlertSettings) await window.TrendAlertSettings.load();
+        break;
     }
   }
 
@@ -737,6 +742,445 @@
     }
   }
 
+  // ========== Tab10: 雷达告警 ==========
+  let _radarCfg = null;
+
+  async function loadRadarAlertSettings() {
+    const res = await apiFetch(apiUrl('radar/config/'));
+    if (!res.success) { showMsg('radar-msg', res.error || '加载失败', 'error'); return; }
+    _radarCfg = res.config;
+    fillRadarForm(_radarCfg);
+    pollRadarStatusOnce();
+  }
+
+  function _radarMaxRadius(rings) {
+    let m = 0;
+    (rings || []).forEach(r => {
+      const v = Number(r && r[1]);
+      if (!Number.isNaN(v) && v > m) m = v;
+    });
+    return m;
+  }
+
+  function _updateRadarRadiusDisplay(rings) {
+    const el = document.getElementById('radar-radius-display');
+    if (!el) return;
+    const m = _radarMaxRadius(rings);
+    el.textContent = m > 0 ? String(m) : '—';
+  }
+
+  function fillRadarForm(cfg) {
+    document.getElementById('radar-enabled').checked = !!cfg.enabled;
+    document.getElementById('radar-interval').value = cfg.interval_minutes;
+    document.getElementById('radar-rate').value = cfg.rate_limit_per_minute;
+    document.getElementById('radar-screen-dbz').value = cfg.screen_dbz;
+    document.getElementById('radar-z3-min').value = cfg.z3_min_pixels;
+    document.getElementById('radar-z3-skip-dbz').value = cfg.z3_skip_dbz != null ? cfg.z3_skip_dbz : 41;
+    document.getElementById('radar-z3-skip-min').value = cfg.z3_skip_min_pixels != null ? cfg.z3_skip_min_pixels : 3;
+    document.getElementById('radar-z5-dbz').value = cfg.z5_screen_dbz != null ? cfg.z5_screen_dbz : cfg.screen_dbz;
+    document.getElementById('radar-z5-min').value = cfg.z5_min_pixels;
+    const levels = _radarZ7Levels(cfg);
+    levels.forEach((lv, i) => {
+      const dbzEl = document.getElementById(`radar-z7-dbz-${i}`);
+      const blobEl = document.getElementById(`radar-z7-blob-${i}`);
+      if (dbzEl) dbzEl.value = lv.dbz;
+      if (blobEl) blobEl.value = lv.min_blob_pixels;
+    });
+    _updateRadarRadiusDisplay(cfg.rings_km);
+    renderRadarRings(cfg.rings_km);
+    renderRadarMatrix(cfg);
+  }
+
+  function _radarZ7Levels(cfg) {
+    const raw = (cfg && cfg.z7_levels) || [];
+    const fallbackMatrix = cfg.color_matrix || [];
+    const fallbackBins = cfg.count_bins || [{ id: 'N0', lo: 0, hi: null, lo_open: true }];
+    const ths = cfg.dbz_thresholds || [33, 41];
+    const blob = cfg.min_blob_pixels != null ? cfg.min_blob_pixels : 5;
+    const out = [];
+    for (let i = 0; i < 2; i++) {
+      const src = raw[i] || {};
+      out.push({
+        label: src.label || (i === 0 ? '阈值档A' : '阈值档B'),
+        dbz: src.dbz != null ? src.dbz : (ths[i] != null ? ths[i] : (i === 0 ? 33 : 41)),
+        min_blob_pixels: src.min_blob_pixels != null ? src.min_blob_pixels : blob,
+        count_bins: (src.count_bins && src.count_bins.length) ? src.count_bins : fallbackBins,
+        color_matrix: (src.color_matrix && src.color_matrix.length) ? src.color_matrix : fallbackMatrix,
+      });
+    }
+    return out;
+  }
+
+  function _colorSelectHtml(v) {
+    return `<select class="settings-input radar-color-sel radar-c-${v}">
+      ${['R','Y','G','N'].map(c => `<option value="${c}" ${c===v?'selected':''}>${c}</option>`).join('')}
+    </select>`;
+  }
+
+  function _bindRadarColorSelectStyle(root) {
+    (root || document).querySelectorAll('select.radar-color-sel').forEach(sel => {
+      const paint = () => {
+        sel.classList.remove('radar-c-R', 'radar-c-Y', 'radar-c-G', 'radar-c-N');
+        sel.classList.add('radar-c-' + sel.value);
+      };
+      paint();
+      sel.onchange = paint;
+    });
+  }
+
+  function renderRadarRings(rings) {
+    const host = document.getElementById('radar-rings-editor');
+    if (!host) return;
+    const list = (rings && rings.length) ? rings : [[0, 8]];
+    host.innerHTML = list.map((r, i) => `
+      <div class="radar-ring-chip radar-ring-pair" data-ring="${i}">
+        <span>#${i + 1}</span>
+        <input type="number" class="settings-input" value="${r[0]}" step="1" title="内半径">
+        <span>-</span>
+        <input type="number" class="settings-input" value="${r[1]}" step="1" title="外半径">
+        <span>km</span>
+      </div>`).join('');
+    host.querySelectorAll('.radar-ring-pair input').forEach(inp => {
+      inp.addEventListener('change', () => {
+        try {
+          const ringsKm = parseRadarRingsDom();
+          _updateRadarRadiusDisplay(ringsKm);
+          // 仅刷新表头环标签，保留各档矩阵内容
+          const cfg = parseRadarForm();
+          renderRadarMatrix(cfg);
+        } catch (e) { /* ignore live */ }
+      });
+    });
+  }
+
+  function parseRadarRingsDom() {
+    const host = document.getElementById('radar-rings-editor');
+    const pairs = host ? host.querySelectorAll('.radar-ring-pair') : [];
+    const rings_km = [];
+    pairs.forEach(pair => {
+      const inputs = pair.querySelectorAll('input');
+      const rin = Number(inputs[0] && inputs[0].value);
+      const rout = Number(inputs[1] && inputs[1].value);
+      if (Number.isNaN(rin) || Number.isNaN(rout)) throw new Error('环半径须为数字');
+      if (rout <= rin) throw new Error('环外半径须大于内半径');
+      rings_km.push([rin, rout]);
+    });
+    if (!rings_km.length) throw new Error('至少保留一个环');
+    return rings_km;
+  }
+
+  function parseRadarLevelMatrixDom(levelIdx, rings_km) {
+    const tbody = document.getElementById(`radar-matrix-body-${levelIdx}`);
+    const rows = tbody ? tbody.querySelectorAll('tr') : [];
+    if (!rows.length) throw new Error(`阈值档 ${levelIdx === 0 ? 'A' : 'B'} 至少保留一个数量档`);
+    const count_bins = [];
+    const color_matrix = [];
+    rows.forEach((tr, idx) => {
+      const pair = tr.querySelector('.radar-bin-pair');
+      const inputs = pair ? pair.querySelectorAll('input') : [];
+      let lo = Number(inputs[0] && inputs[0].value);
+      const hiRaw = inputs[1] && inputs[1].value;
+      if (idx === 0) lo = 0;
+      const isLast = idx === rows.length - 1;
+      let hi;
+      if (isLast) {
+        hi = null;
+      } else {
+        if (!hiRaw || String(hiRaw).toLowerCase() === 'inf') throw new Error('非末档上限不能为 inf');
+        hi = Number(hiRaw);
+        if (Number.isNaN(hi)) throw new Error('数量档上限须为数字');
+      }
+      if (Number.isNaN(lo)) throw new Error('数量档下限须为数字');
+      count_bins.push({
+        id: `N${idx}`,
+        lo,
+        hi,
+        lo_open: idx === 0 && lo === 0,
+      });
+      const colors = [];
+      tr.querySelectorAll('select.radar-color-sel').forEach(sel => colors.push(sel.value));
+      while (colors.length < rings_km.length) colors.push('N');
+      color_matrix.push(colors.slice(0, rings_km.length));
+    });
+    return { count_bins, color_matrix };
+  }
+
+  function parseRadarForm() {
+    const rings_km = parseRadarRingsDom();
+    const z7_levels = [0, 1].map(i => {
+      const { count_bins, color_matrix } = parseRadarLevelMatrixDom(i, rings_km);
+      return {
+        label: i === 0 ? '阈值档A' : '阈值档B',
+        dbz: Number(document.getElementById(`radar-z7-dbz-${i}`).value),
+        min_blob_pixels: Number(document.getElementById(`radar-z7-blob-${i}`).value),
+        count_bins,
+        color_matrix,
+      };
+    });
+    z7_levels.forEach((lv, i) => {
+      if (Number.isNaN(lv.dbz)) throw new Error(`阈值档 ${i === 0 ? 'A' : 'B'} dBZ 无效`);
+      if (Number.isNaN(lv.min_blob_pixels) || lv.min_blob_pixels < 1) {
+        throw new Error(`阈值档 ${i === 0 ? 'A' : 'B'} 斑块最少像素无效`);
+      }
+    });
+    return {
+      ...(_radarCfg || {}),
+      enabled: document.getElementById('radar-enabled').checked,
+      interval_minutes: Number(document.getElementById('radar-interval').value),
+      radius_km: _radarMaxRadius(rings_km),
+      rate_limit_per_minute: Number(document.getElementById('radar-rate').value),
+      screen_dbz: Number(document.getElementById('radar-screen-dbz').value),
+      z3_min_pixels: Number(document.getElementById('radar-z3-min').value),
+      z3_skip_dbz: Number(document.getElementById('radar-z3-skip-dbz').value),
+      z3_skip_min_pixels: Number(document.getElementById('radar-z3-skip-min').value),
+      z5_screen_dbz: Number(document.getElementById('radar-z5-dbz').value),
+      z5_min_pixels: Number(document.getElementById('radar-z5-min').value),
+      rings_km,
+      z7_levels,
+      dbz_thresholds: [z7_levels[0].dbz, z7_levels[1].dbz],
+      min_blob_pixels: z7_levels[0].min_blob_pixels,
+      count_bins: z7_levels[0].count_bins,
+      color_matrix: z7_levels[0].color_matrix,
+    };
+  }
+
+  function renderRadarLevelMatrix(levelIdx, rings, level) {
+    const thead = document.getElementById(`radar-matrix-head-${levelIdx}`);
+    const tbody = document.getElementById(`radar-matrix-body-${levelIdx}`);
+    if (!thead || !tbody) return;
+    const bins = (level.count_bins && level.count_bins.length)
+      ? level.count_bins
+      : [{ id: 'N0', lo: 0, hi: null, lo_open: true }];
+    const matrix = level.color_matrix || [];
+
+    thead.innerHTML = `<tr>
+      <th>数量档 lo/hi</th>
+      ${rings.map((r, i) => `<th>${r[0]}-${r[1]}km</th>`).join('')}
+    </tr>`;
+
+    tbody.innerHTML = bins.map((b, bi) => {
+      const isFirst = bi === 0;
+      const isLast = bi === bins.length - 1;
+      const lo = isFirst ? 0 : (b.lo != null ? b.lo : '');
+      const hi = isLast ? 'inf' : (b.hi == null ? '' : b.hi);
+      const cells = rings.map((_, ri) => {
+        const v = (matrix[bi] && matrix[bi][ri]) || 'N';
+        return `<td>${_colorSelectHtml(v)}</td>`;
+      }).join('');
+      return `<tr data-bin="${bi}">
+        <th>
+          <div class="radar-bin-pair">
+            <input type="number" class="settings-input" value="${lo}" ${isFirst ? 'disabled' : ''} title="下限">
+            <span>-</span>
+            <input type="text" class="settings-input" value="${hi}" ${isLast ? 'disabled' : ''} title="上限">
+          </div>
+        </th>
+        ${cells}
+      </tr>`;
+    }).join('');
+    _bindRadarColorSelectStyle(tbody);
+  }
+
+  function renderRadarMatrix(cfg) {
+    const rings = (cfg.rings_km && cfg.rings_km.length) ? cfg.rings_km : [[0, 8]];
+    const levels = _radarZ7Levels(cfg);
+    levels.forEach((lv, i) => renderRadarLevelMatrix(i, rings, lv));
+    _updateRadarRadiusDisplay(rings);
+  }
+
+  function addRadarBinRow(levelIdx) {
+    try {
+      const cfg = parseRadarForm();
+      const lv = cfg.z7_levels[levelIdx];
+      const bins = lv.count_bins || [];
+      if (bins.length) {
+        const prev = bins[bins.length - 1];
+        const prevLo = Number(prev.lo) || 0;
+        let newPrevHi = prev.hi;
+        if (newPrevHi == null) {
+          const before = bins.length >= 2 ? bins[bins.length - 2].hi : null;
+          newPrevHi = before != null ? Number(before) + 5 : prevLo + 5;
+        }
+        bins[bins.length - 1] = { ...prev, hi: newPrevHi, lo_open: false };
+        bins.push({ id: `N${bins.length}`, lo: Number(newPrevHi) + 1, hi: null, lo_open: false });
+      } else {
+        bins.push({ id: 'N0', lo: 0, hi: null, lo_open: true });
+      }
+      const matrix = lv.color_matrix || [];
+      const cols = (cfg.rings_km || []).length || 1;
+      matrix.push(Array(cols).fill('N'));
+      lv.count_bins = bins;
+      lv.color_matrix = matrix;
+      cfg.z7_levels[levelIdx] = lv;
+      renderRadarMatrix(cfg);
+    } catch (e) {
+      showMsg('radar-msg', e.message, 'error');
+    }
+  }
+
+  function addRadarRingCol() {
+    try {
+      const cfg = parseRadarForm();
+      const rings = cfg.rings_km || [];
+      const lastOut = rings.length ? Number(rings[rings.length - 1][1]) : 0;
+      rings.push([lastOut, lastOut + 50]);
+      (cfg.z7_levels || []).forEach(lv => {
+        (lv.color_matrix || []).forEach(row => row.push('N'));
+      });
+      cfg.rings_km = rings;
+      cfg.radius_km = _radarMaxRadius(rings);
+      renderRadarRings(rings);
+      renderRadarMatrix(cfg);
+    } catch (e) {
+      showMsg('radar-msg', e.message, 'error');
+    }
+  }
+
+  async function saveRadarAlertSettings() {
+    try {
+      const config = parseRadarForm();
+      const res = await apiFetch(apiUrl('radar/config/'), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ config }),
+      });
+      if (!res.success) { showMsg('radar-msg', res.error || '保存失败', 'error'); return; }
+      _radarCfg = res.config;
+      fillRadarForm(res.config);
+      showMsg('radar-msg', '已保存', 'success');
+    } catch (e) {
+      showMsg('radar-msg', e.message, 'error');
+    }
+  }
+
+  async function rebuildRadarIndex() {
+    const res = await apiFetch(apiUrl('radar/rebuild-index/'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    showMsg('radar-msg', res.success
+      ? `索引已重建：机场 ${res.airport_count}，瓦片并集 ${JSON.stringify(res.unions)}`
+      : (res.error || '失败'), res.success ? 'success' : 'error');
+  }
+
+  async function pollRadarStatusOnce() {
+    const res = await apiFetch(apiUrl('radar/status/'));
+    if (!res.success) return;
+    const st = res.status || {};
+    const rl = st.rate_limiter || {};
+    const el = document.getElementById('radar-status-text');
+    if (el) {
+      el.textContent = `状态:${st.state || '-'} ${st.phase || ''} | 窗口请求 ${rl.window_count || 0}/${rl.max_per_minute || 80}`
+        + (rl.rate_limited ? ` | 限流暂停 ${rl.paused_seconds}s` : '')
+        + (rl.queued ? ` | 排队 ${rl.queued}` : '');
+    }
+  }
+
+  // ========== Tab11: 地图样式 ==========
+  let _mapStyleCfg = null;
+  let _mapColorSchemes = [];
+  let _mapPalettes = {};
+
+  async function loadMapStyleSettings() {
+    const res = await apiFetch(apiUrl('map-style/config/'));
+    if (!res.success) { showMsg('map-style-msg', res.error || '加载失败', 'error'); return; }
+    _mapStyleCfg = res.config;
+    _mapColorSchemes = res.color_schemes || [];
+    if (res.palette) _mapPalettes[res.config.color_scheme] = res.palette;
+    // 补齐预览色：用返回的 palette 列表不够时从 scheme id 简单展示
+    fillMapStyleForm(_mapStyleCfg, res.palette);
+  }
+
+  function fillMapStyleForm(cfg, palette) {
+    document.getElementById('ms-inner-size').value = cfg.marker_inner_size;
+    document.getElementById('ms-outer-size').value = cfg.marker_outer_size;
+    document.getElementById('ms-airport-labels').checked = !!cfg.show_airport_labels;
+    document.getElementById('ms-cn-province-borders').checked = !!(cfg.china && cfg.china.province_borders);
+    document.getElementById('ms-cn-province-labels').checked = !!(cfg.china && cfg.china.province_labels);
+    document.getElementById('ms-world-admin1-borders').checked = !!(cfg.world && cfg.world.admin1_borders);
+    document.getElementById('ms-world-admin1-labels').checked = !!(cfg.world && cfg.world.admin1_labels);
+    document.getElementById('ms-country-borders').checked = !!(cfg.global && cfg.global.country_borders);
+    document.getElementById('ms-country-labels').checked = !!(cfg.global && cfg.global.country_labels);
+    document.getElementById('ms-rivers').checked = !!(cfg.global && cfg.global.rivers);
+    document.getElementById('ms-lakes').checked = !!(cfg.global && cfg.global.lakes);
+    renderMapSchemeCards(cfg.color_scheme, palette);
+  }
+
+  function renderMapSchemeCards(activeId, activePalette) {
+    const box = document.getElementById('ms-color-scheme-group');
+    if (!box) return;
+    const fallbackSwatch = {
+      deep_navy: ['#2a3038', '#0c1016', '#9aa4b0'],
+      slate_gray: ['#1a1f26', '#2a3340', '#d0dce8'],
+      warm_dim: ['#4d7ea6', '#f7f4ec', '#2a261f'],
+    };
+    box.innerHTML = (_mapColorSchemes.length ? _mapColorSchemes : [
+      { id: 'deep_navy', label: '深海军蓝' },
+      { id: 'slate_gray', label: '冷灰岩板' },
+      { id: 'warm_dim', label: '浅暖纸' },
+    ]).map(s => {
+      const sw = (s.id === activeId && activePalette)
+        ? [activePalette.background, activePalette.land, activePalette.country_border]
+        : (fallbackSwatch[s.id] || ['#333', '#555', '#888']);
+      return `<button type="button" class="ms-scheme-card ${s.id === activeId ? 'active' : ''}" data-scheme="${s.id}">
+        <div>${escHtml(s.label)}</div>
+        <div class="ms-scheme-swatches">${sw.map(c => `<span style="background:${c}"></span>`).join('')}</div>
+      </button>`;
+    }).join('');
+    box.querySelectorAll('.ms-scheme-card').forEach(btn => {
+      btn.addEventListener('click', () => {
+        box.querySelectorAll('.ms-scheme-card').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+      });
+    });
+  }
+
+  function parseMapStyleForm() {
+    const active = document.querySelector('#ms-color-scheme-group .ms-scheme-card.active');
+    return {
+      ...(_mapStyleCfg || {}),
+      color_scheme: active ? active.dataset.scheme : 'deep_navy',
+      marker_inner_size: Number(document.getElementById('ms-inner-size').value),
+      marker_outer_size: Number(document.getElementById('ms-outer-size').value),
+      show_airport_labels: document.getElementById('ms-airport-labels').checked,
+      china: {
+        province_borders: document.getElementById('ms-cn-province-borders').checked,
+        province_labels: document.getElementById('ms-cn-province-labels').checked,
+      },
+      world: {
+        admin1_borders: document.getElementById('ms-world-admin1-borders').checked,
+        admin1_labels: document.getElementById('ms-world-admin1-labels').checked,
+      },
+      global: {
+        country_borders: document.getElementById('ms-country-borders').checked,
+        country_labels: document.getElementById('ms-country-labels').checked,
+        rivers: document.getElementById('ms-rivers').checked,
+        lakes: document.getElementById('ms-lakes').checked,
+      },
+    };
+  }
+
+  async function saveMapStyleSettings() {
+    try {
+      const config = parseMapStyleForm();
+      const res = await apiFetch(apiUrl('map-style/config/'), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ config }),
+      });
+      if (!res.success) { showMsg('map-style-msg', res.error || '保存失败', 'error'); return; }
+      _mapStyleCfg = res.config;
+      fillMapStyleForm(res.config, res.palette);
+      showMsg('map-style-msg', '已保存', 'success');
+      if (typeof window.applyMapStyleConfig === 'function') {
+        window.applyMapStyleConfig(res.config, res.border_widths, res.palette);
+      }
+    } catch (e) {
+      showMsg('map-style-msg', e.message, 'error');
+    }
+  }
+
   // ========== 初始化 ==========
   function init() {
     // Tab按钮
@@ -816,6 +1260,22 @@
     document.getElementById('loc-search-btn').addEventListener('click', searchLocation);
     document.getElementById('loc-save-btn').addEventListener('click', saveLocation);
     document.getElementById('loc-cancel-btn').addEventListener('click', hideLocForm);
+
+    // 雷达告警
+    const radarSave = document.getElementById('radar-save-btn');
+    if (radarSave) {
+      radarSave.addEventListener('click', saveRadarAlertSettings);
+      document.getElementById('radar-rebuild-btn').addEventListener('click', rebuildRadarIndex);
+      document.querySelectorAll('.radar-add-bin-btn').forEach(btn => {
+        btn.addEventListener('click', () => addRadarBinRow(Number(btn.dataset.level) || 0));
+      });
+      const addRing = document.getElementById('radar-add-ring-btn');
+      if (addRing) addRing.addEventListener('click', addRadarRingCol);
+    }
+    const mapStyleSave = document.getElementById('map-style-save-btn');
+    if (mapStyleSave) {
+      mapStyleSave.addEventListener('click', saveMapStyleSettings);
+    }
   }
 
   function applySettingsTabVisibility() {
@@ -829,6 +1289,9 @@
       'weather-type': 'settings_weather_type',
       'weather-alert': 'settings_weather_alert',
       'airport-location': 'settings_airport_location',
+      'radar-alert': 'settings_airport_location',
+      'map-style': 'settings_airport_location',
+      'trend-alert': 'settings_trend_alert',
     };
     Object.keys(TAB_PERM).forEach((tab) => {
       const btn = document.querySelector(`.settings-tab[data-tab="${tab}"]`);

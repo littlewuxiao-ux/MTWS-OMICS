@@ -56,13 +56,6 @@
     setDisp(searchWrap, showSearch);
     setDisp(searchClear, showSearch);
 
-    const iaBtn = document.getElementById('import-alert-btn');
-    setDisp(iaBtn, hasAccess('import_alert', 'display'));
-    const iaGroup = document.getElementById('ia-badge-group');
-    if (iaGroup && !hasAccess('import_alert', 'display')) {
-      iaGroup.style.display = 'none';
-    }
-
     const popupSection = document.querySelector('.popup-control-section');
     const canPopup = hasAccess('metar_popup', 'display');
     setDisp(popupSection, canPopup);

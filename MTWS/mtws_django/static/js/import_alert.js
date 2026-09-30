@@ -53,86 +53,27 @@
     z-index: 2;
 }
 
-/* 悬浮按钮 */
-#import-alert-btn {
-    position: fixed;
-    bottom: 20px;
-    left: 20px;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 8px 14px;
-    background: #2c3e50;
-    color: #fff;
-    border-radius: 24px;
-    cursor: pointer;
-    z-index: 5000;
-    box-shadow: 0 3px 10px rgba(0,0,0,0.4);
-    user-select: none;
-    white-space: nowrap;
-    font-size: 13px;
-    transition: box-shadow 0.2s;
-}
-#import-alert-btn:hover { box-shadow: 0 5px 16px rgba(0,0,0,0.5); }
-.ia-badge-group { display: flex; align-items: center; gap: 4px; }
-.ia-badge {
-    background: red;
-    color: #fff;
-    border-radius: 10px;
-    min-width: 20px;
-    height: 20px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 11px;
-    font-weight: bold;
-    padding: 0 5px;
-}
-.ia-badge-label {
-    font-size: 10px;
-    opacity: 0.85;
-}
-.ia-badge-sep {
-    opacity: 0.5;
-    font-size: 11px;
-}
-
-/* 告警面板 */
+/* 入库视图：占满导航栏右侧、顶栏功能区以下的区域 */
 #import-alert-panel {
-    position: fixed;
-    bottom: 64px;
-    left: 20px;
-    width: 520px;
-    max-height: 560px;
-    background: #fff;
-    border: 1px solid #ccc;
-    border-radius: 8px;
-    box-shadow: 0 6px 24px rgba(0,0,0,0.25);
-    z-index: 5000;
-    display: none;
     flex-direction: column;
+    background: #fff;
+    border-top: 1px solid #d5deea;
     overflow: hidden;
+    min-height: 0;
+    box-sizing: border-box;
 }
-#import-alert-panel.open { display: flex; }
 
 .ia-panel-header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    padding: 10px 14px;
+    padding: 12px 20px;
     background: #2c3e50;
     color: #fff;
-    font-size: 13px;
+    font-size: 15px;
     font-weight: bold;
     flex-shrink: 0;
+    letter-spacing: 0.04em;
 }
-.ia-panel-close {
-    cursor: pointer;
-    font-size: 16px;
-    line-height: 1;
-    opacity: 0.8;
-}
-.ia-panel-close:hover { opacity: 1; }
 
 /* Tab 切换器 */
 .ia-tab-bar {
@@ -143,10 +84,11 @@
     overflow: hidden;
 }
 .ia-tab {
-    flex: 1;
-    padding: 7px 0;
+    flex: 0 0 auto;
+    min-width: 168px;
+    padding: 10px 28px;
     text-align: center;
-    font-size: 12px;
+    font-size: 14px;
     font-weight: bold;
     cursor: pointer;
     color: #666;
@@ -163,24 +105,40 @@
     margin-bottom: -1px;
 }
 
-/* 表格头 */
-.ia-table-head {
+/* 表格头与行共用列宽，随视图宽度拉伸 */
+.ia-table-head,
+.ia-row-main {
     display: grid;
-    grid-template-columns: 60px 50px 88px 72px 72px 1fr;
-    gap: 4px;
-    padding: 6px 10px;
+    grid-template-columns:
+        minmax(88px, 0.7fr)
+        minmax(72px, 0.55fr)
+        minmax(168px, 1.15fr)
+        minmax(188px, 1.35fr)
+        minmax(168px, 1.15fr)
+        minmax(160px, 1.3fr);
+    column-gap: 12px;
+    align-items: center;
+}
+.ia-table-head {
+    padding: 10px 20px;
     background: #f0f2f5;
     border-bottom: 1px solid #ddd;
-    font-size: 12px;
+    font-size: 13px;
     font-weight: bold;
     color: #555;
     flex-shrink: 0;
 }
+.ia-table-head span {
+    white-space: normal;
+    line-height: 1.35;
+}
+.ia-head-alert { color: red; }
 
 /* 告警列表滚动区 */
 .ia-list {
     overflow-y: auto;
     flex: 1;
+    min-height: 0;
 }
 
 /* 每条告警 */
@@ -188,12 +146,8 @@
     border-bottom: 1px solid #eee;
 }
 .ia-row-main {
-    display: grid;
-    grid-template-columns: 60px 50px 88px 72px 72px 1fr;
-    gap: 4px;
-    padding: 6px 10px;
-    align-items: center;
-    font-size: 12px;
+    padding: 10px 20px;
+    font-size: 14px;
 }
 .ia-row-main:hover { background: #fafafa; }
 .ia-row.unhandled .ia-row-main { background: #fffbe6; }
@@ -214,15 +168,15 @@
     font-weight: bold;
     cursor: pointer;
 }
-.ia-handle-time { color: #888; cursor: pointer; font-size: 11px; }
+.ia-handle-time { color: #888; cursor: pointer; }
 .ia-handle-time:hover { text-decoration: underline; }
 
 /* 展开的处理选项区 */
 .ia-expand {
-    padding: 8px 14px 10px 14px;
+    padding: 10px 20px 12px 20px;
     background: #f9f9f9;
     border-top: 1px dashed #ddd;
-    font-size: 12px;
+    font-size: 13px;
 }
 .ia-expand-options {
     display: flex;
@@ -266,12 +220,13 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    flex-wrap: wrap;
     gap: 6px;
-    padding: 8px 10px;
+    padding: 10px 16px;
     background: #f0f2f5;
     border-top: 1px solid #ddd;
     flex-shrink: 0;
-    font-size: 12px;
+    font-size: 13px;
 }
 .ia-page-btn {
     padding: 2px 8px;
@@ -351,34 +306,32 @@ function syncAlertStateFromTafData(airports) {
 }
 
 // ============================================================
-// 徽章更新：在按钮上显示 METAR 和 TAF 各自的未处理计数
+// 徽章更新：导航图标右上角显示实况 + 预报未处理合计
 // ============================================================
 function _updateAlertBadge() {
-    const badgeMetar = document.getElementById('ia-badge-metar');
-    const badgeTaf = document.getElementById('ia-badge-taf');
-    if (badgeMetar) badgeMetar.textContent = importAlertUnhandledCount;
-    if (badgeTaf) badgeTaf.textContent = tafAlertUnhandledCount;
+    updateImportAlertNavBadge();
 
-    // 根据数量控制各分组显隐
-    const showMetar = importAlertUnhandledCount > 0;
-    const showTaf = tafAlertUnhandledCount > 0;
-    const metarGroup = document.getElementById('ia-badge-metar-group');
-    const tafGroup = document.getElementById('ia-badge-taf-group');
-    const sep = document.getElementById('ia-badge-sep');
-    const badgeGroup = document.getElementById('ia-badge-group');
-    if (metarGroup) metarGroup.style.display = showMetar ? '' : 'none';
-    if (tafGroup) tafGroup.style.display = showTaf ? '' : 'none';
-    if (sep) sep.style.display = (showMetar && showTaf) ? '' : 'none';
-    if (badgeGroup) {
-        const allow = typeof hasAccess !== 'function' || hasAccess('import_alert', 'display');
-        badgeGroup.style.display = (allow && (showMetar || showTaf)) ? '' : 'none';
-    }
-
-    // 更新 Tab 标签上的计数
     const tabMetar = document.getElementById('ia-tab-metar');
     const tabTaf = document.getElementById('ia-tab-taf');
     if (tabMetar) tabMetar.textContent = `实况 METAR${importAlertUnhandledCount > 0 ? ' (' + importAlertUnhandledCount + ')' : ''}`;
     if (tabTaf) tabTaf.textContent = `预报 TAF${tafAlertUnhandledCount > 0 ? ' (' + tafAlertUnhandledCount + ')' : ''}`;
+}
+
+function updateImportAlertNavBadge() {
+    const btn = document.querySelector('.view-nav-item[data-view="import"]');
+    if (!btn) return;
+    const total = (Number(importAlertUnhandledCount) || 0) + (Number(tafAlertUnhandledCount) || 0);
+    let badge = btn.querySelector('.view-nav-badge');
+    if (total <= 0) {
+        if (badge) badge.remove();
+        return;
+    }
+    if (!badge) {
+        badge = document.createElement('span');
+        badge.className = 'view-nav-badge';
+        btn.appendChild(badge);
+    }
+    badge.textContent = String(total);
 }
 
 // ============================================================
@@ -418,95 +371,50 @@ function fetchTafImportAlerts(page) {
 }
 
 // ============================================================
-// 悬浮按钮与面板初始化
+// 入库视图：绑定页签，并按顶栏实际高度撑满剩余视口
 // ============================================================
-function _initImportAlertBtn() {
-    if (document.getElementById('import-alert-btn')) return;
+let _importPanelBound = false;
 
-    const btn = document.createElement('div');
-    btn.id = 'import-alert-btn';
-    btn.innerHTML = `
-        <span>&#9888; 报文入库告警</span>
-        <span class="ia-badge-group" id="ia-badge-group" style="display:none">
-            <span id="ia-badge-metar-group" style="display:none">
-                <span class="ia-badge-label">实况</span>
-                <span class="ia-badge" id="ia-badge-metar">0</span>
-            </span>
-            <span class="ia-badge-sep" id="ia-badge-sep" style="display:none">|</span>
-            <span id="ia-badge-taf-group" style="display:none">
-                <span class="ia-badge-label">预报</span>
-                <span class="ia-badge" id="ia-badge-taf">0</span>
-            </span>
-        </span>
-    `;
-    document.body.appendChild(btn);
-
-    const panel = document.createElement('div');
-    panel.id = 'import-alert-panel';
-    panel.innerHTML = `
-        <div class="ia-panel-header">
-            <span>&#9888; 报文入库告警详情</span>
-            <span class="ia-panel-close" id="ia-panel-close">&#x2715;</span>
-        </div>
-        <div class="ia-tab-bar">
-            <div class="ia-tab active" id="ia-tab-metar">实况 METAR</div>
-            <div class="ia-tab" id="ia-tab-taf">预报 TAF</div>
-        </div>
-        <div class="ia-table-head" id="ia-table-head">
-            <span>机场</span>
-            <span>类型</span>
-            <span>告警时间</span>
-            <span style="color:red">发布间隔</span>
-            <span style="color:red">入库间隔</span>
-            <span>处理结果</span>
-        </div>
-        <div class="ia-list" id="ia-list"></div>
-        <div class="ia-pagination" id="ia-pagination"></div>
-    `;
-    document.body.appendChild(panel);
-
-    // Tab 切换
-    document.getElementById('ia-tab-metar').addEventListener('click', function () {
-        _switchTab('metar');
-    });
-    document.getElementById('ia-tab-taf').addEventListener('click', function () {
-        _switchTab('taf');
-    });
-
-    // 按钮点击：切换面板，并确定默认 Tab
-    btn.addEventListener('click', function (e) {
-        if (_dragged) { _dragged = false; return; }
-        const isOpen = panel.classList.contains('open');
-        if (!isOpen) {
-            // 决定默认 Tab
-            const tafHasUnhandled = tafAlertUnhandledCount > 0;
-            const metarHasUnhandled = importAlertUnhandledCount > 0;
-            const defaultTab = (tafHasUnhandled && !metarHasUnhandled) ? 'taf' : 'metar';
-            _switchTab(defaultTab, false); // false = 不重新拉取，下面统一拉
-            panel.classList.add('open');
-            _fetchCurrentTab();
-        } else {
-            panel.classList.remove('open');
-        }
-    });
-
-    document.getElementById('ia-panel-close').addEventListener('click', function () {
-        panel.classList.remove('open');
-    });
-
-    document.addEventListener('click', function (e) {
-        if (!panel.contains(e.target) && e.target !== btn && !btn.contains(e.target)) {
-            panel.classList.remove('open');
-        }
-    });
-
-    _makeDraggable(btn);
-    if (typeof applyAccessUi === 'function') {
-        applyAccessUi();
-    } else if (typeof hasAccess === 'function' && !hasAccess('import_alert', 'display')) {
-        btn.style.display = 'none';
-    }
+function syncImportAlertLayout() {
+    const panel = document.getElementById('import-alert-panel');
+    if (!panel || panel.style.display === 'none') return;
+    const chrome = document.querySelector('.page-chrome');
+    const top = chrome ? Math.max(0, chrome.getBoundingClientRect().bottom) : 0;
+    panel.style.height = Math.max(240, window.innerHeight - top) + 'px';
 }
+
+function _bindImportAlertPanel() {
+    if (_importPanelBound) return;
+    const tabMetar = document.getElementById('ia-tab-metar');
+    const tabTaf = document.getElementById('ia-tab-taf');
+    if (!tabMetar || !tabTaf) return;
+    tabMetar.addEventListener('click', function () { _switchTab('metar'); });
+    tabTaf.addEventListener('click', function () { _switchTab('taf'); });
+    window.addEventListener('resize', syncImportAlertLayout);
+    const chrome = document.querySelector('.page-chrome');
+    if (chrome && typeof ResizeObserver === 'function') {
+        new ResizeObserver(syncImportAlertLayout).observe(chrome);
+    }
+    _importPanelBound = true;
+}
+
+function startImportView() {
+    _bindImportAlertPanel();
+    const tafHasUnhandled = tafAlertUnhandledCount > 0;
+    const metarHasUnhandled = importAlertUnhandledCount > 0;
+    const defaultTab = (tafHasUnhandled && !metarHasUnhandled) ? 'taf' : 'metar';
+    _switchTab(defaultTab, false);
+    _fetchCurrentTab();
+    _updateAlertBadge();
+    syncImportAlertLayout();
+}
+
+function stopImportView() {}
+
+window.startImportView = startImportView;
+window.stopImportView = stopImportView;
+window.updateImportAlertNavBadge = updateImportAlertNavBadge;
+window.syncImportAlertLayout = syncImportAlertLayout;
 
 function _switchTab(tab, fetchData) {
     currentAlertTab = tab;
@@ -532,47 +440,6 @@ function _fetchCurrentTab() {
     } else {
         fetchImportAlerts(importAlertCurrentPage);
     }
-}
-
-// ============================================================
-// 拖动逻辑
-// ============================================================
-let _dragged = false;
-function _makeDraggable(el) {
-    let isDragging = false;
-    let startX, startY, origLeft, origBottom;
-
-    el.addEventListener('mousedown', function (e) {
-        isDragging = true;
-        startX = e.clientX;
-        startY = e.clientY;
-        const rect = el.getBoundingClientRect();
-        origLeft = rect.left;
-        origBottom = window.innerHeight - rect.bottom;
-        e.preventDefault();
-    });
-
-    document.addEventListener('mousemove', function (e) {
-        if (!isDragging) return;
-        const dx = e.clientX - startX;
-        const dy = e.clientY - startY;
-        if (Math.abs(dx) > 3 || Math.abs(dy) > 3) _dragged = true;
-        const newLeft = Math.max(0, Math.min(window.innerWidth - el.offsetWidth, origLeft + dx));
-        const newBottom = Math.max(0, Math.min(window.innerHeight - el.offsetHeight, origBottom - dy));
-        el.style.left = newLeft + 'px';
-        el.style.bottom = newBottom + 'px';
-        el.style.right = 'auto';
-        const panel = document.getElementById('import-alert-panel');
-        if (panel) {
-            panel.style.left = newLeft + 'px';
-            panel.style.bottom = (newBottom + el.offsetHeight + 4) + 'px';
-            panel.style.right = 'auto';
-        }
-    });
-
-    document.addEventListener('mouseup', function () {
-        isDragging = false;
-    });
 }
 
 // ============================================================
@@ -629,9 +496,8 @@ function _renderAlertRow(a) {
     const rowKey = btoa(unescape(encodeURIComponent(a.sqc)));
 
     const alertTimeStr = _fmtTs(a.import_alert_time);
-    const refTime = isUnhandled ? null : a.import_alert_handle_time;
-    const pubInterval = _intervalMinRef(a.metar_observation_time, refTime);
-    const inbInterval = _intervalMinRef(a.created_at, refTime);
+    const latestIssueStr = _fmtTs(a.metar_observation_time);
+    const expectedStr = _metarExpectedIssueText(a);
 
     const handleCell = _buildHandleCell(a, rowKey, isUnhandled, 'metar');
     const expandHtml = _renderExpandSection(a, rowKey, 'metar');
@@ -641,9 +507,9 @@ function _renderAlertRow(a) {
     <div class="ia-row-main">
         <span class="ia-cell">${a.airport_4code}</span>
         <span class="ia-cell">${a.metar_type || '—'}</span>
-        <span class="ia-cell" style="font-size:11px">${alertTimeStr}</span>
-        <span class="ia-cell ia-red">${_formatInterval(pubInterval)}</span>
-        <span class="ia-cell ia-red">${_formatInterval(inbInterval)}</span>
+        <span class="ia-cell">${alertTimeStr}</span>
+        <span class="ia-cell">${latestIssueStr}</span>
+        <span class="ia-cell">${expectedStr}</span>
         <span class="ia-cell">${handleCell}</span>
     </div>
     ${expandHtml}
@@ -659,9 +525,8 @@ function _renderTafAlertRow(a) {
     const rowKey = btoa(unescape(encodeURIComponent(a.sqc)));
 
     const alertTimeStr = _fmtTs(a.import_alert_time);
-    const refTime = isUnhandled ? null : a.import_alert_handle_time;
-    const pubInterval = _intervalMinRef(a.taf_observation_time, refTime);
-    const inbInterval = _intervalMinRef(a.created_at, refTime);
+    const latestIssueStr = _fmtTs(a.taf_observation_time);
+    const expectedStr = _fmtTs(a.expected_issue_time);
 
     const handleCell = _buildHandleCell(a, rowKey, isUnhandled, 'taf');
     const expandHtml = _renderExpandSection(a, rowKey, 'taf');
@@ -671,9 +536,9 @@ function _renderTafAlertRow(a) {
     <div class="ia-row-main">
         <span class="ia-cell">${a.airport_4code}</span>
         <span class="ia-cell">${a.taf_type || '—'}</span>
-        <span class="ia-cell" style="font-size:11px">${alertTimeStr}</span>
-        <span class="ia-cell ia-red">${_formatInterval(pubInterval)}</span>
-        <span class="ia-cell ia-red">${_formatInterval(inbInterval)}</span>
+        <span class="ia-cell">${alertTimeStr}</span>
+        <span class="ia-cell">${latestIssueStr}</span>
+        <span class="ia-cell">${expectedStr}</span>
         <span class="ia-cell">${handleCell}</span>
     </div>
     ${expandHtml}
@@ -900,74 +765,16 @@ function _fmtTs(ts) {
     } catch (e) { return '--'; }
 }
 
-/**
- * 将分钟数转换为"X天X小时X分钟"复合格式。
- * 规则：首位（前导）单位为0时省略；末位（结尾）单位为0时省略；
- * 中间单位（如天>0且分钟>0时小时为0）不省略。
- * 特殊值 '--' 原样返回，全为0时返回 '0分钟'。
- */
-function _formatInterval(minStr) {
-    if (minStr === '--' || minStr === null || minStr === undefined) return '--';
-    const totalMin = parseInt(minStr, 10);
-    if (isNaN(totalMin) || totalMin < 0) return '--';
-
-    const days  = Math.floor(totalMin / 1440);
-    const hours = Math.floor((totalMin % 1440) / 60);
-    const mins  = totalMin % 60;
-
-    const parts = [
-        { value: days,  unit: '天' },
-        { value: hours, unit: '小时' },
-        { value: mins,  unit: '分钟' },
-    ];
-
-    let first = -1, last = -1;
-    for (let i = 0; i < parts.length; i++) {
-        if (parts[i].value !== 0) {
-            if (first === -1) first = i;
-            last = i;
-        }
-    }
-
-    if (first === -1) return '0分钟';
-
-    let result = '';
-    for (let i = first; i <= last; i++) {
-        result += `${parts[i].value}${parts[i].unit}`;
-    }
-    return result;
-}
-
-/** 毫秒时间戳距现在的分钟数（向上取整，接受数字或字符串） */
-function _intervalMin(ts) {
-    if (!ts) return '--';
+/** 实况应发时间：未处理取当前整点，已处理停在告警发生时的整点。显示时区跟随 UTC/CST 开关。 */
+function _floorUtcHour(ts) {
     const num = Number(ts);
-    if (isNaN(num)) return '--';
-    const diff = Date.now() - num;
-    if (diff <= 0) return '0';
-    return String(Math.ceil(diff / 60000));
+    if (!num || isNaN(num)) return null;
+    return Math.floor(num / 3600000) * 3600000;
 }
 
-/**
- * 毫秒时间戳距指定参考时间点的分钟数（向上取整）。
- * refTs 为参考时间戳（毫秒），缺省时回退到 Date.now()。
- * 用于已处理告警：以处理时刻为参考点，展示当时的滞后时长。
- */
-function _intervalMinRef(ts, refTs) {
-    if (!ts) return '--';
-    const num = Number(ts);
-    if (isNaN(num)) return '--';
-    const ref = refTs ? Number(refTs) : Date.now();
-    const diff = (isNaN(ref) ? Date.now() : ref) - num;
-    if (diff <= 0) return '0';
-    return String(Math.ceil(diff / 60000));
+function _metarExpectedIssueText(a) {
+    const ref = a.import_alert_handle_time ? a.import_alert_time : Date.now();
+    return _fmtTs(_floorUtcHour(ref));
 }
 
-// ============================================================
-// 启动
-// ============================================================
-document.addEventListener('DOMContentLoaded', function () {
-    setTimeout(function () {
-        _initImportAlertBtn();
-    }, 1000);
-});
+_bindImportAlertPanel();
