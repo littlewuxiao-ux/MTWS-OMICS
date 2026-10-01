@@ -21,6 +21,10 @@ body.has-view-nav #map-alert-panel {
   left: var(--view-nav-width);
 }
 
+body.map-mode .view-nav {
+  box-shadow: 6px 8px 12px -8px rgba(0, 0, 0, 0.55);
+}
+
 .view-nav {
   position: fixed;
   left: 0;

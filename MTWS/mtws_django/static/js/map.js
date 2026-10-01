@@ -153,9 +153,8 @@ function _switchMapView(view) {
 function _syncPanelPosition() {
     const panel = document.getElementById('map-alert-panel');
     if (!panel) return;
-    const titleRow = document.querySelector('.main-title-row');
-    const topPx = (titleRow && titleRow.getBoundingClientRect().top > 0)
-        ? Math.round(titleRow.getBoundingClientRect().top) : 180;
+    const topPx = (typeof window.contentBandTop === 'function')
+        ? window.contentBandTop() : 180;
     const totalH = window.innerHeight - topPx;
     panel.style.top = topPx + 'px';
     panel.style.height = totalH + 'px';
@@ -164,6 +163,7 @@ function _syncPanelPosition() {
     const barH = bar ? bar.offsetHeight : 0;
     if (mapEl) mapEl.style.height = Math.max(100, totalH - barH) + 'px';
     if (_mlMap) _mlMap.resize();
+    if (typeof window.syncNavTop === 'function') window.syncNavTop();
 }
 
 // ── MapLibre style / layers ──────────────────────────────

@@ -1,7 +1,7 @@
 /**
  * 实况趋势告警结果表。
  * 导航悬浮的红黄绿只统计左侧「趋势」数量。
- * 进入本视图时顶部红/黄/绿锁定为选中、无告警取消，表格只显示这三色；离开后恢复进入前的勾选。
+ * 进入本视图时顶部告警色和国内/国际区域按钮全部选中并锁定，离开后恢复进入前的勾选。
  */
 (function () {
   'use strict';
@@ -394,15 +394,18 @@
 
   function lockHomeAlertForTrend() {
     document.body.classList.add('trend-alert-locked');
-    document.querySelectorAll('.filter-btn[data-group="alert"]').forEach((btn) => {
-      const value = btn.getAttribute('data-value');
-      btn.classList.toggle('selected', value === 'red' || value === 'yellow' || value === 'green');
+    document.querySelectorAll('.filter-btn[data-group="alert"], .filter-btn[data-group="domestic"], .filter-btn[data-group="international"]').forEach((btn) => {
+      btn.classList.add('selected');
     });
   }
 
   function unlockHomeAlertForTrend() {
     document.body.classList.remove('trend-alert-locked');
     if (typeof updateAlertButtonState === 'function') updateAlertButtonState();
+    if (typeof updateRegionButtonState === 'function') {
+      updateRegionButtonState('domestic');
+      updateRegionButtonState('international');
+    }
   }
 
   function startTrendView() {

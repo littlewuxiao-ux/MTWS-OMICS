@@ -126,6 +126,7 @@ body {
   z-index: 999;
   min-height: 100px;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  border-bottom: 2px solid #fff;
 }
 
 .function-left {
@@ -291,12 +292,16 @@ body {
 }
 
 /* 选中状态样式 */
-body.trend-alert-locked .filter-btn[data-group="alert"] {
+body.trend-alert-locked .filter-btn[data-group="alert"],
+body.trend-alert-locked .filter-btn[data-group="domestic"],
+body.trend-alert-locked .filter-btn[data-group="international"] {
   pointer-events: none;
   cursor: default;
 }
 
-body.trend-alert-locked .filter-btn[data-group="alert"]:hover {
+body.trend-alert-locked .filter-btn[data-group="alert"]:hover,
+body.trend-alert-locked .filter-btn[data-group="domestic"]:hover,
+body.trend-alert-locked .filter-btn[data-group="international"]:hover {
   opacity: 1;
   transform: none;
 }
@@ -3156,7 +3161,6 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
   height: calc(100vh - 180px);
   flex-direction: column;
   background-color: #1b2838;
-  border-top: 2px solid white;  /* 与上方功能区视觉分割 */
   z-index: 3000;
   box-sizing: border-box;
   overflow: visible;
@@ -3374,15 +3378,39 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
   overflow: hidden;
 }
 
+.trend-toolbar.map-flight-toolbar {
+  position: relative;
+  z-index: 6;
+  background: #1b2838;
+  border-bottom: none;
+  color: #d5e4f0;
+  box-shadow: 0 8px 14px -4px rgba(0, 0, 0, 0.72);
+}
+
 .map-flight-toolbar .trend-toolbar-main {
   flex: 0 0 auto;
+  padding: 3px 10px;
+}
+
+.map-flight-toolbar .trend-title {
+  padding: 0 10px 0 10px;
+  font-size: 14px;
+  color: #d7e6f2;
+  border-right-color: #314556;
 }
 
 .map-flight-toolbar .trend-title::before {
-  height: 22px;
+  height: 16px;
   align-self: center;
   margin: 0;
   flex: 0 0 auto;
+  background: #8eb6d6;
+}
+
+.map-flight-toolbar .trend-switch {
+  padding: 1px 8px;
+  font-size: 12px;
+  gap: 5px;
 }
 
 .map-scope-module,
@@ -3390,7 +3418,7 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
   display: flex;
   align-items: center;
   align-self: stretch;
-  margin: 4px 0;
+  margin: 2px 0;
   border-radius: 6px;
   transition: background 0.15s ease, box-shadow 0.15s ease;
 }
@@ -3401,8 +3429,8 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
 
 .map-scope-module:hover,
 .map-wx-module:hover {
-  background: #d5e3f3;
-  box-shadow: inset 0 0 0 1px #b4c8de;
+  background: rgba(74, 130, 176, 0.28);
+  box-shadow: inset 0 0 0 1px rgba(142, 190, 224, 0.5);
 }
 
 .map-wx-module {
@@ -3412,109 +3440,77 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
   border-left: none;
 }
 
-.map-flight-toolbar.is-dark-map,
-.map-flight-toolbar.is-dark-map[data-scheme="slate_gray"] {
-  background: #1b2838;
-  border-bottom: none;
-  color: #d5e4f0;
-  box-shadow: inset 14px 0 18px -16px rgba(0, 0, 0, 0.9);
-}
-
-.map-flight-toolbar.is-dark-map + .map-chart-wrap::before,
-.map-flight-toolbar.is-dark-map + .map-chart-wrap::after {
-  content: '';
-  position: absolute;
-  pointer-events: none;
-  z-index: 4;
-}
-
-.map-flight-toolbar.is-dark-map + .map-chart-wrap::before {
-  left: 0;
-  right: 0;
-  top: 0;
-  height: 22px;
-  background: linear-gradient(to bottom, rgba(27, 40, 56, 0.92), rgba(27, 40, 56, 0));
-}
-
-.map-flight-toolbar.is-dark-map + .map-chart-wrap::after {
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 18px;
-  background: linear-gradient(to right, rgba(8, 12, 18, 0.42), rgba(8, 12, 18, 0));
-}
-
-.map-flight-toolbar.is-dark-map .trend-title,
-.map-flight-toolbar.is-dark-map .map-wx-module-title {
+.map-flight-toolbar .trend-title,
+.map-flight-toolbar .map-wx-module-title {
   color: #d7e6f2;
   border-right-color: #314556;
 }
 
-.map-flight-toolbar.is-dark-map .trend-title::before,
-.map-flight-toolbar.is-dark-map .map-wx-module-title::before {
+.map-flight-toolbar .trend-title::before,
+.map-flight-toolbar .map-wx-module-title::before {
   background: #8eb6d6;
 }
 
-.map-flight-toolbar.is-dark-map .trend-switch {
+.map-flight-toolbar .trend-switch {
   background: #101820;
   border-color: #3d5368;
   color: #d5e4f0;
 }
 
-.map-flight-toolbar.is-dark-map .trend-switch:has(input:checked),
-.map-flight-toolbar.is-dark-map .map-wx-sat-btn.is-on {
+.map-flight-toolbar .trend-switch:has(input:checked),
+.map-flight-toolbar .map-wx-sat-btn.is-on {
   background: #1a3348;
   border-color: #6a9ec4;
   color: #e8f3fb;
 }
 
-.map-flight-toolbar.is-dark-map .map-wx-box {
+.map-flight-toolbar .map-wx-box {
   background: #101820;
   border-color: #7f98ad;
 }
 
-.map-flight-toolbar.is-dark-map .map-wx-check:has(input:checked) .map-wx-box,
-.map-flight-toolbar.is-dark-map .map-wx-sat-btn.is-on .map-wx-box {
+.map-flight-toolbar .map-wx-check:has(input:checked) .map-wx-box,
+.map-flight-toolbar .map-wx-sat-btn.is-on .map-wx-box {
   background: #2a6a9a;
   border-color: #8ebfe0;
 }
 
-.map-flight-toolbar.is-dark-map .map-wx-module .map-wx-time {
+.map-flight-toolbar .map-wx-module .map-wx-time {
   color: #a9c0d2;
 }
 
-.map-flight-toolbar.is-dark-map .map-wx-module .map-wx-time.is-pending {
+.map-flight-toolbar .map-wx-module .map-wx-time.is-pending {
   color: #7d92a4;
 }
 
-.map-flight-toolbar.is-dark-map .trend-hours {
+.map-flight-toolbar .trend-hours {
   color: #d5e4f0;
 }
 
-.map-flight-toolbar.is-dark-map .trend-hours input {
+.map-flight-toolbar .trend-hours input {
   background: #101820;
   border-color: #3d5368;
   color: #d5e4f0;
 }
 
-.map-flight-toolbar.is-dark-map .map-wx-sat-menu {
+.map-flight-toolbar .map-wx-sat-menu {
   background: #16202a;
   border-color: #3d5368;
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
 }
 
-.map-flight-toolbar.is-dark-map .map-wx-sat-menu button {
+.map-flight-toolbar .map-wx-sat-menu button {
   background: transparent;
   color: #d5e4f0;
 }
 
-.map-flight-toolbar.is-dark-map .map-wx-sat-menu button:hover,
-.map-flight-toolbar.is-dark-map .map-wx-sat-menu button.is-on {
+.map-flight-toolbar .map-wx-sat-menu button:hover,
+.map-flight-toolbar .map-wx-sat-menu button.is-on {
   background: #24384c;
 }
 
-.map-flight-toolbar.is-dark-map .map-scope-module:hover,
-.map-flight-toolbar.is-dark-map .map-wx-module:hover {
+.map-flight-toolbar .map-scope-module:hover,
+.map-flight-toolbar .map-wx-module:hover {
   background: rgba(74, 130, 176, 0.28);
   box-shadow: inset 0 0 0 1px rgba(142, 190, 224, 0.5);
 }
@@ -3523,7 +3519,7 @@ body:not(.display-timezone-utc) .airport-detail-title-row .timeline-background-r
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 700;
   color: #1b2838;
   letter-spacing: 0.04em;
