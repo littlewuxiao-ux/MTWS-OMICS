@@ -80,6 +80,26 @@
     )).join('');
   }
 
+  function scoreRange(role) {
+    if (role === 'extra' || role === 'deduct') return { min: 0.1, max: 3 };
+    return { min: 1, max: 5 };
+  }
+
+  function scoreHint(role) {
+    if (role === 'extra') return '0.1–3.0 分，命中后累加到基础分上。';
+    if (role === 'deduct') return '0.1–3.0 分，命中后从本组总分中扣减，最低为 0。';
+    if (role === 'veto') return '命中后本组总分清零，无需设置分值。';
+    return '1.0–5.0 分。';
+  }
+
+  function scoreField(g, c, cond) {
+    if (cond.role === 'veto') {
+      return `<span class="trend-hint">${scoreHint('veto')}</span>`;
+    }
+    const range = scoreRange(cond.role);
+    return `<span>分值</span>${num(g, c, 'score', cond.score, '0.1', range.max, range.min)}<span class="trend-hint">${scoreHint(cond.role)}</span>`;
+  }
+
   function blankCondition(kind) {
     return {
       id: uid(),
@@ -343,8 +363,10 @@
                 ${check(g, c, 'enabled', cond.enabled, '启用')}
                 <label>条件
                   <select data-g="${g}" data-c="${c}" data-field="role" data-rerender="1"${dis()}>
-                    <option value="required"${cond.role !== 'extra' ? ' selected' : ''}>基础条件</option>
+                    <option value="required"${cond.role === 'required' ? ' selected' : ''}>基础条件</option>
                     <option value="extra"${cond.role === 'extra' ? ' selected' : ''}>附加条件</option>
+                    <option value="veto"${cond.role === 'veto' ? ' selected' : ''}>否决条件</option>
+                    <option value="deduct"${cond.role === 'deduct' ? ' selected' : ''}>减分条件</option>
                   </select>
                 </label>
                 <label>类型
@@ -360,8 +382,7 @@
               <div class="trend-cond-body">
                 <div class="trend-line">
                   <span>描述</span>${text(g, c, 'label', cond.label, '如能见度快速下降')}
-                  <span>分值</span>${num(g, c, 'score', cond.score, '0.1', cond.role === 'extra' ? 3 : 5, cond.role === 'extra' ? 0.1 : 1)}
-                  ${cond.role === 'extra' ? '<span class="trend-hint">0.1–3.0 分，命中后累加到基础分上。</span>' : '<span class="trend-hint">1.0–5.0 分。</span>'}
+                  ${scoreField(g, c, cond)}
                 </div>
                 ${conditionBody(cond, g, c)}
               </div>
@@ -418,6 +439,19 @@
     const group = config.groups[Number(el.dataset.g)];
     if (!group || !uiOf(group.id).editing) return;
     writeField(el);
+    if (el.dataset.field === 'role' && el.dataset.c !== undefined && el.dataset.c !== '') {
+      const cond = (group.conditions || [])[Number(el.dataset.c)];
+      if (cond) {
+        if (cond.role === 'veto') {
+          cond.score = 0;
+        } else {
+          const range = scoreRange(cond.role);
+          const score = Number(cond.score);
+          if (!Number.isFinite(score) || score < range.min) cond.score = range.min;
+          else if (score > range.max) cond.score = range.max;
+        }
+      }
+    }
     if (el.classList.contains('trend-codes')) fitCodeBoxes(el.parentElement || document);
     if (el.dataset.rerender === '1') render();
   }

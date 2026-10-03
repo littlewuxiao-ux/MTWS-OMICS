@@ -292,9 +292,6 @@ def airports_overview(request, time_mode='current'):
                 ]
             }
             
-            # 格点恢复：改回
-            #   from utils.alert_calculator import AlertCalculator
-            #   airport_data['computed_alerts'] = AlertCalculator(time_mode).calculate_airport_alerts(airport_data, time_range)
             airport_data['computed_alerts'] = computed_alerts_from_flight(flight_data)
             
             airports_data.append(airport_data)
@@ -1168,6 +1165,9 @@ def get_import_alerts(request, time_mode):
     已处理：import_alert='Y' 且 import_alert_handle_time IS NOT NULL（含已改为 H 的自动处理行）。
     排序：未处理在前，已处理在后，均按 import_alert_time 降序。
     """
+    from utils.access_control import resolve_access_identity, has_perm
+    if not has_perm(resolve_access_identity(request), 'import_alert', 'activate'):
+        return JsonResponse({'success': False, 'error': '无报文入库告警权限'}, status=403)
     try:
         PAGE_SIZE = 10
         MAX_PAGES = 10
@@ -1280,6 +1280,9 @@ def get_taf_import_alerts(request, time_mode):
     排序：未处理在前，已处理在后，均按 created_at 降序。
     taf_type 字段由 airport_info.taf_init_time 决定：6→FT，3→FC，其他→TAF。
     """
+    from utils.access_control import resolve_access_identity, has_perm
+    if not has_perm(resolve_access_identity(request), 'import_alert', 'activate'):
+        return JsonResponse({'success': False, 'error': '无报文入库告警权限'}, status=403)
     try:
         PAGE_SIZE = 10
         MAX_PAGES = 10

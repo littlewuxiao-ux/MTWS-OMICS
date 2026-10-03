@@ -1,14 +1,14 @@
 /**
  * 实况趋势告警结果表。
  * 导航悬浮的红黄绿只统计左侧「趋势」数量。
- * 进入本视图时顶部告警色和国内/国际区域按钮全部选中并锁定，离开后恢复进入前的勾选。
+ * 进入本视图时顶部红/黄/绿选中、无告警取消，国内/国际区域全部选中并锁定；离开后恢复进入前的勾选。
  */
 (function () {
   'use strict';
 
   let payload = null;
   let bound = false;
-  let loading = false;
+  let loadSeq = 0;
 
   const HOME_COLOR = { red: 'R', yellow: 'Y', green: 'G', none: 'N' };
   const BAR_COLOR = { R: '#d64545', Y: '#e6b325', G: '#2e9e5b' };
@@ -227,11 +227,20 @@
     });
   }
 
+  function trendNavBadgeAllowed() {
+    if (typeof hasAccess !== 'function' || !window.__accessIdentity) return true;
+    return hasAccess('view_trend_nav', 'display');
+  }
+
   function updateNavBadge() {
     const btn = document.querySelector('.view-nav-item[data-view="trend"]');
     if (!btn) return;
     bindStatHover();
     let badge = btn.querySelector('.trend-nav-badge');
+    if (!trendNavBadgeAllowed()) {
+      if (badge) badge.remove();
+      return;
+    }
     const colors = new Set(statColors());
     const count = ((payload && payload.airports) || []).filter((item) => colors.has(item.color) && !item.handled).length;
     if (!count) {
@@ -299,6 +308,10 @@
 
   async function markTrendHandled(btn) {
     if (!btn || btn.classList.contains('is-handled') || btn.disabled) return;
+    if (typeof hasAccess === 'function' && window.__accessIdentity && !hasAccess('view_trend', 'write')) {
+      alert('当前角色无实况趋势写入权限，处理结果不会保存，告警不会消除');
+      return;
+    }
     const code = btn.getAttribute('data-code');
     if (!code) return;
     btn.disabled = true;
@@ -320,20 +333,20 @@
   }
 
   async function load() {
-    if (loading) return;
-    loading = true;
+    const seq = ++loadSeq;
     setStatus('');
+    const scope = scopeValue();
+    const hours = futureHours();
+    sessionStorage.setItem('mtws_trend_scope', scope);
+    localStorage.setItem(HOURS_KEY, String(hours));
+    syncHoursVisibility();
     try {
-      const scope = scopeValue();
-      const hours = futureHours();
-      sessionStorage.setItem('mtws_trend_scope', scope);
-      localStorage.setItem(HOURS_KEY, String(hours));
-      syncHoursVisibility();
       const res = await fetch(
         apiUrl('trend-alert/results/?scope=' + encodeURIComponent(scope) + '&future_hours=' + hours),
         { headers: headers() }
       );
       const data = await res.json();
+      if (seq !== loadSeq) return;
       if (!data.success) {
         payload = null;
         setStatus(data.error || '计算失败');
@@ -347,9 +360,8 @@
       setStatus(`参与机场 ${data.universe_count || 0}，达到阈值 ${reached}`);
       render();
     } catch (err) {
+      if (seq !== loadSeq) return;
       setStatus('计算失败');
-    } finally {
-      loading = false;
     }
   }
 
@@ -394,8 +406,12 @@
 
   function lockHomeAlertForTrend() {
     document.body.classList.add('trend-alert-locked');
-    document.querySelectorAll('.filter-btn[data-group="alert"], .filter-btn[data-group="domestic"], .filter-btn[data-group="international"]').forEach((btn) => {
+    document.querySelectorAll('.filter-btn[data-group="domestic"], .filter-btn[data-group="international"]').forEach((btn) => {
       btn.classList.add('selected');
+    });
+    document.querySelectorAll('.filter-btn[data-group="alert"]').forEach((btn) => {
+      const value = btn.getAttribute('data-value');
+      btn.classList.toggle('selected', value === 'red' || value === 'yellow' || value === 'green');
     });
   }
 
@@ -411,6 +427,7 @@
   function startTrendView() {
     bindOnce();
     lockHomeAlertForTrend();
+    if (payload) render();
     load();
   }
 

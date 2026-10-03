@@ -14,6 +14,13 @@ from utils.radar import get_radar_job_status, trigger_radar_job
 logger = logging.getLogger('mtws.radar.api')
 
 
+def _deny(request, module, action, error):
+    from utils.access_control import has_perm, resolve_access_identity
+    if has_perm(resolve_access_identity(request), module, action):
+        return None
+    return JsonResponse({'success': False, 'error': error, 'written': False}, status=403)
+
+
 def _json_body(request):
     import json
     try:
@@ -26,12 +33,19 @@ def _json_body(request):
 @csrf_exempt
 def radar_alert_config(request, time_mode='current'):
     from core.models import RadarAlertConfig
+    from api.settings_views import _deny_settings_write
 
     row = RadarAlertConfig.objects.order_by('id').first()
     if request.method == 'GET':
+        denied = _deny(request, 'settings_radar_alert', 'display', '无雷达告警设置权限')
+        if denied:
+            return denied
         cfg = merge_config(row.config if row else None)
         return JsonResponse({'success': True, 'config': cfg})
 
+    denied = _deny_settings_write(request, 'settings_radar_alert')
+    if denied:
+        return denied
     data = _json_body(request)
     cfg_in = data.get('config')
     if not isinstance(cfg_in, dict):
@@ -58,6 +72,9 @@ def radar_alert_status(request, time_mode='current'):
 def radar_alert_run(request, time_mode='current'):
     from utils.airport_scope import airport_codes_for_scope, clamp_future_hours
 
+    denied = _deny(request, 'map_radar', 'activate', '无雷达告警激活权限')
+    if denied:
+        return denied
     data = _json_body(request)
     force = bool(data.get('force'))
     scope = (data.get('scope') or '').strip()
@@ -77,7 +94,11 @@ def radar_rebuild_tile_index(request, time_mode='current'):
     from core.models import RadarTileIndex, RadarAlertConfig
     from parsers.models import Flight
     from utils.radar.tiles import build_airport_tile_index
+    from api.settings_views import _deny_settings_write
 
+    denied = _deny_settings_write(request, 'settings_radar_alert')
+    if denied:
+        return denied
     row = RadarAlertConfig.objects.order_by('id').first()
     cfg = merge_config(row.config if row else None)
 
@@ -134,6 +155,9 @@ def radar_alert_handle(request, time_mode='current'):
     """把当前雷达告警标为已处理。告警等级变化后会重新变为未处理。"""
     from core.models import AirportRadarAlert
 
+    denied = _deny(request, 'map_radar', 'write', '无雷达告警写入权限')
+    if denied:
+        return denied
     data = _json_body(request)
     code = str(data.get('airport_4code') or '').strip().upper()
     if len(code) != 4:
@@ -151,6 +175,14 @@ def radar_alert_handle(request, time_mode='current'):
 def radar_alerts(request, time_mode='current'):
     """返回当前雷达告警列表，供地图悬浮层使用。只含当前清单内的机场。"""
     from core.models import AirportRadarAlert, RadarAlertConfig
+    from utils.access_control import has_perm, resolve_access_identity
+
+    identity = resolve_access_identity(request)
+    if not (
+        has_perm(identity, 'map_radar', 'activate')
+        or has_perm(identity, 'map_radar_nav', 'display')
+    ):
+        return JsonResponse({'success': False, 'error': '无雷达告警查看权限'}, status=403)
     from utils.airport_scope import airport_codes_for_scope, clamp_future_hours
     from utils.radar.pipeline import job_stale_filter
 
@@ -232,6 +264,9 @@ def _echo_waiting(seconds: float):
 @require_http_methods(['GET'])
 def radar_echo(request, time_mode='current'):
     """机场周边 200 公里、Z7 雷达回波。达到每分钟上限时返回等待秒数，不下载瓦片。"""
+    denied = _deny(request, 'map_radar', 'activate', '无雷达回波查看权限')
+    if denied:
+        return denied
     from core.models import RadarAlertConfig
     from utils.radar.config_defaults import merge_config
     from utils.radar.echo import (

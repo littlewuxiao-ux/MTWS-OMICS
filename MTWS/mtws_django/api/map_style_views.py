@@ -21,9 +21,17 @@ def _json_body(request):
 @csrf_exempt
 def map_style_config(request, time_mode='current'):
     from core.models import MapStyleConfig
+    from api.settings_views import _deny_settings_write
+    from utils.access_control import has_perm, resolve_access_identity
 
     row = MapStyleConfig.objects.order_by('id').first()
     if request.method == 'GET':
+        identity = resolve_access_identity(request)
+        if not (
+            has_perm(identity, 'view_map', 'display')
+            or has_perm(identity, 'settings_map_style', 'display')
+        ):
+            return JsonResponse({'success': False, 'error': '无地图样式查看权限'}, status=403)
         cfg = merge_map_style(row.config if row else None)
         return JsonResponse({
             'success': True,
@@ -35,6 +43,9 @@ def map_style_config(request, time_mode='current'):
             'palette': COLOR_SCHEMES[cfg['color_scheme']],
         })
 
+    denied = _deny_settings_write(request, 'settings_map_style')
+    if denied:
+        return denied
     data = _json_body(request)
     cfg_in = data.get('config')
     if not isinstance(cfg_in, dict):

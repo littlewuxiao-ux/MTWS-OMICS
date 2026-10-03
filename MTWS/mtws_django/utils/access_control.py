@@ -15,58 +15,77 @@ from django.utils import timezone
 
 from utils.popup_utils import get_client_ip, is_loopback_ip
 
-# 模块定义（与《MTWS权限列表》对齐）
+# 模块定义。category 对应管理页四大类；parent 为视图下的子项；
+# activate_locked 表示「激活后台」与「显示」同步，管理页不可单独改。
 ACCESS_MODULES: List[Dict[str, Any]] = [
-    {'code': 'view_home', 'name': '视图：当前主页', 'category': 'views', 'has_activate': False, 'has_write': False,
-     'hint_display': '导航栏显示并可进入列表主页'},
-    {'code': 'view_map', 'name': '视图：地图模式', 'category': 'views', 'has_activate': False, 'has_write': False,
-     'hint_display': '导航栏显示并可进入地图模式'},
-    {'code': 'view_plain', 'name': '视图：中文模式', 'category': 'views', 'has_activate': True, 'has_write': False,
-     'hint_display': '导航栏显示并可进入中文模式', 'hint_activate': '允许中文模式触发后台解析'},
-    {'code': 'view_trend', 'name': '视图：实况趋势告警', 'category': 'views', 'has_activate': False, 'has_write': False,
-     'hint_display': '导航栏显示并可进入实况趋势告警'},
-    {'code': 'flight_marks', 'name': '航班时刻（marks）', 'category': 'home', 'has_activate': False, 'has_write': False,
-     'hint_display': '允许使用 ?flight=marks 航班时刻图标模式'},
-    {'code': 'login_user', 'name': '登录的用户/登出按钮', 'category': 'home', 'has_activate': True, 'has_write': False,
+    {'code': 'login_user', 'name': '登录的用户/登出按钮', 'category': 'function', 'has_activate': True, 'has_write': False,
      'hint_display': '显示右上角用户与登出', 'hint_activate': '允许点击登出'},
-    {'code': 'nwp', 'name': '温度辅助', 'category': 'home', 'has_activate': True, 'has_write': False,
+    {'code': 'nwp', 'name': '温度辅助', 'category': 'function', 'has_activate': True, 'has_write': False,
      'hint_display': '显示温度辅助按钮', 'hint_activate': '允许触发温度辅助解析'},
-    {'code': 'refresh_btn', 'name': '刷新按钮', 'category': 'home', 'has_activate': True, 'has_write': False,
+    {'code': 'refresh_btn', 'name': '刷新按钮', 'category': 'function', 'has_activate': True, 'has_write': False,
      'hint_display': '显示刷新按钮', 'hint_activate': '允许触发后台解析刷新'},
-    {'code': 'search', 'name': '搜索框和搜索按钮', 'category': 'home', 'has_activate': True, 'has_write': False,
-     'hint_display': '显示搜索框和按钮', 'hint_activate': '搜索时可触发解析'},
-    {'code': 'detail_sun_home', 'name': '详情页·主页·日出日落', 'category': 'airport_detail', 'has_activate': False, 'has_write': False,
-     'hint_display': '主页模式下详情页显示日出日落'},
-    {'code': 'detail_sun_plain', 'name': '详情页·中文·日出日落', 'category': 'airport_detail', 'has_activate': False, 'has_write': False,
-     'hint_display': '中文模式下详情页显示日出日落'},
-    {'code': 'detail_runway_home', 'name': '详情页·主页·跑道', 'category': 'airport_detail', 'has_activate': False, 'has_write': False,
-     'hint_display': '主页模式下详情页显示跑道'},
-    {'code': 'detail_runway_plain', 'name': '详情页·中文·跑道', 'category': 'airport_detail', 'has_activate': False, 'has_write': False,
-     'hint_display': '中文模式下详情页显示跑道'},
-    {'code': 'detail_contact_home', 'name': '详情页·主页·联系方式', 'category': 'airport_detail', 'has_activate': False, 'has_write': False,
-     'hint_display': '主页模式下详情页显示联系方式'},
-    {'code': 'detail_contact_plain', 'name': '详情页·中文·联系方式', 'category': 'airport_detail', 'has_activate': False, 'has_write': False,
-     'hint_display': '中文模式下详情页显示联系方式'},
-    {'code': 'search_sun_home', 'name': '搜索页·主页·日出日落', 'category': 'airport_detail', 'has_activate': False, 'has_write': False,
-     'hint_display': '主页模式下搜索页显示日出日落'},
-    {'code': 'search_sun_plain', 'name': '搜索页·中文·日出日落', 'category': 'airport_detail', 'has_activate': False, 'has_write': False,
-     'hint_display': '中文模式下搜索页显示日出日落'},
-    {'code': 'search_runway_home', 'name': '搜索页·主页·跑道', 'category': 'airport_detail', 'has_activate': False, 'has_write': False,
-     'hint_display': '主页模式下搜索页显示跑道'},
-    {'code': 'search_runway_plain', 'name': '搜索页·中文·跑道', 'category': 'airport_detail', 'has_activate': False, 'has_write': False,
-     'hint_display': '中文模式下搜索页显示跑道'},
-    {'code': 'search_contact_home', 'name': '搜索页·主页·联系方式', 'category': 'airport_detail', 'has_activate': False, 'has_write': False,
-     'hint_display': '主页模式下搜索页显示联系方式'},
-    {'code': 'search_contact_plain', 'name': '搜索页·中文·联系方式', 'category': 'airport_detail', 'has_activate': False, 'has_write': False,
-     'hint_display': '中文模式下搜索页显示联系方式'},
-    {'code': 'detail_metar_trend', 'name': '机场详情页实况趋势', 'category': 'airport_detail', 'has_activate': True, 'has_write': False,
-     'hint_display': '详情页显示实况趋势', 'hint_activate': '展开趋势时可触发解析'},
-    {'code': 'import_alert', 'name': '报文入库告警', 'category': 'import_alert', 'has_activate': False, 'has_write': True,
-     'hint_display': '显示入库告警入口', 'hint_write': '可将告警标为已处理并写库'},
-    {'code': 'metar_popup', 'name': '实况弹窗标题及选项', 'category': 'metar_popup', 'has_activate': True, 'has_write': True,
-     'hint_display': '显示弹窗及运行/停场等开关', 'hint_activate': '可点忽略/收到/稍后/详情', 'hint_write': '将处理记录写入报文（按用户）'},
-    {'code': 'settings_btn', 'name': '设置按钮', 'category': 'settings', 'has_activate': False, 'has_write': False,
+    {'code': 'search', 'name': '搜索框和搜索按钮', 'category': 'function', 'has_activate': True, 'has_write': False,
+     'hint_display': '显示搜索框和搜索按钮', 'hint_activate': '搜索时可触发解析'},
+    {'code': 'settings_btn', 'name': '设置按钮', 'category': 'function', 'has_activate': False, 'has_write': False,
      'hint_display': '显示主页设置按钮'},
+    {'code': 'view_home', 'name': '主页', 'category': 'views', 'has_activate': False, 'has_write': False,
+     'hint_display': '导航栏显示并可进入列表主页'},
+    {'code': 'view_map', 'name': '地图', 'category': 'views', 'has_activate': False, 'has_write': False,
+     'hint_display': '导航栏显示并可进入地图模式'},
+    {'code': 'map_radar', 'name': '雷达回波与强对流预警', 'category': 'views', 'parent': 'view_map',
+     'has_activate': True, 'has_write': True, 'activate_locked': True,
+     'hint_display': '地图中显示雷达回波和强对流预警',
+     'hint_activate': '与显示同步，不可单独修改',
+     'hint_write': '可将雷达告警标为已处理并写库'},
+    {'code': 'map_radar_nav', 'name': '导航栏告警数量', 'category': 'views', 'parent': 'view_map',
+     'has_activate': False, 'has_write': False,
+     'hint_display': '地图导航图标显示未处理雷达告警数量'},
+    {'code': 'map_satellite', 'name': '卫星云图', 'category': 'views', 'parent': 'view_map',
+     'has_activate': False, 'has_write': False,
+     'hint_display': '地图中显示红外、水汽、可见光卫星云图'},
+    {'code': 'view_plain', 'name': '翻译', 'category': 'views', 'has_activate': True, 'has_write': False,
+     'hint_display': '导航栏显示并可进入中文模式', 'hint_activate': '允许中文模式触发后台解析'},
+    {'code': 'view_trend', 'name': '实况趋势', 'category': 'views',
+     'has_activate': True, 'has_write': True, 'activate_locked': True,
+     'hint_display': '导航栏显示并可进入实况趋势告警',
+     'hint_activate': '与显示同步，不可单独修改',
+     'hint_write': '可将趋势告警标为已处理并写库'},
+    {'code': 'view_trend_nav', 'name': '导航栏告警数量', 'category': 'views', 'parent': 'view_trend',
+     'has_activate': False, 'has_write': False,
+     'hint_display': '趋势导航图标显示未处理告警数量'},
+    {'code': 'import_alert', 'name': '报文入库告警', 'category': 'views',
+     'has_activate': True, 'has_write': True, 'activate_locked': True,
+     'hint_display': '导航栏显示并可进入报文入库告警',
+     'hint_activate': '与显示同步，不可单独修改',
+     'hint_write': '可将告警标为已处理并写库'},
+    {'code': 'detail_sun_home', 'name': '详情页·主页·日出日落', 'category': 'shared', 'has_activate': False, 'has_write': False,
+     'hint_display': '主页模式下详情页显示日出日落'},
+    {'code': 'detail_sun_plain', 'name': '详情页·中文·日出日落', 'category': 'shared', 'has_activate': False, 'has_write': False,
+     'hint_display': '中文模式下详情页显示日出日落'},
+    {'code': 'detail_runway_home', 'name': '详情页·主页·跑道', 'category': 'shared', 'has_activate': False, 'has_write': False,
+     'hint_display': '主页模式下详情页显示跑道'},
+    {'code': 'detail_runway_plain', 'name': '详情页·中文·跑道', 'category': 'shared', 'has_activate': False, 'has_write': False,
+     'hint_display': '中文模式下详情页显示跑道'},
+    {'code': 'detail_contact_home', 'name': '详情页·主页·联系方式', 'category': 'shared', 'has_activate': False, 'has_write': False,
+     'hint_display': '主页模式下详情页显示联系方式'},
+    {'code': 'detail_contact_plain', 'name': '详情页·中文·联系方式', 'category': 'shared', 'has_activate': False, 'has_write': False,
+     'hint_display': '中文模式下详情页显示联系方式'},
+    {'code': 'detail_metar_trend', 'name': '机场详情页实况趋势', 'category': 'shared', 'has_activate': True, 'has_write': False,
+     'hint_display': '详情页显示实况趋势', 'hint_activate': '展开趋势时可触发解析'},
+    {'code': 'metar_popup', 'name': '实况弹窗标题及选项', 'category': 'shared', 'has_activate': True, 'has_write': True,
+     'hint_display': '显示弹窗及运行/停场等开关', 'hint_activate': '可点忽略/收到/稍后/详情', 'hint_write': '将处理记录写入报文（按用户）'},
+    {'code': 'search_sun_home', 'name': '搜索结果·主页·日出日落', 'category': 'shared', 'has_activate': False, 'has_write': False,
+     'hint_display': '主页模式下搜索结果展示日出日落'},
+    {'code': 'search_sun_plain', 'name': '搜索结果·中文·日出日落', 'category': 'shared', 'has_activate': False, 'has_write': False,
+     'hint_display': '中文模式下搜索结果展示日出日落'},
+    {'code': 'search_runway_home', 'name': '搜索结果·主页·跑道', 'category': 'shared', 'has_activate': False, 'has_write': False,
+     'hint_display': '主页模式下搜索结果展示跑道'},
+    {'code': 'search_runway_plain', 'name': '搜索结果·中文·跑道', 'category': 'shared', 'has_activate': False, 'has_write': False,
+     'hint_display': '中文模式下搜索结果展示跑道'},
+    {'code': 'search_contact_home', 'name': '搜索结果·主页·联系方式', 'category': 'shared', 'has_activate': False, 'has_write': False,
+     'hint_display': '主页模式下搜索结果展示联系方式'},
+    {'code': 'search_contact_plain', 'name': '搜索结果·中文·联系方式', 'category': 'shared', 'has_activate': False, 'has_write': False,
+     'hint_display': '中文模式下搜索结果展示联系方式'},
     {'code': 'settings_airport_info', 'name': '机场信息设置', 'category': 'settings', 'has_activate': False, 'has_write': True, 'settings_write_exclusive': True,
      'hint_display': '设置中显示机场信息', 'hint_write': '可改机场信息（全站仅一组）'},
     {'code': 'settings_area_options', 'name': '区域信息设置', 'category': 'settings', 'has_activate': False, 'has_write': True, 'settings_write_exclusive': True,
@@ -85,25 +104,27 @@ ACCESS_MODULES: List[Dict[str, Any]] = [
      'hint_display': '设置中显示天气告警等级', 'hint_write': '可改天气告警等级（全站仅一组）'},
     {'code': 'settings_airport_location', 'name': '机场坐标', 'category': 'settings', 'has_activate': False, 'has_write': True, 'settings_write_exclusive': True,
      'hint_display': '设置中显示机场坐标', 'hint_write': '可改机场坐标（全站仅一组）'},
+    {'code': 'settings_radar_alert', 'name': '雷达告警', 'category': 'settings', 'has_activate': False, 'has_write': True, 'settings_write_exclusive': True,
+     'hint_display': '设置中显示雷达告警', 'hint_write': '可改雷达告警规则（全站仅一组）'},
     {'code': 'settings_trend_alert', 'name': '实况趋势告警', 'category': 'settings', 'has_activate': False, 'has_write': True, 'settings_write_exclusive': True,
      'hint_display': '设置中显示实况趋势告警', 'hint_write': '可改实况趋势告警规则（全站仅一组）'},
+    {'code': 'settings_map_style', 'name': '地图样式', 'category': 'settings', 'has_activate': False, 'has_write': True, 'settings_write_exclusive': True,
+     'hint_display': '设置中显示地图样式', 'hint_write': '可改地图样式（全站仅一组）'},
 ]
 
 MODULE_CATEGORIES = [
-    {'code': 'views', 'name': '显示视图'},
-    {'code': 'home', 'name': '主页'},
-    {'code': 'airport_detail', 'name': '机场详情'},
-    {'code': 'import_alert', 'name': '入库告警'},
-    {'code': 'metar_popup', 'name': '实况弹窗'},
-    {'code': 'settings', 'name': '设置'},
-    {'code': 'other', 'name': '其他'},
+    {'code': 'function', 'name': '通用功能区'},
+    {'code': 'views', 'name': '视图设置'},
+    {'code': 'shared', 'name': '通用功能'},
+    {'code': 'settings', 'name': '设置选项'},
 ]
 
 MODULE_BY_CODE = {m['code']: m for m in ACCESS_MODULES}
 SETTINGS_WRITE_EXCLUSIVE = {m['code'] for m in ACCESS_MODULES if m.get('settings_write_exclusive')}
 
-# 显示视图，顺序即导航栏顺序，也是无权限回落的优先级
-VIEW_MODULE_CODES = ('view_home', 'view_map', 'view_plain', 'view_trend')
+# 导航视图，顺序即无权限回落的优先级（导航栏顺序另见 views_nav.js）
+VIEW_MODULE_CODES = ('view_home', 'view_map', 'view_plain', 'view_trend', 'import_alert')
+_VIEW_REQUIRED_MSG = '主页、地图、翻译、实况趋势、报文入库告警至少需要保留一个显示权限'
 
 LOCAL_GROUP_CODE = 'local'
 SUPERUSER_CONFIG_TYPE = 'access_control'
@@ -126,7 +147,9 @@ SETTINGS_MODULE_MAP = {
     'weather_type': 'settings_weather_type',
     'weather_alert': 'settings_weather_alert',
     'airport_location': 'settings_airport_location',
+    'radar_alert': 'settings_radar_alert',
     'trend_alert': 'settings_trend_alert',
+    'map_style': 'settings_map_style',
 }
 
 _lock = threading.Lock()
@@ -166,9 +189,14 @@ def permissions_dict_from_group(group) -> Dict[str, dict]:
         return result
     for row in group.permissions.all():
         meta = MODULE_BY_CODE.get(row.module_code) or {}
+        displayed = bool(row.can_display)
+        if meta.get('activate_locked'):
+            activated = displayed and bool(meta.get('has_activate'))
+        else:
+            activated = bool(row.can_activate) if meta.get('has_activate') else False
         result[row.module_code] = {
-            'display': bool(row.can_display),
-            'activate': bool(row.can_activate) if meta.get('has_activate') else False,
+            'display': displayed,
+            'activate': activated,
             'write': bool(row.can_write) if meta.get('has_write') else False,
         }
     return result
@@ -200,6 +228,41 @@ def ensure_bootstrap_data():
                 can_write=bool(m.get('has_write')),
             ))
         AccessGroupPermission.objects.bulk_create(bulk)
+    else:
+        # 本机组补齐后续新增模块，并同步锁定激活项
+        existing = {
+            row.module_code: row
+            for row in AccessGroupPermission.objects.filter(group=group)
+        }
+        missing = []
+        for m in ACCESS_MODULES:
+            row = existing.get(m['code'])
+            if not row:
+                missing.append(AccessGroupPermission(
+                    group=group,
+                    module_code=m['code'],
+                    can_display=True,
+                    can_activate=bool(m.get('has_activate')),
+                    can_write=bool(m.get('has_write')),
+                ))
+                continue
+            if m.get('activate_locked') and row.can_activate != row.can_display:
+                row.can_activate = bool(row.can_display)
+                row.save(update_fields=['can_activate'])
+            # 本机组对锁定激活且可写模块，显示开启时补齐写入
+            if (
+                group.is_local
+                and m.get('has_write')
+                and row.can_display
+                and not row.can_write
+            ):
+                row.can_write = True
+                row.save(update_fields=['can_write'])
+        if missing:
+            AccessGroupPermission.objects.bulk_create(missing)
+        AccessGroupPermission.objects.filter(
+            group=group
+        ).exclude(module_code__in=MODULE_BY_CODE.keys()).delete()
 
     exists = SystemConfig.objects.filter(
         config_type=SUPERUSER_CONFIG_TYPE, config_key=SUPERUSER_CONFIG_KEY
@@ -454,13 +517,17 @@ def validate_group_permission_payload(group, perms_payload: dict, is_local_group
         can_display = bool(raw.get('display'))
         can_activate = bool(raw.get('activate')) if m.get('has_activate') else False
         can_write = bool(raw.get('write')) if m.get('has_write') else False
-        # 勾了激活/写入视为需要显示对应模块
+        # 勾了激活/写入视为需要显示对应模块。锁定项的激活由显示决定，不反向打开显示。
+        if m.get('activate_locked'):
+            can_activate = False
         if can_activate or can_write:
             can_display = True
         if not can_display:
             can_activate = False
             can_write = False
-        if can_activate and not m.get('has_activate'):
+        if m.get('activate_locked'):
+            can_activate = can_display and bool(m.get('has_activate'))
+        elif can_activate and not m.get('has_activate'):
             can_activate = False
         if can_write and not m.get('has_write'):
             can_write = False
@@ -473,7 +540,7 @@ def validate_group_permission_payload(group, perms_payload: dict, is_local_group
 
     # 三个显示视图不得全部关闭，否则该组登录后无处可去
     if not any(r['can_display'] for r in rows if r['module_code'] in VIEW_MODULE_CODES):
-        return False, '主页、地图、翻译、实况趋势告警至少需要保留一个显示权限', []
+        return False, _VIEW_REQUIRED_MSG, []
 
     require_qr = bool(getattr(group, 'require_qr', False)) if group else False
     # 写入强制扫码（非本机）

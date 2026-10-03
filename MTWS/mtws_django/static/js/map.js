@@ -1210,6 +1210,30 @@ async function _applyWxLayer(id) {
 
 const _SAT_NAMES = { sat_ir: '红外', sat_wv: '水汽', sat_vis: '可见光' };
 
+function _accessAllows(module, action) {
+    if (typeof hasAccess !== 'function' || !window.__accessIdentity) return true;
+    return hasAccess(module, action);
+}
+
+function _applyWxPermission() {
+    const panel = document.getElementById('map-wx-layer-panel');
+    if (!panel) return;
+    const radarOn = _accessAllows('map_radar', 'display');
+    const satOn = _accessAllows('map_satellite', 'display');
+    const radarInput = panel.querySelector('input[data-wx="radar"]');
+    const radarLabel = radarInput && radarInput.closest('label');
+    if (radarLabel) radarLabel.style.display = radarOn ? '' : 'none';
+    const radarTime = panel.querySelector('[data-wx-time="radar"]');
+    if (radarTime) radarTime.style.display = radarOn ? '' : 'none';
+    const satBlock = document.getElementById('map-wx-sat-block');
+    if (satBlock) satBlock.style.display = satOn ? '' : 'none';
+    const satTime = panel.querySelector('[data-wx-time="sat"]');
+    if (satTime) satTime.style.display = satOn ? '' : 'none';
+    panel.style.display = (radarOn || satOn) ? '' : 'none';
+    if (_wxLayerId === 'radar' && !radarOn) _wxLayerId = 'none';
+    if (_wxLayerId && String(_wxLayerId).indexOf('sat_') === 0 && !satOn) _wxLayerId = 'none';
+}
+
 function _syncWxPanelUI(layerId) {
     const panel = document.getElementById('map-wx-layer-panel');
     if (!panel) return;
@@ -1227,6 +1251,7 @@ function _syncWxPanelUI(layerId) {
 
 function _initWxLayerPanel() {
     const panel = document.getElementById('map-wx-layer-panel');
+    _applyWxPermission();
     if (!panel || panel.dataset.bound) {
         if (panel) _syncWxPanelUI(_wxLayerId);
         return;
@@ -1269,7 +1294,8 @@ function _initWxLayerPanel() {
         saved = 'radar';
     }
     _wxLayerId = saved;
-    _syncWxPanelUI(saved);
+    _applyWxPermission();
+    _syncWxPanelUI(_wxLayerId);
 }
 
 function _scheduleWxRefresh() {
@@ -1370,6 +1396,10 @@ function _applyRadarFloat(data) {
     const panel = document.getElementById('radar-alert-float');
     const tip = document.getElementById('radar-alert-rate-tip');
     if (!panel) return;
+    if (!_accessAllows('map_radar', 'display')) {
+        panel.style.display = 'none';
+        return;
+    }
     panel.style.display = (window._viewMode === 'map') ? 'flex' : 'none';
     _renderRadarList();
     const st = data.status || {};
@@ -1433,6 +1463,11 @@ function _radarListQuery() {
 
 function _refreshRadarAlerts() {
     if (typeof currentTimeMode === 'undefined') return;
+    if (!_accessAllows('map_radar', 'display')) {
+        const panel = document.getElementById('radar-alert-float');
+        if (panel) panel.style.display = 'none';
+        return;
+    }
     fetch(`/${currentTimeMode}/api/radar/alerts/?${_radarListQuery()}`, {
         headers: typeof getRequestHeaders === 'function' ? getRequestHeaders() : {}
     })
@@ -1472,6 +1507,7 @@ function _runRadarForCurrentScope(hideStale) {
     _syncMapHoursVisibility();
     const trendHours = document.getElementById('trend-future-hours');
     if (trendHours) trendHours.value = String(hours);
+    if (!_accessAllows('map_radar', 'activate')) return;
     return fetch(`/${currentTimeMode}/api/radar/run/`, {
         method: 'POST',
         headers: {
@@ -1528,6 +1564,10 @@ function _runRadarAlertFromFloat() {
 
 function _markRadarHandled(btn) {
     if (!btn || btn.classList.contains('is-handled') || btn.disabled) return;
+    if (typeof hasAccess === 'function' && window.__accessIdentity && !hasAccess('map_radar', 'write')) {
+        alert('当前角色无雷达告警写入权限，处理结果不会保存，告警不会消除');
+        return;
+    }
     const code = btn.getAttribute('data-code');
     if (!code || typeof currentTimeMode === 'undefined') return;
     btn.disabled = true;
@@ -1879,7 +1919,7 @@ function _loadRadarEcho(rec) {
 }
 
 function openRadarEcho(code) {
-    if (!code) return;
+    if (!code || !_accessAllows('map_radar', 'display')) return;
     const existing = _echoByCode.get(code);
     if (existing && existing.el.isConnected) {
         _raiseEcho(existing.el);

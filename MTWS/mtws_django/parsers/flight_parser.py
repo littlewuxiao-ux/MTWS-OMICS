@@ -100,10 +100,6 @@ class FlightParser:
                     flags = self._marks_airport_flags(events)
                     has_flight = flags['has_flight']
                     old = old_by_airport.get(airport)
-                    # 格点恢复：改为
-                    #   airport_stats = self._calculate_airport_statistics(df_filtered, airport)
-                    #   time_slots = self._build_time_slots(airport_stats)
-                    time_slots = old.as_time_slots() if old else [''] * 48
                     en_route = flags['en_route']
                     closest_arr = flags['closest_arr_link']
                     closest_dep = flags['closest_dep_at']
@@ -113,7 +109,6 @@ class FlightParser:
                     stats_changed = (
                         old is None
                         or old.has_flight != has_flight
-                        or old.as_time_slots() != time_slots
                         or old.en_route != en_route
                         or old.closest_departure_time_of_arriving_flight != closest_arr
                         or old.closest_departure_time_at_this_airport != closest_dep
@@ -121,7 +116,7 @@ class FlightParser:
                     )
                     if stats_changed or events != old_events:
                         if self._upsert_airport_data(
-                            old, airport, has_flight, time_slots, events, en_route,
+                            old, airport, has_flight, events, en_route,
                             closest_arr, closest_dep, closest_lnd,
                         ):
                             processed_count += 1
@@ -260,150 +255,6 @@ class FlightParser:
         logger.info(f"机场列表: {all_airports}")
         
         return all_airports
-    
-    def _get_time_priority(self, row: pd.Series, time_type: str) -> Optional[datetime]:
-        """
-        根据优先级获取时间，空值跳过 - 修改为使用英文字段名
-        
-        Args:
-            row: 航班数据行
-            time_type: 时间类型 ('arrival', 'departure')
-            
-        Returns:
-            datetime: 解析后的时间
-        """
-        try:
-            if time_type == 'arrival':
-                # 到达时间优先级：eta > sta > pta
-                time_fields = ['eta', 'sta', 'pta']
-            else:  # departure
-                # 起飞时间优先级：etd > std > ptd（移除atd，只统计未起飞航班）
-                time_fields = ['etd', 'std', 'ptd']
-            
-            for field in time_fields:
-                if field in row and pd.notna(row[field]) and str(row[field]).strip():
-                    time_str = str(row[field]).strip()
-                    if time_str:
-                        # 尝试解析时间戳（毫秒级）
-                        try:
-                            # 将毫秒级时间戳转换为北京时间（与current_time保持一致）
-                            timestamp_ms = float(time_str)
-                            timestamp_s = timestamp_ms / 1000
-                            utc_time = datetime.utcfromtimestamp(timestamp_s)
-                            beijing_time = utc_time + timedelta(hours=8)
-                            return beijing_time
-                        except (ValueError, OSError):
-                            continue
-            
-            return None
-            
-        except Exception as e:
-            logger.error(f"获取时间优先级时发生错误: {e}")
-            return None
-    
-    def _get_departure_time_ms(self, row: pd.Series, include_atd: bool = True) -> Optional[int]:
-        """
-        获取航班的起飞时间毫秒级时间戳
-        
-        Args:
-            row: 航班数据行
-            include_atd: 是否包含atd字段
-            
-        Returns:
-            int: 毫秒级时间戳，None表示无有效时间
-        """
-        try:
-            if include_atd:
-                # 到达航班：优先级 atd > etd > std
-                time_fields = ['atd', 'etd', 'std']
-            else:
-                # 出发航班：优先级 etd > std（不包含atd）
-                time_fields = ['etd', 'std']
-            
-            for field in time_fields:
-                if field in row and pd.notna(row[field]) and str(row[field]).strip():
-                    time_str = str(row[field]).strip()
-                    if time_str:
-                        try:
-                            # 返回毫秒级时间戳
-                            timestamp_ms = int(float(time_str))
-                            return timestamp_ms
-                        except (ValueError, OSError):
-                            continue
-            
-            return None
-            
-        except Exception as e:
-            logger.error(f"获取起飞时间毫秒级时间戳时发生错误: {e}")
-            return None
-    
-    def _get_arrival_time_ms(self, row: pd.Series) -> Optional[int]:
-        """
-        获取航班的落地时间毫秒级时间戳
-        
-        Args:
-            row: 航班数据行
-            
-        Returns:
-            int: 毫秒级时间戳，None表示无有效时间
-        """
-        try:
-            # 落地时间优先级：eta > sta > pta
-            time_fields = ['eta', 'sta', 'pta']
-            
-            for field in time_fields:
-                if field in row and pd.notna(row[field]) and str(row[field]).strip():
-                    time_str = str(row[field]).strip()
-                    if time_str:
-                        try:
-                            timestamp_ms = int(float(time_str))
-                            return timestamp_ms
-                        except (ValueError, OSError):
-                            continue
-            
-            return None
-            
-        except Exception as e:
-            logger.error(f"获取落地时间毫秒级时间戳时发生错误: {e}")
-            return None
-    
-    def _calculate_time_slot(self, flight_time: datetime) -> int:
-        """
-        计算时间段索引 - 完全移植原始程序逻辑
-        
-        时间段计算逻辑：
-        - 当前时间：2025-5-10 11:25:00
-        - 当前时间整点：2025-5-10 11:00:00
-        - 航班时间整点：例如 2025-5-10 15:30:00 → 2025-5-10 15:00:00
-        - 时间差：15:00 - 11:00 = 4小时
-        - 返回索引：4 (即 time_4)
-        
-        Args:
-            flight_time: 航班时间
-            
-        Returns:
-            int: 时间段索引 (0-47)，-1表示超出范围
-        """
-        try:
-            # 计算当前时间的整点时刻
-            current_hour = self.current_time.replace(minute=0, second=0, microsecond=0)
-            
-            # 计算航班时间的整点时刻
-            flight_hour = flight_time.replace(minute=0, second=0, microsecond=0)
-            
-            # 计算时间差（以小时为单位）
-            time_diff = flight_hour - current_hour
-            hours_diff = int(time_diff.total_seconds() / 3600)
-            
-            # 返回时间段索引（0-47）
-            if 0 <= hours_diff <= 47:
-                return hours_diff
-            else:
-                return -1  # 超出范围
-                
-        except Exception as e:
-            logger.error(f"计算时间段时发生错误: {e}")
-            return -1
     
     def _has_field(self, row: pd.Series, field: str) -> bool:
         """字段是否有有效值。"""
@@ -597,13 +448,12 @@ class FlightParser:
         return new_events, False, changed_keys
 
     def _upsert_airport_data(
-        self, old, airport, has_flight, time_slots, events, en_route,
+        self, old, airport, has_flight, events, en_route,
         closest_arr, closest_dep, closest_lnd,
     ) -> bool:
         try:
             fields = {
                 'has_flight': has_flight,
-                'time_slots': time_slots,
                 'events': events or [],
                 'en_route': en_route,
                 'closest_departure_time_of_arriving_flight': closest_arr,
@@ -621,123 +471,6 @@ class FlightParser:
                 Flight.objects.filter(airport_4code=airport).update(**fields)
             else:
                 Flight.objects.create(airport_4code=airport, **fields)
-            return True
-        except Exception as e:
-            logger.error(f'保存机场{airport}数据时发生错误: {e}')
-            return False
-
-    def _calculate_airport_statistics(self, df: pd.DataFrame, airport: str) -> Dict[str, List[int]]:
-        """格点 48 格统计。恢复格点显示时由 parse 热路径重新调用；当前不调用。"""
-        try:
-            landing_inflight = [0] * 48
-            landing_all = [0] * 48
-            takeoff_all = [0] * 48
-            closest_arriving_time = None
-            closest_departing_time = None
-            closest_landing_time = None
-            current_time_ms = int(self.current_time.timestamp() * 1000)
-
-            arrival_flights = df[df['arrivalAirport'] == airport]
-            for _, row in arrival_flights.iterrows():
-                if self._has_field(row, 'ata'):
-                    continue
-                arrival_time = self._get_time_priority(row, 'arrival')
-                if arrival_time:
-                    slot = self._calculate_time_slot(arrival_time)
-                    if 0 <= slot <= 47:
-                        landing_all[slot] += 1
-                        if self._has_field(row, 'atd'):
-                            landing_inflight[slot] += 1
-                        if not self._has_field(row, 'atd'):
-                            departure_time_ms = self._get_departure_time_ms(row, include_atd=False)
-                            if departure_time_ms:
-                                if closest_arriving_time is None or departure_time_ms < closest_arriving_time:
-                                    closest_arriving_time = departure_time_ms
-                        landing_time_ms = self._get_arrival_time_ms(row)
-                        if landing_time_ms and landing_time_ms > current_time_ms:
-                            if closest_landing_time is None or landing_time_ms < closest_landing_time:
-                                closest_landing_time = landing_time_ms
-
-            departure_flights = df[df['departureAirport'] == airport]
-            for _, row in departure_flights.iterrows():
-                if self._has_field(row, 'atd'):
-                    continue
-                departure_time = self._get_time_priority(row, 'departure')
-                if departure_time:
-                    slot = self._calculate_time_slot(departure_time)
-                    if 0 <= slot <= 47:
-                        takeoff_all[slot] += 1
-                        departure_time_ms = self._get_departure_time_ms(row, include_atd=False)
-                        if departure_time_ms:
-                            if closest_departing_time is None or departure_time_ms < closest_departing_time:
-                                closest_departing_time = departure_time_ms
-
-            return {
-                'landing_inflight': landing_inflight,
-                'landing_all': landing_all,
-                'takeoff_all': takeoff_all,
-                'closest_arriving_time': closest_arriving_time,
-                'closest_departing_time': closest_departing_time,
-                'closest_landing_time': closest_landing_time
-            }
-        except Exception as e:
-            logger.error(f'计算机场{airport}统计数据时发生错误: {e}')
-            return {
-                'landing_inflight': [0] * 48,
-                'landing_all': [0] * 48,
-                'takeoff_all': [0] * 48,
-                'closest_arriving_time': None,
-                'closest_departing_time': None,
-                'closest_landing_time': None
-            }
-
-    def _build_time_slots(self, stats: Dict[str, List[int]]) -> list:
-        """由 48 格统计生成 time_slots。恢复格点时与 _calculate_airport_statistics 一起调用；当前不调用。"""
-        time_slots = []
-        for i in range(48):
-            inflight = stats['landing_inflight'][i]
-            landing = stats['landing_all'][i]
-            takeoff = stats['takeoff_all'][i]
-            if inflight == 0 and landing == 0 and takeoff == 0:
-                time_slots.append('')
-            else:
-                time_slots.append(f'{inflight}-{landing}-{takeoff}')
-        return time_slots
-
-    def _save_airport_data(self, airport: str, stats: Dict[str, List[int]], events: list = None) -> bool:
-        """保存机场航班数据到数据库。"""
-        try:
-            flags = self._marks_airport_flags(events or [])
-            Flight.objects.create(
-                airport_4code=airport,
-                has_flight=flags['has_flight'],
-                time_slots=self._build_time_slots(stats),
-                events=events or [],
-                en_route=flags['en_route'],
-                closest_departure_time_of_arriving_flight=flags['closest_arr_link'],
-                closest_departure_time_at_this_airport=flags['closest_dep_at'],
-                closest_landing_time_of_arriving_flight=flags['closest_lnd_at'],
-            )
-            logger.info(f'成功保存机场 {airport} 的数据，has_flight: {flags["has_flight"]}')
-            return True
-        except Exception as e:
-            logger.error(f'保存机场{airport}数据时发生错误: {e}')
-            return False
-
-    def _save_airport_data_silent(self, airport: str, stats: Dict[str, List[int]], has_flight: bool, events: list = None) -> bool:
-        """静默保存机场航班数据到数据库。"""
-        try:
-            flags = self._marks_airport_flags(events or [])
-            Flight.objects.create(
-                airport_4code=airport,
-                has_flight=flags['has_flight'],
-                time_slots=self._build_time_slots(stats),
-                events=events or [],
-                en_route=flags['en_route'],
-                closest_departure_time_of_arriving_flight=flags['closest_arr_link'],
-                closest_departure_time_at_this_airport=flags['closest_dep_at'],
-                closest_landing_time_of_arriving_flight=flags['closest_lnd_at'],
-            )
             return True
         except Exception as e:
             logger.error(f'保存机场{airport}数据时发生错误: {e}')

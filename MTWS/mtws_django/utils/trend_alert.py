@@ -49,6 +49,7 @@ HOUR_MS = 3600 * 1000
 DAY_MS = 24 * HOUR_MS
 MAX_HOURS = 72
 EXTRA_SCORE_CAP = 3
+SLOT_WINDOW_MS = 10 * 60 * 1000
 _CLOUD_RE = re.compile(r'\b(VV|FEW|SCT|BKN|OVC|NSC|SKC|CLR|NCD)(\d{3})?\b', re.I)
 _QNH_RE = re.compile(r'\bQ(\d{4})\b')
 _ALTIMETER_RE = re.compile(r'\bA(\d{4})\b')
@@ -252,6 +253,7 @@ def snapshot_from_row(row: dict) -> Optional[dict]:
     cloud = _cloud_state(elements, row.get('metar_cloud'), row.get('metar_min_cloud_height'))
     return {
         'time': int(observed),
+        'sa': kind == 'SA',
         'speci': 'SPECI' in kind or kind == 'SP',
         'temperature': temp,
         'dewpoint': dew,
@@ -446,14 +448,16 @@ def build_slots(now_ms: int) -> list:
 
 
 def _routine_for_slot(obs: list, slot: int) -> Optional[dict]:
-    """只放入本格的整点或半点报。没有这份报时格子留空，不用相邻时次填补。"""
+    """整点或半点前后 10 分钟内的例行报（SA）。多份时取发布时间更早的一份。"""
+    begin = slot - SLOT_WINDOW_MS
+    end = slot + SLOT_WINDOW_MS
     found = None
     for item in obs:
-        if item['speci']:
+        if not item.get('sa'):
             continue
-        if abs(item['time'] - slot) > 60 * 1000:
+        if item['time'] < begin or item['time'] > end:
             continue
-        if found is None or abs(item['time'] - slot) < abs(found['time'] - slot):
+        if found is None or item['time'] < found['time']:
             found = item
     return found
 
@@ -496,21 +500,32 @@ def _series(obs: list, slots: list, keys: list, now_ms: Optional[int] = None) ->
 
 
 def score_group(group: dict, obs: list, now_ms: int) -> Optional[dict]:
+    enabled = [cond for cond in (group.get('conditions') or []) if cond.get('enabled', True)]
+    for cond in enabled:
+        if cond.get('role') == 'veto' and _condition_match(cond, obs, now_ms):
+            return None
     required_scores = []
     extra_score = 0.0
+    deduct_score = 0.0
     labels = []
     rows = []
-    for cond in group.get('conditions') or []:
-        if not cond.get('enabled', True):
+    for cond in enabled:
+        if cond.get('role') == 'veto':
             continue
         if not _condition_match(cond, obs, now_ms):
             continue
         # 只收录整条条件已经命中的描述，未命中的不出现在四字代码下方
-        labels.append(cond.get('label') or '')
+        label = cond.get('label') or ''
+        role = cond.get('role')
+        if role == 'deduct' and label:
+            label = f'「{label}」'
+        labels.append(label)
         rows.extend(_hit_rows(cond))
         score = _num(cond.get('score')) or 0
-        if cond.get('role') == 'extra':
+        if role == 'extra':
             extra_score += min(score, EXTRA_SCORE_CAP)
+        elif role == 'deduct':
+            deduct_score += score
         else:
             required_scores.append(score)
     if required_scores:
@@ -520,7 +535,7 @@ def score_group(group: dict, obs: list, now_ms: int) -> Optional[dict]:
             required = max(required_scores)
     else:
         required = 0.0
-    total = required + extra_score
+    total = max(0.0, required + extra_score - deduct_score)
     red = _num(group.get('threshold_r'))
     yellow = _num(group.get('threshold_y'))
     green = _num(group.get('threshold_g'))
@@ -602,18 +617,24 @@ def _clean_condition(raw: dict, index: int, known_weather: set, errors: list) ->
         return None
     label = str(raw.get('label') or '').strip()
     score = _num(raw.get('score'))
-    role = 'extra' if str(raw.get('role') or '') == 'extra' else 'required'
+    role = str(raw.get('role') or '')
+    if role not in ('extra', 'veto', 'deduct'):
+        role = 'required'
     if not label:
         errors.append(f'{prefix}需要描述词')
-    if role == 'extra':
+    if role == 'required':
+        if score is None or score < 1 or score > 5:
+            errors.append(f'{prefix}基础条件分值需在 1 到 5 之间')
+            if score is None:
+                score = 1
+    elif role == 'veto':
+        score = 0
+    else:
+        role_name = {'extra': '附加条件', 'deduct': '减分条件'}[role]
         if score is None or score < 0.1 or score > EXTRA_SCORE_CAP:
-            errors.append(f'{prefix}附加条件分值需在 0.1 到 {EXTRA_SCORE_CAP} 之间')
+            errors.append(f'{prefix}{role_name}分值需在 0.1 到 {EXTRA_SCORE_CAP} 之间')
             if score is None:
                 score = 0.1
-    elif score is None or score < 1 or score > 5:
-        errors.append(f'{prefix}基础条件分值需在 1 到 5 之间')
-        if score is None:
-            score = 1
     use_change = _bool(raw.get('use_change'))
     use_current = _bool(raw.get('use_current'))
     if not use_change and not use_current:
@@ -929,7 +950,7 @@ def clear_airports(codes) -> None:
 
 
 def refresh_airports(codes, now_ms: Optional[int] = None) -> None:
-    """只重算给定机场。不在有航班或近 2 小时航班全集里的机场直接清掉结果。"""
+    """只重算给定机场。不在有航班或起降窗口全集里的机场直接清掉结果。"""
     import logging
     from core.models import AirportTrendAlert
     from parsers.models import Metar
@@ -949,8 +970,14 @@ def refresh_airports(codes, now_ms: Optional[int] = None) -> None:
         if not inside or not active_groups:
             clear_airports(inside)
             return
+        lookback = max_lookback_ms(active_groups)
+        try:
+            from parsers.trend_metar_backfill import ensure_hourly_sa_history
+            ensure_hourly_sa_history(inside, lookback, now_ms)
+        except Exception:
+            logger.exception('实况趋势告警历史补数失败: %s', inside)
         slots = build_slots(now_ms)
-        since = now_ms - max_lookback_ms(active_groups)
+        since = now_ms - lookback
         rows = Metar.objects.filter(
             airport_4code__in=inside,
             metar_observation_time__gte=since,
@@ -1002,6 +1029,7 @@ def refresh_active_airports(now_ms: Optional[int] = None) -> None:
 
 
 def build_results(scope: str, now_ms: Optional[int] = None, future_hours: int = 2) -> dict:
+    """只返回当前选中集合里的机场。已离开该集合的，不论是否已处理，都不进入表格和导航数字。"""
     from core.models import AirportTrendAlert
 
     now_ms = int(now_ms if now_ms is not None else time.time() * 1000)
@@ -1043,6 +1071,8 @@ def _self_check() -> None:
             'nsc': True,
         }
         base.update(values)
+        if 'sa' not in values:
+            base['sa'] = not base.get('speci')
         return base
 
     series = [
@@ -1148,7 +1178,11 @@ def _self_check() -> None:
     _, ok_extra = normalize_config(score_payload(0.1, 'extra'))
     _, low_base = normalize_config(score_payload(0.5, 'required'))
     _, ok_base = normalize_config(score_payload(1, 'required'))
+    _, low_deduct = normalize_config(score_payload(0.05, 'deduct'))
+    _, ok_deduct = normalize_config(score_payload(3, 'deduct'))
+    _, high_deduct = normalize_config(score_payload(3.1, 'deduct'))
     assert low_extra and not ok_extra and low_base and not ok_base
+    assert low_deduct and not ok_deduct and high_deduct
 
     group = {
         'enabled': True, 'required_agg': 'max',
@@ -1171,6 +1205,24 @@ def _self_check() -> None:
     assert averaged and averaged['score'] == 4.25
     only_extra = score_group(dict(group, conditions=[dict(weather, role='extra')], threshold_g=2, threshold_y=9, threshold_r=9), series, now)
     assert only_extra and only_extra['color'] == 'G' and only_extra['score'] == EXTRA_SCORE_CAP
+    vetoed = score_group(dict(group, conditions=[element, dict(element, role='veto', label='否决', score=0.5)]), series, now)
+    assert vetoed is None
+    deducted = score_group(dict(group, conditions=[
+        element, weather, dict(weather, role='deduct', score=2, label='回升'),
+    ]), series, now)
+    assert deducted and deducted['color'] == 'R' and abs(deducted['score'] - 5) < 1e-9
+    assert '「回升」' in deducted['labels']
+    floored = score_group(dict(group, conditions=[
+        element,
+        dict(element, role='deduct', score=3, label='扣一'),
+        dict(element, role='deduct', score=3, label='扣二'),
+    ]), series, now)
+    assert floored is None
+    isolated = evaluate_airport(series, [
+        dict(group, conditions=[element, dict(element, role='veto', label='否决', score=1)]),
+        dict(group, conditions=[element]),
+    ], now, build_slots(now))
+    assert isolated['color'] == 'Y' and '否决' not in isolated['labels']
 
     slots = build_slots(now)
     assert slots
@@ -1191,6 +1243,22 @@ def _self_check() -> None:
     assert with_speci[0]['cells'][0]['text'] == '7'
     assert with_speci[0]['cells'][1]['text'] == ''
     assert with_speci[0]['latest']['text'] == '9' and with_speci[0]['latest']['speci']
+    early = obs(0, temperature=1)
+    early['time'] = hour_slot - 8 * 60 * 1000
+    late = obs(0, temperature=2)
+    late['time'] = hour_slot - 2 * 60 * 1000
+    far = obs(0, temperature=8)
+    far['time'] = hour_slot - 11 * 60 * 1000
+    picked, _idx = _series([late, far, early], [hour_slot], ['temperature'], hour_slot)
+    assert picked[0]['cells'][0]['text'] == '1'
+    half_obs = obs(0, temperature=3)
+    half_obs['time'] = half_slot + 9 * 60 * 1000
+    half_rows, _idx = _series([half_obs], [hour_slot, half_slot], ['temperature'], half_slot)
+    assert half_rows[0]['cells'][0]['text'] == '' and half_rows[0]['cells'][1]['text'] == '3'
+    special = obs(0, temperature=6, speci=True)
+    special['time'] = hour_slot - 3 * 60 * 1000
+    special_rows, _idx = _series([special], [hour_slot], ['temperature'], hour_slot)
+    assert special_rows[0]['cells'][0]['text'] == ''
     quiet = evaluate_airport(only_hour, [], now, [hour_slot, half_slot])
     assert quiet['color'] == 'N' and quiet['rows'] == []
     merged = merge_hits([

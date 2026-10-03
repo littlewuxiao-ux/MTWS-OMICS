@@ -207,13 +207,23 @@ def _parse_single_metar(content: str, airport_code: str, now_ms: int) -> Optiona
     }
 
 
-def _fetch_history_obj(airport_code: str, time_mode: str, token: Optional[str], ws_types=None):
+def _fetch_history_obj(
+    airport_code: str,
+    time_mode: str,
+    token: Optional[str],
+    ws_types=None,
+    start_ms: Optional[int] = None,
+    end_ms: Optional[int] = None,
+):
     """
     调用与趋势图相同的原始历史报文接口（airportMetList），返回 (obj列表, now_ms)。
-    失败时 obj 为空列表。
+    失败时 obj 为空列表。可传入 start_ms/end_ms 覆盖默认的近 72 小时窗口。
     """
     now_ms = int(datetime.now(tz=timezone.utc).timestamp() * 1000)
-    start_ms = now_ms - 72 * 3_600_000
+    end = int(end_ms if end_ms is not None else now_ms)
+    start = int(start_ms if start_ms is not None else end - 72 * 3_600_000)
+    if start > end:
+        start, end = end, start
     if not ws_types:
         ws_types = ['SA', 'SP']
 
@@ -221,8 +231,8 @@ def _fetch_history_obj(airport_code: str, time_mode: str, token: Optional[str], 
         'code4s': airport_code,
         'wsTypes': list(ws_types),
         'historyFlag': 'Y',
-        'searchStartDate': start_ms,
-        'searchEndDate': now_ms,
+        'searchStartDate': start,
+        'searchEndDate': end,
         'metarOrTafTopNum': 100000,
         'otherTopNum': 100000,
     }
@@ -290,12 +300,22 @@ def fetch_raw_met_list(
     time_mode: str = 'current',
     token: Optional[str] = None,
     ws_types=None,
+    start_ms: Optional[int] = None,
+    end_ms: Optional[int] = None,
 ) -> list:
     """
     从同源原始接口取报文列表。
     每项: {content, wtype, sort_time}
+    可传入 start_ms/end_ms 限定时间范围；默认近 72 小时。
     """
-    obj, now_ms = _fetch_history_obj(airport_code, time_mode, token, ws_types=ws_types)
+    obj, now_ms = _fetch_history_obj(
+        airport_code,
+        time_mode,
+        token,
+        ws_types=ws_types,
+        start_ms=start_ms,
+        end_ms=end_ms,
+    )
     items = []
     for item in obj:
         content = (item.get('content') or '').strip()
