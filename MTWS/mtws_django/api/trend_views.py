@@ -50,8 +50,8 @@ def trend_alert_handle(request, time_mode='current'):
     from core.models import AirportTrendAlert
 
     identity = resolve_access_identity(request)
-    if not has_perm(identity, 'view_trend', 'display'):
-        return JsonResponse({'success': False, 'error': '无实况趋势告警查看权限'}, status=403)
+    if not has_perm(identity, 'view_trend', 'write'):
+        return JsonResponse({'success': False, 'error': '无实况趋势告警写入权限', 'written': False}, status=403)
     data = _body(request)
     code = str(data.get('airport') or data.get('airport_4code') or '').strip().upper()
     if len(code) != 4:
@@ -68,7 +68,7 @@ def trend_alert_handle(request, time_mode='current'):
 @require_http_methods(['GET'])
 def trend_alert_results(request, time_mode='current'):
     identity = resolve_access_identity(request)
-    if not has_perm(identity, 'view_trend', 'display'):
+    if not has_perm(identity, 'view_trend', 'activate'):
         return JsonResponse({'success': False, 'error': '无实况趋势告警查看权限'}, status=403)
     from utils.airport_scope import clamp_future_hours
 

@@ -227,11 +227,20 @@
     });
   }
 
+  function trendNavBadgeAllowed() {
+    if (typeof hasAccess !== 'function' || !window.__accessIdentity) return true;
+    return hasAccess('view_trend_nav', 'display');
+  }
+
   function updateNavBadge() {
     const btn = document.querySelector('.view-nav-item[data-view="trend"]');
     if (!btn) return;
     bindStatHover();
     let badge = btn.querySelector('.trend-nav-badge');
+    if (!trendNavBadgeAllowed()) {
+      if (badge) badge.remove();
+      return;
+    }
     const colors = new Set(statColors());
     const count = ((payload && payload.airports) || []).filter((item) => colors.has(item.color) && !item.handled).length;
     if (!count) {
@@ -299,6 +308,10 @@
 
   async function markTrendHandled(btn) {
     if (!btn || btn.classList.contains('is-handled') || btn.disabled) return;
+    if (typeof hasAccess === 'function' && window.__accessIdentity && !hasAccess('view_trend', 'write')) {
+      alert('当前角色无实况趋势写入权限，处理结果不会保存，告警不会消除');
+      return;
+    }
     const code = btn.getAttribute('data-code');
     if (!code) return;
     btn.disabled = true;

@@ -492,15 +492,12 @@
     document.getElementById('access-admin-require-qr').checked = !!g.require_qr;
     document.getElementById('access-admin-del-group').style.display = g.is_local ? 'none' : '';
 
-    const catOrder = ['views', 'home', 'airport_detail', 'import_alert', 'metar_popup', 'settings', 'other'];
+    const catOrder = ['function', 'views', 'shared', 'settings'];
     const catNames = {
-      views: '显示视图',
-      home: '主页',
-      airport_detail: '详情与搜索',
-      import_alert: '入库告警',
-      metar_popup: '实况弹窗',
-      settings: '设置',
-      other: '其他',
+      function: '通用功能区',
+      views: '视图设置',
+      shared: '通用功能',
+      settings: '设置选项',
     };
     const grouped = {};
     _adminModulesCache.forEach((m) => {
@@ -509,10 +506,12 @@
       grouped[cat].push(m);
     });
 
-    const permCell = (m, k, enabled, checked) => {
+    const permCell = (m, k, enabled, checked, locked) => {
       if (!enabled) return '<td class="access-perm-na">-</td>';
       const hint = m[`hint_${k}`] || '';
-      return `<td class="access-perm-check"><label class="access-perm-opt"><input type="checkbox" data-mod="${m.code}" data-k="${k}" ${checked ? 'checked' : ''}/>${hint ? `<span class="access-perm-hint">${hint}</span>` : ''}</label></td>`;
+      const dis = locked ? ' disabled' : '';
+      const cls = locked ? ' access-perm-opt-locked' : '';
+      return `<td class="access-perm-check"><label class="access-perm-opt${cls}"><input type="checkbox" data-mod="${m.code}" data-k="${k}"${dis} ${checked ? 'checked' : ''}/>${hint ? `<span class="access-perm-hint">${hint}</span>` : ''}</label></td>`;
     };
     let html = `<table class="access-perm-table">
       <colgroup>
@@ -527,16 +526,21 @@
       if (!mods.length) return;
       mods.forEach((m, idx) => {
         const p = (g.permissions || {})[m.code] || {};
-        const rowClass = (idx === 0 && !firstCat) ? ' class="access-cat-start"' : '';
+        const rowBits = [];
+        if (idx === 0 && !firstCat) rowBits.push('access-cat-start');
+        if (m.parent) rowBits.push('access-mod-child-row');
+        const rowClass = rowBits.length ? ` class="${rowBits.join(' ')}"` : '';
         html += `<tr${rowClass}>`;
         if (idx === 0) {
           html += `<td class="access-cat-cell" rowspan="${mods.length}">${catNames[cat] || cat}</td>`;
           firstCat = false;
         }
-        html += `<td class="access-mod-name">${m.name}</td>
-        ${permCell(m, 'display', true, !!p.display)}
-        ${permCell(m, 'activate', !!m.has_activate, !!p.activate)}
-        ${permCell(m, 'write', !!m.has_write, !!p.write)}
+        const nameCls = m.parent ? 'access-mod-name access-mod-child' : 'access-mod-name';
+        const activateOn = m.activate_locked ? !!p.display : !!p.activate;
+        html += `<td class="${nameCls}">${m.name}</td>
+        ${permCell(m, 'display', true, !!p.display, false)}
+        ${permCell(m, 'activate', !!m.has_activate, activateOn, !!m.activate_locked)}
+        ${permCell(m, 'write', !!m.has_write, !!p.write, false)}
       </tr>`;
       });
     });
@@ -556,12 +560,13 @@
           if (!qr.checked) {
             alert('勾选写入权限时必须同时勾选扫码认证');
             cb.checked = false;
+            syncLockedActivate(wrap, mod);
             return;
           }
         }
         if (VIEW_MODULES.includes(mod) && k === 'display' && !cb.checked) {
           if (!countCheckedViews(wrap)) {
-            alert('主页、地图模式、中文模式至少选中一个');
+            alert('主页、地图、翻译、实况趋势、报文入库告警至少选中一个');
             cb.checked = true;
             return;
           }
@@ -571,11 +576,20 @@
             if (x !== cb) x.checked = false;
           });
         }
+        syncLockedActivate(wrap, mod);
       });
     });
   }
 
-  const VIEW_MODULES = ['view_home', 'view_map', 'view_plain'];
+  function syncLockedActivate(wrap, mod) {
+    const meta = _adminModulesCache.find((m) => m.code === mod);
+    if (!meta || !meta.activate_locked) return;
+    const disp = wrap.querySelector(`input[data-mod="${mod}"][data-k="display"]`);
+    const act = wrap.querySelector(`input[data-mod="${mod}"][data-k="activate"]`);
+    if (disp && act) act.checked = !!disp.checked;
+  }
+
+  const VIEW_MODULES = ['view_home', 'view_map', 'view_plain', 'view_trend', 'import_alert'];
 
   function countCheckedViews(wrap) {
     return VIEW_MODULES.filter((code) => {
@@ -598,8 +612,13 @@
       if (!permissions[mod]) permissions[mod] = {};
       permissions[mod][k] = cb.checked;
     });
+    // 锁定激活项以显示为准（disabled 框在部分环境下仍可能读不到）
+    _adminModulesCache.forEach((m) => {
+      if (!m.activate_locked || !permissions[m.code]) return;
+      permissions[m.code].activate = !!permissions[m.code].display;
+    });
     if (!VIEW_MODULES.some((code) => (permissions[code] || {}).display)) {
-      alert('主页、地图模式、中文模式至少选中一个');
+      alert('主页、地图、翻译、实况趋势、报文入库告警至少选中一个');
       return;
     }
     const require_qr = g.is_local ? false : document.getElementById('access-admin-require-qr').checked;

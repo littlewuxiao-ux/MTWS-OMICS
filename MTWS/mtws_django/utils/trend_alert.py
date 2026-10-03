@@ -515,10 +515,13 @@ def score_group(group: dict, obs: list, now_ms: int) -> Optional[dict]:
         if not _condition_match(cond, obs, now_ms):
             continue
         # 只收录整条条件已经命中的描述，未命中的不出现在四字代码下方
-        labels.append(cond.get('label') or '')
+        label = cond.get('label') or ''
+        role = cond.get('role')
+        if role == 'deduct' and label:
+            label = f'「{label}」'
+        labels.append(label)
         rows.extend(_hit_rows(cond))
         score = _num(cond.get('score')) or 0
-        role = cond.get('role')
         if role == 'extra':
             extra_score += min(score, EXTRA_SCORE_CAP)
         elif role == 'deduct':
@@ -1208,6 +1211,7 @@ def _self_check() -> None:
         element, weather, dict(weather, role='deduct', score=2, label='回升'),
     ]), series, now)
     assert deducted and deducted['color'] == 'R' and abs(deducted['score'] - 5) < 1e-9
+    assert '「回升」' in deducted['labels']
     floored = score_group(dict(group, conditions=[
         element,
         dict(element, role='deduct', score=3, label='扣一'),

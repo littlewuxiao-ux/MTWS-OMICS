@@ -205,6 +205,11 @@
   let _radarAlarmCount = 0;
   let _radarAlarmBadgeTimer = null;
 
+  function radarNavBadgeAllowed() {
+    if (typeof hasAccess !== 'function' || !window.__accessIdentity) return true;
+    return hasAccess('map_radar_nav', 'display');
+  }
+
   function updateRadarAlarmNavBadge(count) {
     if (typeof count === 'number' && !Number.isNaN(count)) {
       _radarAlarmCount = count;
@@ -212,7 +217,7 @@
     const btn = document.querySelector('.view-nav-item[data-view="map"]');
     if (!btn) return;
     let badge = btn.querySelector('.view-nav-badge');
-    if (_radarAlarmCount <= 0) {
+    if (!radarNavBadgeAllowed() || _radarAlarmCount <= 0) {
       if (badge) badge.remove();
       return;
     }
@@ -225,6 +230,10 @@
   }
 
   function refreshRadarAlarmBadge() {
+    if (!radarNavBadgeAllowed()) {
+      updateRadarAlarmNavBadge(0);
+      return;
+    }
     if (!document.querySelector('.view-nav-item[data-view="map"]')) return;
     const mode = (typeof currentTimeMode !== 'undefined') ? currentTimeMode : (window.timeMode || 'current');
     const headers = (typeof getRequestHeaders === 'function') ? getRequestHeaders() : {};

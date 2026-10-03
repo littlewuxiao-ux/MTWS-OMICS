@@ -1476,8 +1476,8 @@
       'weather-type': 'settings_weather_type',
       'weather-alert': 'settings_weather_alert',
       'airport-location': 'settings_airport_location',
-      'radar-alert': 'settings_airport_location',
-      'map-style': 'settings_airport_location',
+      'radar-alert': 'settings_radar_alert',
+      'map-style': 'settings_map_style',
       'trend-alert': 'settings_trend_alert',
     };
     Object.keys(TAB_PERM).forEach((tab) => {
