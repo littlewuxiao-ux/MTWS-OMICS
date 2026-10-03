@@ -292,9 +292,6 @@ def airports_overview(request, time_mode='current'):
                 ]
             }
             
-            # 格点恢复：改回
-            #   from utils.alert_calculator import AlertCalculator
-            #   airport_data['computed_alerts'] = AlertCalculator(time_mode).calculate_airport_alerts(airport_data, time_range)
             airport_data['computed_alerts'] = computed_alerts_from_flight(flight_data)
             
             airports_data.append(airport_data)

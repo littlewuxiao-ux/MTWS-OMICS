@@ -300,29 +300,6 @@ class DataProcessor:
         return valid_flights
     
     @staticmethod
-    def merge_flight_data(time_slots: List[str]) -> Dict[str, Any]:
-        """
-        合并航班时间段数据
-        
-        Args:
-            time_slots: 48个时间段的数据
-            
-        Returns:
-            Dict: 合并后的数据
-        """
-        if not time_slots or len(time_slots) != 48:
-            return {'has_flight': False, 'time_slots': [''] * 48, 'events': []}
-        
-        has_flight = any(slot and str(slot).strip() and str(slot).strip() != 'None'
-                        for slot in time_slots)
-        
-        return {
-            'has_flight': has_flight,
-            'time_slots': list(time_slots),
-            'events': [],
-        }
-    
-    @staticmethod
     def validate_numeric_range(value: Any, min_val: float = None, 
                               max_val: float = None) -> bool:
         """

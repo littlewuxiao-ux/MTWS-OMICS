@@ -7,9 +7,6 @@
 
 window.flightMarksPastExpanded = window.flightMarksPastExpanded || false;
 
-// 主页固定为 marks。格点式恢复：① isFlightMarksMode 改回认 ?flight=marks 与 flight_marks 权限
-// ② flight_parser 热路径恢复 _calculate_airport_statistics + _build_time_slots
-// ③ api/views 概览改回 AlertCalculator.calculate_airport_alerts（格子着色）
 function isFlightMarksMode() {
     return true;
 }
@@ -761,68 +758,7 @@ function loadCarrierData() {
 }
 
 function createFlightTimeline(flightData, tafData = null, metarData = null, airport = null) {
-    // 格点分支（isFlightMarksMode 为 false 时）：用 time_slots 画 1-2-3；恢复格点后会重新走到这里
-    if (isFlightMarksMode()) {
-        return createMarksFlightTimeline(flightData || {}, airport && airport.airport_4code);
-    }
-
-    const timeSlots = flightData.time_slots || [];
-    let flightInfos = [];
-
-    for (let i = 0; i < currentTimeRange; i++) {
-        const flightInfo = timeSlots[i] || '';
-
-        if (flightInfo && flightInfo.trim() !== '' && flightInfo.trim() !== 'None' && flightInfo.trim() !== 'null') {
-            const leftPercent = (i / currentTimeRange) * 100;
-            const widthPercent = (1 / currentTimeRange) * 100;
-            const alertLevel = calculateFlightAlertLevel(i, tafData, metarData, flightData, airport);
-            const alertColor = alertLevel ? getAlertColor(alertLevel) : '#333';
-
-            flightInfos.push(`
-                <div class="flight-info-item" style="
-                    position: absolute;
-                    left: ${leftPercent}%;
-                    width: ${widthPercent}%;
-                    height: 100%;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    font-size: 11px;
-                    font-weight: bold;
-                    color: ${alertColor};
-                    z-index: 2;
-                    pointer-events: none;
-                ">${flightInfo}</div>
-            `);
-        }
-    }
-
-    return flightInfos.join('');
-}
-
-function calculateFlightAlertLevel(timeSlotIndex, tafData, metarData, flightData, airport) {
-    try {
-        const currentMargin = getSelectedAlertMargin();
-        if (airport && airport.computed_alerts) {
-            const marginKey = `margin_${currentMargin}`;
-            const marginResults = airport.computed_alerts[marginKey];
-            if (marginResults && marginResults.time_slots && timeSlotIndex < marginResults.time_slots.length) {
-                return marginResults.time_slots[timeSlotIndex];
-            }
-        }
-        return 'N';
-    } catch (error) {
-        console.error('获取时段告警等级失败:', error);
-        return 'N';
-    }
-}
-
-function getMaxAlertFromList(alerts) {
-    if (!alerts || alerts.length === 0) return 'N';
-    if (alerts.includes('R')) return 'R';
-    if (alerts.includes('Y')) return 'Y';
-    if (alerts.includes('G')) return 'G';
-    return 'N';
+    return createMarksFlightTimeline(flightData || {}, airport && airport.airport_4code);
 }
 
 function updateFlightStatusWarning(flightStatus) {

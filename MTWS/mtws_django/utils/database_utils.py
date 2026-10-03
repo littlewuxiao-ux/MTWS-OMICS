@@ -218,41 +218,6 @@ class DatabaseManager:
             logger.error(f"批量操作失败: {e}")
             return {'created': 0, 'updated': 0, 'errors': len(data_list), 'total': len(data_list)}
     
-    def check_flight_data_changed(self, new_flight_data: Dict[str, Any]) -> bool:
-        """
-        检查航班数据是否发生变化
-        
-        Args:
-            new_flight_data: 新的航班数据
-            
-        Returns:
-            bool: 是否发生变化
-        """
-        try:
-            airport_code = new_flight_data.get('airport_4code')
-            qs = Flight.objects.all()
-            if airport_code:
-                qs = qs.filter(airport_4code=airport_code)
-            latest_flight = qs.order_by('-created_at').first()
-            
-            if not latest_flight:
-                return True  # 没有历史记录，认为有变化
-            
-            if latest_flight.has_flight != new_flight_data.get('has_flight'):
-                return True
-            
-            old_slots = latest_flight.as_time_slots()
-            new_slots = new_flight_data.get('time_slots')
-            if new_slots is None:
-                new_slots = new_flight_data.get('flight_detail')
-                if isinstance(new_slots, dict):
-                    new_slots = new_slots.get('time_slots')
-            return old_slots != (new_slots if new_slots is not None else [])
-            
-        except Exception as e:
-            logger.error(f"检查航班数据变化失败: {e}")
-            return True  # 出错时认为有变化，确保数据被处理
-    
     def get_airport_thresholds(self, airport_4code: str) -> Optional[AirportAlertThresholds]:
         """
         获取机场告警阈值

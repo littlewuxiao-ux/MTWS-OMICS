@@ -2798,7 +2798,6 @@ function getSelectedAlertMargin() {
 
 
 
-// calculateFlightAlertLevel / getMaxAlertFromList → 已迁移至 main_flight.js
 // calculateMetarAlert → 已迁移至 main_metar.js
 
 
