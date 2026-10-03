@@ -144,7 +144,8 @@ const pbState = {
   sourceForecastCache: {},
   draftData: {},
   cfgIceTemp: 10, cfgIceDewPointDiff: 0, cfgIceVis: 1500, cfgIcePrecipHours: 12, cfgExtColdTemp: -30,
-  specialConditionAirports: new Map()
+  specialConditionAirports: new Map(),
+  loadGeneration: 0
 };
 
 let _nextRowIdx = 0, _cachedAirports = [];
@@ -198,6 +199,7 @@ window.setTextImportAirports = function(icaos) {
 window.clearTextImportAirports = function() {
     pbState.textImportAirports = new Set();
     pbState.sourceAirports.text.clear();
+    pbState.sourceSequences.text = [];
 };
 
 function recordImportSequence(icaos) {
@@ -213,6 +215,7 @@ function recordImportSequence(icaos) {
 function registerSourceAirports(source, icaos, { replace = false } = {}) {
     if (!pbState.sourceAirports[source]) pbState.sourceAirports[source] = new Set();
     if (replace) pbState.sourceAirports[source].clear();
+    if (replace && pbState.sourceSequences[source]) pbState.sourceSequences[source] = [];
     const normalized = (icaos || []).map(v => String(v || '').trim().toUpperCase()).filter(Boolean);
     normalized.forEach(icao => pbState.sourceAirports[source].add(icao));
     if (pbState.sourceSequences[source]) {
@@ -271,13 +274,18 @@ function isAirportRegionEnabled(icao) {
 
 function getSelectedAirportGroupInfo(icao) {
     const normalizedIcao = String(icao || '').trim().toUpperCase();
+    let ordinaryGroup = null;
     for (let groupIndex = 0; groupIndex < pbState.airportGroups.length; groupIndex++) {
         if (!pbState.selectedResidentGroups.has(String(groupIndex))) continue;
         const group = pbState.airportGroups[groupIndex];
         const airportIndex = (group.airports || []).findIndex(code => String(code || '').trim().toUpperCase() === normalizedIcao);
-        if (airportIndex !== -1) return { group, groupIndex, airportIndex, pinned: !!group.alwaysShow };
+        if (airportIndex !== -1) {
+            const info = { group, groupIndex, airportIndex, pinned: !!group.alwaysShow };
+            if (info.pinned) return info;
+            if (!ordinaryGroup) ordinaryGroup = info;
+        }
     }
-    return null;
+    return ordinaryGroup;
 }
 
 function getAirportNatureLabel(airport) {
@@ -296,34 +304,14 @@ window.getAirportNatureLabel = getAirportNatureLabel;
 function sortPublishAirportAnalysis(items) {
     const domesticRegions = Object.keys(AIRPORT_CFG.domestic);
     const internationalRegions = Object.keys(AIRPORT_CFG.international);
-    const sourceOrder = new Map();
-    ['text', 'table'].forEach(source => (pbState.sourceSequences[source] || []).forEach((icao, index) => sourceOrder.set(icao, index)));
+    const sourceOrders = {};
+    ['table', 'text'].forEach(source => {
+        sourceOrders[source] = new Map(
+            (pbState.sourceSequences[source] || []).map((icao, index) => [String(icao).trim().toUpperCase(), index])
+        );
+    });
     const manualOrder = new Map((pbState.manualAirportOrder || []).map((icao, index) => [String(icao).trim().toUpperCase(), index]));
-    return [...items].map((item, index) => ({ item, index })).sort((left, right) => {
-        const a = left.item;
-        const b = right.item;
-        if (manualOrder.size) {
-            const orderA = manualOrder.get(String(a.icao || '').trim().toUpperCase());
-            const orderB = manualOrder.get(String(b.icao || '').trim().toUpperCase());
-            if (orderA !== undefined || orderB !== undefined) {
-                if (orderA === undefined) return 1;
-                if (orderB === undefined) return -1;
-                if (orderA !== orderB) return orderA - orderB;
-            }
-        }
-        const groupA = getSelectedAirportGroupInfo(a.icao);
-        const groupB = getSelectedAirportGroupInfo(b.icao);
-        if (!!groupA?.pinned !== !!groupB?.pinned) return groupA?.pinned ? -1 : 1;
-        if (groupA?.pinned && groupB?.pinned) {
-            if (groupA.groupIndex !== groupB.groupIndex) return groupA.groupIndex - groupB.groupIndex;
-            if (groupA.airportIndex !== groupB.airportIndex) return groupA.airportIndex - groupB.airportIndex;
-        }
-        if (sourceOrder.has(a.icao) || sourceOrder.has(b.icao)) {
-            const orderA = sourceOrder.has(a.icao) ? sourceOrder.get(a.icao) : Number.MAX_SAFE_INTEGER;
-            const orderB = sourceOrder.has(b.icao) ? sourceOrder.get(b.icao) : Number.MAX_SAFE_INTEGER;
-            if (orderA !== orderB) return orderA - orderB;
-            return left.index - right.index;
-        }
+    const compareDefaultOrder = (a, b, fallbackA, fallbackB) => {
         const regionA = getAirportRegion(a.icao);
         const regionB = getAirportRegion(b.icao);
         const scopeA = domesticRegions.includes(regionA) || (!regionA && /^Z/.test(a.icao)) ? 0 : 1;
@@ -335,6 +323,41 @@ function sortPublishAirportAnalysis(items) {
         const normalizedA = rankA === -1 ? Number.MAX_SAFE_INTEGER : rankA;
         const normalizedB = rankB === -1 ? Number.MAX_SAFE_INTEGER : rankB;
         if (normalizedA !== normalizedB) return normalizedA - normalizedB;
+        return fallbackA - fallbackB;
+    };
+    const getSourceTier = (icao, groupInfo) => {
+        if (groupInfo?.pinned) return 0;
+        if (pbState.sourceAirports.running.has(icao) || groupInfo) return 1;
+        if (pbState.sourceAirports.table.has(icao)) return 2;
+        if (pbState.sourceAirports.text.has(icao)) return 3;
+        return 4;
+    };
+    return [...items].map((item, index) => ({ item, index })).sort((left, right) => {
+        const a = left.item;
+        const b = right.item;
+        const icaoA = String(a.icao || '').trim().toUpperCase();
+        const icaoB = String(b.icao || '').trim().toUpperCase();
+        const groupA = getSelectedAirportGroupInfo(a.icao);
+        const groupB = getSelectedAirportGroupInfo(b.icao);
+        const tierA = getSourceTier(icaoA, groupA);
+        const tierB = getSourceTier(icaoB, groupB);
+        if (tierA !== tierB) return tierA - tierB;
+        if (tierA === 4 && manualOrder.size) {
+            const orderA = manualOrder.get(icaoA);
+            const orderB = manualOrder.get(icaoB);
+            if (orderA !== undefined && orderB !== undefined && orderA !== orderB) return orderA - orderB;
+        }
+        if (tierA === 0) {
+            if (groupA.groupIndex !== groupB.groupIndex) return groupA.groupIndex - groupB.groupIndex;
+            if (groupA.airportIndex !== groupB.airportIndex) return groupA.airportIndex - groupB.airportIndex;
+        }
+        if (tierA === 1) return compareDefaultOrder(a, b, left.index, right.index);
+        if (tierA === 2 || tierA === 3) {
+            const source = tierA === 2 ? 'table' : 'text';
+            const orderA = sourceOrders[source].get(icaoA) ?? Number.MAX_SAFE_INTEGER;
+            const orderB = sourceOrders[source].get(icaoB) ?? Number.MAX_SAFE_INTEGER;
+            if (orderA !== orderB) return orderA - orderB;
+        }
         return left.index - right.index;
     }).map(entry => entry.item);
 }
@@ -356,6 +379,12 @@ window.configurePublishAirportSources = function({ runningMode = null, residentG
         if (pbState.selectedResidentGroups.has(String(index))) residentAirports.push(...group.airports);
     });
     registerSourceAirports('resident', residentAirports, { replace: true });
+};
+
+window.resetPublishResidentGroupSelection = function() {
+    pbState.selectedResidentGroups.clear();
+    pbState.sourceAirports.resident.clear();
+    pbState.sourceSequences.resident = [];
 };
 
 window.getPublishAirportGroups = function() {
@@ -548,7 +577,9 @@ window.initPublishModule = async function() {
     document.getElementById('logout-btn')?.addEventListener('click', () => {
         pbState.confirmedData = {};
         localStorage.removeItem('sf_confirmed_forecasts');
-        loadForecastData();
+        // 注销不应触发任何机场或预报请求；同时让仍在执行的加载结果失效。
+        pbState.loadGeneration += 1;
+        if (loader) loader.style.display = 'none';
     });
 
     setupDragAndDrop();
@@ -887,15 +918,8 @@ function buildPublishExportText(timezone = 'auto') {
     const confirmedIcaos = Object.keys(pbState.confirmedData);
     if (!confirmedIcaos.length) return '⚠️ 暂无已确认编发的预报数据。请先点击表格中的【确认编发】。';
 
-    if (pbState.airportOrderMode === 'import') {
-        const importOrder = new Map(pbState.importSequence.map((icao, index) => [icao, index]));
-        confirmedIcaos.sort((a, b) =>
-            (importOrder.get(a) ?? Number.MAX_SAFE_INTEGER) - (importOrder.get(b) ?? Number.MAX_SAFE_INTEGER)
-        );
-    } else {
-        const sorted = sortPublishAirportAnalysis(confirmedIcaos.map(icao => ({ icao })));
-        confirmedIcaos.splice(0, confirmedIcaos.length, ...sorted.map(item => item.icao));
-    }
+    const sorted = sortPublishAirportAnalysis(confirmedIcaos.map(icao => ({ icao })));
+    confirmedIcaos.splice(0, confirmedIcaos.length, ...sorted.map(item => item.icao));
 
     const startMs = new Date(`${pbState.startDate}T${String(pbState.startHour).padStart(2, '0')}:00:00Z`).getTime();
 
@@ -908,11 +932,20 @@ function buildPublishExportText(timezone = 'auto') {
         const isUtc = airportTimezone === 'utc';
         const timezoneOffsetHours = isUtc ? 0 : 8;
 
-        const endpoint = (offset, withMonth = false) => {
+        const endpoint = (offset, withMonth = false, endPoint = false) => {
             const date = new Date(startMs + (offset + timezoneOffsetHours) * 3600000);
-            const month = date.getUTCMonth() + 1;
-            const day = date.getUTCDate();
-            const hour = String(date.getUTCHours()).padStart(2, '0');
+            let month = date.getUTCMonth() + 1;
+            let day = date.getUTCDate();
+            let hourNumber = date.getUTCHours();
+            // 跨日范围的结束 00Z 按业务习惯显示为前一天 24Z/24时；
+            // 起报本身为当天 00Z 时保留正常的“次日00”表示。
+            if (endPoint && hourNumber === 0 && offset > 0 && pbState.startHour !== 0) {
+                const previous = new Date(date.getTime() - 24 * 3600000);
+                month = previous.getUTCMonth() + 1;
+                day = previous.getUTCDate();
+                hourNumber = 24;
+            }
+            const hour = String(hourNumber).padStart(2, '0');
             return { month, day, hour, label: `${withMonth ? `${month}月` : ''}${day}日${hour}` };
         };
         const first = endpoint(0, true);
@@ -920,7 +953,7 @@ function buildPublishExportText(timezone = 'auto') {
         const hasCrossMonth = first.month !== last.month;
         const formatRange = (startIndex, endIndex) => {
             const start = endpoint(startIndex, hasCrossMonth);
-            const end = endpoint(endIndex, hasCrossMonth);
+            const end = endpoint(endIndex, hasCrossMonth, true);
             const suffix = isUtc ? 'Z' : '时';
             if (start.month === end.month && start.day === end.day) {
                 return `${start.label}-${end.hour}${suffix}`;
@@ -2418,17 +2451,24 @@ function showPublishLoadingStatus(message) {
 }
 window.showPublishLoadingStatus = showPublishLoadingStatus;
 
+function hidePublishLoadingStatus() {
+    const loader = document.getElementById('publish-loading-indicator');
+    if (loader) loader.style.display = 'none';
+}
+window.hidePublishLoadingStatus = hidePublishLoadingStatus;
+
 // ==========================================
 // 🌟 核心引擎：数据加载与三行独立渲染
 // ==========================================
 async function loadForecastData(retainOrder = false) {
+    const loadGeneration = ++pbState.loadGeneration;
     const token = (localStorage.getItem('sf_weather_token') || localStorage.getItem('mtws_token'));
     const loader = document.getElementById('publish-loading-indicator');
     PBLOG(`loadForecastData 开始 | retainOrder=${retainOrder} | startDate=${pbState.startDate} startHour=${pbState.startHour} validity=${pbState.validityHours}h`);
     
     const progressState = { flight: '等待', taf: '等待', metar: '等待', ec: '等待', parse: '等待', layout: '等待' };
     const setProgress = (stageOrMsg, msgOrError = false, legacyError = false) => {
-        if (!loader) return;
+        if (!loader || loadGeneration !== pbState.loadGeneration) return;
         const explicitStage = ['flight', 'taf', 'metar', 'ec', 'parse', 'layout'].includes(String(stageOrMsg).toLowerCase());
         const key = explicitStage ? String(stageOrMsg).toLowerCase() : null;
         const msg = explicitStage ? String(msgOrError) : String(stageOrMsg);
@@ -2446,8 +2486,11 @@ async function loadForecastData(retainOrder = false) {
         loader.style.zIndex = '10050';
         loader.style.margin = '0';
         loader.style.boxShadow = '0 12px 40px rgba(15, 23, 42, 0.22)';
-        loader.innerHTML = isError ? `❌ ${msg}` : `<span class="spinner"></span> ${msg}`;
+        loader.innerHTML = isError
+            ? `❌ ${msg}<button type="button" class="mini-btn" data-close-publish-loading style="float:right;margin-left:12px;">关闭</button>`
+            : `<span class="spinner"></span> ${msg}`;
         loader.innerHTML += '<div style="text-align:left;font-size:12px;line-height:1.8;margin-top:8px;">' + [['flight','航班'],['taf','TAF'],['metar','METAR'],['ec','EC'],['parse','解析'],['layout','排版']].map(([k,label]) => '<div>' + label + '：' + progressState[k] + '</div>').join('') + '</div>';
+        loader.querySelector('[data-close-publish-loading]')?.addEventListener('click', hidePublishLoadingStatus);
     };
 
     if (!token) PBLOG('loadForecastData：无内网 token，将跳过 TAF/航班接口并继续处理 EC 数据', 'WARN');
@@ -2619,6 +2662,8 @@ async function loadForecastData(retainOrder = false) {
         apAnalysis.forEach((ap, idx) => ap.originalIdx = idx);
         const sortedAnalysis = sortPublishAirportAnalysis(apAnalysis);
 
+        if (loadGeneration !== pbState.loadGeneration) return;
+
         _cachedAirports = sortedAnalysis.map(a => a.icao);
         window.currentApAnalysis = sortedAnalysis;
         renderPublishTableTriRow(window.currentApAnalysis);
@@ -2629,6 +2674,7 @@ async function loadForecastData(retainOrder = false) {
         PBLOG_FLUSH();
 
     } catch (e) {
+        if (loadGeneration !== pbState.loadGeneration) return;
         console.error(e);
         PBLOG('loadForecastData 致命异常: ' + (e && e.stack ? e.stack : e.message), 'ERROR');
         PBLOG_FLUSH();

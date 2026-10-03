@@ -603,6 +603,8 @@
             ).join('') || '<span style="color:#94a3b8;">暂无机场组</span>';
         };
         document.getElementById('global-import-airports-btn')?.addEventListener('click', () => {
+            // 每次打开均从“未选择机场分组”开始，避免文字/表格导入继承上一次的置顶分组。
+            window.resetPublishResidentGroupSelection?.();
             document.querySelectorAll('#airport-import-modal .airport-import-category-title').forEach(node => node.remove());
             const addCategoryHeading = (id, title) => {
                 const input = document.getElementById(id);
@@ -682,7 +684,8 @@
             button.textContent = '正在导入...';
             try {
                 const runningMode = useRunning ? (document.querySelector('input[name="import-running-mode"]:checked')?.value || 'filtered') : null;
-                window.configurePublishAirportSources?.({ runningMode, residentGroups });
+                const orderMode = document.querySelector('input[name="import-order-mode"]:checked')?.value || 'default';
+                window.configurePublishAirportSources?.({ runningMode, residentGroups, orderMode });
                 const operationSources = {
                     text: new Set(), table: new Set(), resident: new Set(), running: new Set()
                 };
