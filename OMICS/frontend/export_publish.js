@@ -204,15 +204,37 @@
             });
             tbl.appendChild(tbody);
         }
+        // Reuse the live table's rendered column geometry. Estimating widths from
+        // text independently makes the cloned timeline drift from the weather
+        // cells, especially after responsive/fixed-table layout has fractional
+        // hourly widths.
+        const liveRow = srcTable?.querySelector('tbody tr:not([style*="display: none"])');
+        const liveCells = liveRow ? Array.from(liveRow.children) : [];
+        const measured = [];
+        liveCells.forEach(cell => {
+            const span = Math.max(1, Number(cell.getAttribute('colspan')) || 1);
+            const width = cell.getBoundingClientRect().width / span;
+            for (let i = 0; i < span; i++) measured.push(width);
+        });
         const textWidth = (txt, min, max, unit = 14) => Math.max(min, Math.min(max, String(txt || '').trim().length * unit + 28));
-        const airportWidth = Math.max(90, ...pageRows.map(r => textWidth(r.name, 90, 220, 16)));
-        const typeWidth = Math.max(60, ...pageRows.map(r => textWidth(r.type, 60, 150, 15)));
-        const noteWidth = Math.max(92, ...pageRows.map(r => textWidth(r.note, 92, 260, 10)));
+        const airportWidth = measured[0] || Math.max(90, ...pageRows.map(r => textWidth(r.name, 90, 220, 16)));
+        const typeWidth = measured[1] || Math.max(60, ...pageRows.map(r => textWidth(r.type, 60, 150, 15)));
+        const liveNoteWidth = measured.length >= 4 ? measured[2] + measured[3] : 0;
+        const noteWidth = liveNoteWidth || Math.max(92, ...pageRows.map(r => textWidth(r.note, 92, 260, 10)));
         const hourCells = (window.pbState?.validityHours || 24) + 1;
-        const hourWidth = hourCells > 25 ? 38 : 42;
+        const measuredHourWidths = measured.slice(4, 4 + hourCells);
+        const hourWidth = measuredHourWidths.length === hourCells && measuredHourWidths.every(w => w > 0)
+            ? measuredHourWidths[0]
+            : (hourCells > 25 ? 38 : 42);
         const noteLeftW = Math.floor(noteWidth / 2);
         const noteRightW = Math.ceil(noteWidth / 2);
-        const tableWidth = Math.max(1200, airportWidth + typeWidth + noteWidth + hourCells * hourWidth + 24);
+        const measuredWidth = airportWidth + typeWidth + noteWidth
+            + measuredHourWidths.reduce((sum, width) => sum + width, 0);
+        const estimatedWidth = airportWidth + typeWidth + noteWidth + hourCells * hourWidth + 24;
+        // Keep the cloned header and body on one exact geometry. The outer page
+        // may remain wide, but adding width to the table itself would make the
+        // browser redistribute fixed columns and reintroduce drift.
+        const tableWidth = measuredHourWidths.length === hourCells ? measuredWidth : Math.max(1200, estimatedWidth);
         wrap.style.width = `${tableWidth}px`;
         tbl.style.width = `${tableWidth}px`;
 
@@ -220,7 +242,7 @@
         // 已确认态备注是 colspan=2，跨备注左+备注右两列；与表头布局完全同构。
         const dataCg = document.createElement('colgroup');
         let dcgHtml = `<col style="width:${airportWidth}px;"><col style="width:${typeWidth}px;"><col style="width:${noteLeftW}px;"><col style="width:${noteRightW}px;">`;
-        for (let i = 0; i < hourCells; i++) dcgHtml += `<col style="width:${hourWidth}px;">`;
+        for (let i = 0; i < hourCells; i++) dcgHtml += `<col style="width:${measuredHourWidths[i] || hourWidth}px;">`;
         dataCg.innerHTML = dcgHtml;
         tbl.insertBefore(dataCg, tbl.firstChild);
 
@@ -236,7 +258,7 @@
                 if (cols[1]) cols[1].style.width = `${typeWidth}px`;
                 if (cols[2]) cols[2].style.width = `${noteLeftW}px`;
                 if (cols[3]) cols[3].style.width = `${noteRightW}px`;
-                for (let i = 4; i < cols.length; i++) cols[i].style.width = `${hourWidth}px`;
+                for (let i = 4; i < cols.length; i++) cols[i].style.width = `${measuredHourWidths[i - 4] || hourWidth}px`;
             }
             // 表头单元格边框/盒模型与数据表一致，保证边框连续、列宽不被 padding 撑偏。
             clonedTimeline.querySelectorAll('th').forEach(c => {
@@ -275,8 +297,10 @@
                 c.style.fontFamily = '微软雅黑,Microsoft YaHei,Arial,sans-serif';
                 c.style.fontSize = '10px';
                 c.style.fontWeight = '700';
-                c.style.width = `${hourWidth}px`;
-                c.style.minWidth = `${hourWidth}px`;
+                const cellIndex = c.cellIndex - 4;
+                const cellWidth = measuredHourWidths[cellIndex] || hourWidth;
+                c.style.width = `${cellWidth}px`;
+                c.style.minWidth = `${cellWidth}px`;
             }
             if (c.classList.contains('td-airport')) {
                 c.style.whiteSpace = 'nowrap';
