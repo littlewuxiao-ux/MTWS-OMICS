@@ -34,6 +34,11 @@ _job_status: Dict[str, Any] = {
     'alerts': {'R': 0, 'Y': 0, 'G': 0},
     'rate_limiter': {},
 }
+# 切换清单时的这次计算：完成前不把更早的告警行返回给列表。
+_job_hide_stale = False
+_job_codes: Optional[Set[str]] = None
+_job_started_at = None
+_job_pending: Optional[Dict[str, Any]] = None
 
 
 def get_radar_job_status() -> Dict[str, Any]:
@@ -50,29 +55,71 @@ def _set_status(**kwargs) -> None:
             _job_status['started_at'] = timezone.now().isoformat()
 
 
-def trigger_radar_job(force: bool = False) -> Dict[str, Any]:
-    """异步启动一轮计算；若已在跑则返回当前状态。"""
+def job_stale_filter() -> Tuple[bool, Set[str], Optional[datetime]]:
+    """切换清单的计算还在进行时，隐藏这次开始之前写入的行。"""
+    with _job_lock:
+        if not _job_hide_stale or not _job_codes or _job_started_at is None:
+            return False, set(), None
+        if _job_status.get('state') != 'running':
+            return False, set(), None
+        return True, set(_job_codes), _job_started_at
+
+
+def trigger_radar_job(
+    force: bool = False,
+    codes: Optional[List[str]] = None,
+    hide_stale: bool = False,
+) -> Dict[str, Any]:
+    """异步启动一轮计算。codes 为当前清单；不传则按 has_flight。
+
+    已在跑时记下最后一次请求，本轮结束后再跑。不改清单外机场的已有记录。
+    """
+    global _job_hide_stale, _job_codes, _job_started_at, _job_pending
+    wanted = None if codes is None else [str(c).strip().upper() for c in codes if c]
     with _job_lock:
         if _job_status.get('state') == 'running' and not force:
+            _job_pending = {'codes': wanted, 'hide_stale': bool(hide_stale)}
             return dict(_job_status)
+        _job_pending = None
+        _job_hide_stale = bool(hide_stale) and wanted is not None
+        _job_codes = set(wanted) if _job_hide_stale else None
+        _job_started_at = timezone.now()
         _job_status['state'] = 'running'
         _job_status['message'] = 'queued'
         _job_status['phase'] = 'starting'
-        _job_status['started_at'] = timezone.now().isoformat()
+        _job_status['started_at'] = _job_started_at.isoformat()
         _job_status['finished_at'] = None
 
-    t = threading.Thread(target=_run_job_safe, name='radar-alert-job', daemon=True)
+    t = threading.Thread(
+        target=_run_job_safe,
+        args=(wanted,),
+        name='radar-alert-job',
+        daemon=True,
+    )
     t.start()
     return get_radar_job_status()
 
 
-def _run_job_safe() -> None:
+def _take_pending() -> Optional[Dict[str, Any]]:
+    global _job_pending, _job_hide_stale, _job_codes
+    with _job_lock:
+        pending = _job_pending
+        _job_pending = None
+        _job_hide_stale = False
+        _job_codes = None
+        return pending
+
+
+def _run_job_safe(codes: Optional[List[str]] = None) -> None:
     try:
         pipeline = RadarAlertPipeline()
-        pipeline.run()
+        pipeline.run(codes)
     except Exception as e:
         logger.error('radar job failed: %s', e, exc_info=True)
         _set_status(state='error', message=str(e), finished_at=timezone.now().isoformat())
+    pending = _take_pending()
+    if pending:
+        trigger_radar_job(codes=pending.get('codes'), hide_stale=bool(pending.get('hide_stale')))
 
 
 class RadarAlertPipeline:
@@ -89,30 +136,34 @@ class RadarAlertPipeline:
         self.tile_cache: Dict[Tuple[int, int, int], bytes] = {}
         self.dbz_cache: Dict[Tuple[int, int, int], Any] = {}
 
-    def run(self) -> dict:
+    def run(self, codes: Optional[List[str]] = None) -> dict:
         if not self.cfg.get('enabled', True):
             _set_status(state='done', message='disabled', finished_at=timezone.now().isoformat())
             return {'success': True, 'message': 'disabled'}
 
+        scoped = codes is not None
         _set_status(state='running', message='loading airports', phase='airports')
-        airports = self._load_airports()
+        airports = self._load_airports(codes)
         if not airports:
             _set_status(state='done', message='no airports', airports_total=0, finished_at=timezone.now().isoformat())
             return {'success': True, 'message': 'no airports'}
 
         _set_status(airports_total=len(airports), message=f'{len(airports)} airports')
 
-        # 瓦片索引：启动/变更时缓存，此处确保存在
-        index = self._ensure_tile_index(airports)
+        radius = float(self.cfg['radius_km'])
+        z3 = int(self.cfg['overview_z'])
+        z5 = int(self.cfg['mid_z'])
+        z7 = int(self.cfg['final_z'])
+        # 只算当前清单时用内存索引，避免把全量瓦片索引缩成这一批机场
+        if scoped:
+            index = build_airport_tile_index(airports, radius, [z3, z5, z7])
+        else:
+            index = self._ensure_tile_index(airports)
 
         _set_status(phase='maps', message='fetching RainViewer maps.json')
         host, path, frame_ts = self.client.latest_frame()
         _set_status(frame_time=frame_ts, message=f'frame {frame_ts}')
 
-        radius = float(self.cfg['radius_km'])
-        z3 = int(self.cfg['overview_z'])
-        z5 = int(self.cfg['mid_z'])
-        z7 = int(self.cfg['final_z'])
         tile_size = int(self.cfg['tile_size'])
         screen_dbz = float(self.cfg['screen_dbz'])
         z3_min = int(self.cfg['z3_min_pixels'])
@@ -215,11 +266,14 @@ class RadarAlertPipeline:
         )
         return {'success': True, 'frame_time': frame_ts, 'results': len(results), 'alerts': counts}
 
-    def _load_airports(self) -> List[dict]:
-        from parsers.models import Flight
+    def _load_airports(self, codes: Optional[List[str]] = None) -> List[dict]:
         from utils.airport_coords import resolve_airport_coords
+        from utils.airport_scope import airport_codes_for_scope
 
-        codes = list(Flight.objects.filter(has_flight=True).values_list('airport_4code', flat=True))
+        if codes is None:
+            codes = airport_codes_for_scope('has_flight')
+        else:
+            codes = [str(c).strip().upper() for c in codes if c]
         if not codes:
             return []
         found, coord_errors = resolve_airport_coords(codes)
@@ -394,17 +448,30 @@ class RadarAlertPipeline:
                 status='done',
                 finished_at=now,
             )
+            codes = [r['airport_4code'] for r in results]
+            previous = {
+                row.airport_4code: row
+                for row in AirportRadarAlert.objects.filter(airport_4code__in=codes)
+            }
             for r in results:
+                alert_33 = r.get('alert_33') or 'N'
+                alert_41 = r.get('alert_41') or 'N'
+                alert_highest = r.get('alert_highest') or 'N'
+                signature = f'{alert_33}|{alert_41}|{alert_highest}'
+                old = previous.get(r['airport_4code'])
+                handled = bool(old and old.handled and old.handled_signature == signature)
                 AirportRadarAlert.objects.update_or_create(
                     airport_4code=r['airport_4code'],
                     defaults={
                         'frame_time': frame_ts,
-                        'alert_33': r.get('alert_33') or 'N',
-                        'alert_41': r.get('alert_41') or 'N',
-                        'alert_highest': r.get('alert_highest') or 'N',
+                        'alert_33': alert_33,
+                        'alert_41': alert_41,
+                        'alert_highest': alert_highest,
                         'detail_33': r.get('detail_33'),
                         'detail_41': r.get('detail_41'),
                         'sector_stats': r.get('sector_stats'),
+                        'handled': handled,
+                        'handled_signature': signature if handled else '',
                         'updated_at': now,
                     },
                 )

@@ -789,12 +789,13 @@
     _updateRadarRadiusDisplay(cfg.rings_km);
     renderRadarRings(cfg.rings_km);
     renderRadarMatrix(cfg);
+    _fillRadarAlarmColors(cfg.alarm_colors);
   }
 
   function _radarZ7Levels(cfg) {
     const raw = (cfg && cfg.z7_levels) || [];
     const fallbackMatrix = cfg.color_matrix || [];
-    const fallbackBins = cfg.count_bins || [{ id: 'N0', lo: 0, hi: null, lo_open: true }];
+    const fallbackBins = cfg.count_bins || [{ id: 'N0', lo: 1, hi: null, lo_open: false }];
     const ths = cfg.dbz_thresholds || [33, 41];
     const blob = cfg.min_blob_pixels != null ? cfg.min_blob_pixels : 5;
     const out = [];
@@ -812,19 +813,119 @@
   }
 
   function _colorSelectHtml(v) {
-    return `<select class="settings-input radar-color-sel radar-c-${v}">
-      ${['R','Y','G','N'].map(c => `<option value="${c}" ${c===v?'selected':''}>${c}</option>`).join('')}
-    </select>`;
+    const options = ['R', 'Y', 'G', 'N'].map((c) => (
+      `<option value="${c}" ${c === v ? 'selected' : ''}>${c}</option>`
+    )).join('');
+    return `<span class="radar-color-pick">
+      <select class="radar-color-sel radar-c-${v}" tabindex="-1" aria-hidden="true">${options}</select>
+      <button type="button" class="radar-color-btn radar-c-${v}">${v}</button>
+    </span>`;
+  }
+
+  let _radarColorMenu = null;
+  let _radarColorOwner = null;
+
+  function _ensureRadarColorMenu() {
+    if (_radarColorMenu) return _radarColorMenu;
+    const menu = document.createElement('div');
+    menu.className = 'radar-color-menu';
+    menu.hidden = true;
+    menu.innerHTML = ['R', 'Y', 'G', 'N'].map((c) => (
+      `<button type="button" class="radar-color-opt radar-opt-${c}" data-value="${c}">${c}</button>`
+    )).join('');
+    document.body.appendChild(menu);
+    menu.addEventListener('click', (event) => {
+      const opt = event.target.closest('.radar-color-opt');
+      if (!opt || !_radarColorOwner) return;
+      _setRadarColorPick(_radarColorOwner, opt.dataset.value);
+      _closeRadarColorMenu();
+    });
+    document.addEventListener('pointerdown', (event) => {
+      if (!_radarColorMenu || _radarColorMenu.hidden) return;
+      if (_radarColorMenu.contains(event.target)) return;
+      if (_radarColorOwner && _radarColorOwner.contains(event.target)) return;
+      _closeRadarColorMenu();
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') _closeRadarColorMenu();
+    });
+    const pane = document.getElementById('settings-pane-radar-alert');
+    if (pane) pane.addEventListener('scroll', _closeRadarColorMenu, { passive: true });
+    _radarColorMenu = menu;
+    return menu;
+  }
+
+  function _closeRadarColorMenu() {
+    if (_radarColorMenu) _radarColorMenu.hidden = true;
+    _radarColorOwner = null;
+  }
+
+  function _setRadarColorPick(pick, value) {
+    const sel = pick.querySelector('select.radar-color-sel');
+    const btn = pick.querySelector('.radar-color-btn');
+    if (!sel || !btn) return;
+    sel.value = value;
+    btn.textContent = value;
+    btn.classList.remove('radar-c-R', 'radar-c-Y', 'radar-c-G', 'radar-c-N');
+    btn.classList.add('radar-c-' + value);
+    sel.classList.remove('radar-c-R', 'radar-c-Y', 'radar-c-G', 'radar-c-N');
+    sel.classList.add('radar-c-' + value);
+  }
+
+  function _openRadarColorMenu(pick) {
+    const btn = pick.querySelector('.radar-color-btn');
+    if (!btn) return;
+    if (_radarColorOwner === pick && _radarColorMenu && !_radarColorMenu.hidden) {
+      _closeRadarColorMenu();
+      return;
+    }
+    const menu = _ensureRadarColorMenu();
+    _radarColorOwner = pick;
+    const rect = btn.getBoundingClientRect();
+    menu.hidden = false;
+    menu.style.width = rect.width + 'px';
+    const menuHeight = menu.offsetHeight || 88;
+    const below = rect.bottom + 2;
+    const top = (below + menuHeight > window.innerHeight - 8)
+      ? Math.max(8, rect.top - menuHeight - 2)
+      : below;
+    menu.style.left = rect.left + 'px';
+    menu.style.top = top + 'px';
+  }
+
+  function _fillRadarAlarmColors(colors) {
+    const picked = new Set(Array.isArray(colors) && colors.length ? colors : ['R', 'Y']);
+    document.querySelectorAll('#radar-alarm-colors .radar-alarm-color').forEach((el) => {
+      el.checked = picked.has(el.value);
+    });
+  }
+
+  function _readRadarAlarmColors() {
+    return ['R', 'Y', 'G'].filter((c) => {
+      const el = document.querySelector(`#radar-alarm-colors .radar-alarm-color[value="${c}"]`);
+      return el && el.checked;
+    });
+  }
+
+  function _setRadarAlarmFloor(value) {
+    const rank = { R: 3, Y: 2, G: 1 };
+    const mine = rank[value];
+    if (!mine) return;
+    document.querySelectorAll('#radar-alarm-colors .radar-alarm-color').forEach((el) => {
+      el.checked = rank[el.value] >= mine;
+    });
   }
 
   function _bindRadarColorSelectStyle(root) {
-    (root || document).querySelectorAll('select.radar-color-sel').forEach(sel => {
-      const paint = () => {
-        sel.classList.remove('radar-c-R', 'radar-c-Y', 'radar-c-G', 'radar-c-N');
-        sel.classList.add('radar-c-' + sel.value);
-      };
-      paint();
-      sel.onchange = paint;
+    (root || document).querySelectorAll('.radar-color-pick').forEach((pick) => {
+      const btn = pick.querySelector('.radar-color-btn');
+      if (!btn || btn.dataset.bound === '1') return;
+      btn.dataset.bound = '1';
+      btn.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        _openRadarColorMenu(pick);
+      });
     });
   }
 
@@ -878,9 +979,8 @@
     rows.forEach((tr, idx) => {
       const pair = tr.querySelector('.radar-bin-pair');
       const inputs = pair ? pair.querySelectorAll('input') : [];
-      let lo = Number(inputs[0] && inputs[0].value);
+      const lo = Number(inputs[0] && inputs[0].value);
       const hiRaw = inputs[1] && inputs[1].value;
-      if (idx === 0) lo = 0;
       const isLast = idx === rows.length - 1;
       let hi;
       if (isLast) {
@@ -891,11 +991,12 @@
         if (Number.isNaN(hi)) throw new Error('数量档上限须为数字');
       }
       if (Number.isNaN(lo)) throw new Error('数量档下限须为数字');
+      if (lo < 0) throw new Error('数量档下限不能小于 0');
       count_bins.push({
         id: `N${idx}`,
         lo,
         hi,
-        lo_open: idx === 0 && lo === 0,
+        lo_open: lo === 0,
       });
       const colors = [];
       tr.querySelectorAll('select.radar-color-sel').forEach(sel => colors.push(sel.value));
@@ -936,6 +1037,7 @@
       z5_screen_dbz: Number(document.getElementById('radar-z5-dbz').value),
       z5_min_pixels: Number(document.getElementById('radar-z5-min').value),
       rings_km,
+      alarm_colors: _readRadarAlarmColors(),
       z7_levels,
       dbz_thresholds: [z7_levels[0].dbz, z7_levels[1].dbz],
       min_blob_pixels: z7_levels[0].min_blob_pixels,
@@ -950,27 +1052,30 @@
     if (!thead || !tbody) return;
     const bins = (level.count_bins && level.count_bins.length)
       ? level.count_bins
-      : [{ id: 'N0', lo: 0, hi: null, lo_open: true }];
+      : [{ id: 'N0', lo: 1, hi: null, lo_open: false }];
     const matrix = level.color_matrix || [];
 
+    const ratios = _ringAreaRatios(rings);
     thead.innerHTML = `<tr>
       <th>数量档 lo/hi</th>
-      ${rings.map((r, i) => `<th>${r[0]}-${r[1]}km</th>`).join('')}
+      ${rings.map((r, i) => `<th><span class="radar-ring-label">${r[0]}-${r[1]}km</span><span class="radar-ring-m">M=${_fmtM(ratios[i])}</span></th>`).join('')}
     </tr>`;
 
     tbody.innerHTML = bins.map((b, bi) => {
       const isFirst = bi === 0;
       const isLast = bi === bins.length - 1;
-      const lo = isFirst ? 0 : (b.lo != null ? b.lo : '');
+      const lo = _radarBinEditLo(b, isFirst);
       const hi = isLast ? 'inf' : (b.hi == null ? '' : b.hi);
+      const labelBin = { ...b, lo, lo_open: Number(lo) === 0 };
       const cells = rings.map((_, ri) => {
         const v = (matrix[bi] && matrix[bi][ri]) || 'N';
-        return `<td>${_colorSelectHtml(v)}</td>`;
+        const count = _binPixelLabel(labelBin, ratios[ri], isFirst, isLast);
+        return `<td><div class="radar-cell"><span class="radar-cell-count">${count}</span>${_colorSelectHtml(v)}</div></td>`;
       }).join('');
       return `<tr data-bin="${bi}">
         <th>
           <div class="radar-bin-pair">
-            <input type="number" class="settings-input" value="${lo}" ${isFirst ? 'disabled' : ''} title="下限">
+            <input type="number" class="settings-input" value="${lo}" min="0" step="1" title="下限">
             <span>-</span>
             <input type="text" class="settings-input" value="${hi}" ${isLast ? 'disabled' : ''} title="上限">
           </div>
@@ -979,6 +1084,80 @@
       </tr>`;
     }).join('');
     _bindRadarColorSelectStyle(tbody);
+    tbody.querySelectorAll('.radar-bin-pair input').forEach(inp => {
+      inp.addEventListener('input', () => _refreshMatrixPixelCounts());
+    });
+  }
+
+  function _radarBinEditLo(bin, isFirst) {
+    const raw = bin && bin.lo != null && bin.lo !== '' ? Number(bin.lo) : (isFirst ? 1 : '');
+    if (isFirst && raw === 0) return 1;
+    return raw;
+  }
+
+  function _ringAreaRatios(rings) {
+    const areas = rings.map(r => (Number(r[1]) * Number(r[1])) - (Number(r[0]) * Number(r[0])));
+    const s0 = areas[0] > 0 ? areas[0] : 1;
+    return areas.map(a => a / s0);
+  }
+
+  function _fmtM(m) {
+    const rounded = Math.round(m * 10000) / 10000;
+    if (Math.abs(rounded - Math.round(rounded)) < 1e-9) return String(Math.round(rounded));
+    return String(rounded);
+  }
+
+  function _intAtLeast(bound) {
+    return Math.ceil(bound - 1e-8);
+  }
+
+  function _intAtMost(bound) {
+    return Math.floor(bound + 1e-8);
+  }
+
+  function _binPixelLabel(bin, m, isFirst, isLast) {
+    const lo = Number(bin.lo) * m;
+    const openLo = isFirst && (bin.lo_open || Number(bin.lo) === 0);
+    let min = openLo ? _intAtMost(lo) + 1 : _intAtLeast(lo);
+    if (min < 1) min = 1;
+    if (isLast || bin.hi == null) return `≥${min}`;
+    const max = _intAtMost(Number(bin.hi) * m);
+    if (max < min) return '—';
+    if (min === max) return String(min);
+    return `${min}–${max}`;
+  }
+
+  function _paintMatrixCounts(levelIdx, ratios, bins) {
+    const tbody = document.getElementById(`radar-matrix-body-${levelIdx}`);
+    if (!tbody) return;
+    tbody.querySelectorAll('tr').forEach((tr, bi) => {
+      const bin = bins && bins[bi];
+      const isFirst = bi === 0;
+      const isLast = !!(bins && bi === bins.length - 1);
+      tr.querySelectorAll('.radar-cell-count').forEach((el, ri) => {
+        const m = ratios[ri];
+        el.textContent = (bin && m != null) ? _binPixelLabel(bin, m, isFirst, isLast) : '—';
+      });
+    });
+  }
+
+  function _refreshMatrixPixelCounts() {
+    let rings;
+    try {
+      rings = parseRadarRingsDom();
+    } catch (e) {
+      return;
+    }
+    const ratios = _ringAreaRatios(rings);
+    [0, 1].forEach(i => {
+      let bins = null;
+      try {
+        bins = parseRadarLevelMatrixDom(i, rings).count_bins;
+      } catch (e) {
+        bins = null;
+      }
+      _paintMatrixCounts(i, ratios, bins);
+    });
   }
 
   function renderRadarMatrix(cfg) {
@@ -1004,7 +1183,7 @@
         bins[bins.length - 1] = { ...prev, hi: newPrevHi, lo_open: false };
         bins.push({ id: `N${bins.length}`, lo: Number(newPrevHi) + 1, hi: null, lo_open: false });
       } else {
-        bins.push({ id: 'N0', lo: 0, hi: null, lo_open: true });
+        bins.push({ id: 'N0', lo: 1, hi: null, lo_open: false });
       }
       const matrix = lv.color_matrix || [];
       const cols = (cfg.rings_km || []).length || 1;
@@ -1266,6 +1445,14 @@
     if (radarSave) {
       radarSave.addEventListener('click', saveRadarAlertSettings);
       document.getElementById('radar-rebuild-btn').addEventListener('click', rebuildRadarIndex);
+      document.querySelectorAll('#radar-alarm-colors .radar-alarm-switch').forEach((label) => {
+        label.addEventListener('click', () => {
+          const input = label.querySelector('.radar-alarm-color');
+          if (!input) return;
+          const value = input.value;
+          setTimeout(() => _setRadarAlarmFloor(value), 0);
+        });
+      });
       document.querySelectorAll('.radar-add-bin-btn').forEach(btn => {
         btn.addEventListener('click', () => addRadarBinRow(Number(btn.dataset.level) || 0));
       });

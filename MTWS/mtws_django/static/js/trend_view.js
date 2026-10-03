@@ -1,6 +1,7 @@
 /**
  * 实况趋势告警结果表。
- * 红黄绿勾选只统计左侧「趋势」上的数量；表格显示跟着主页的红黄绿无。
+ * 导航悬浮的红黄绿只统计左侧「趋势」数量。
+ * 进入本视图时顶部告警色和国内/国际区域按钮全部选中并锁定，离开后恢复进入前的勾选。
  */
 (function () {
   'use strict';
@@ -35,9 +36,30 @@
       .replace(/"/g, '&quot;');
   }
 
+  const HOURS_KEY = 'mtws_flight_future_hours';
+
   function scopeValue() {
     const picked = document.querySelector('input[name="trend-scope"]:checked');
     return picked ? picked.value : 'has_flight';
+  }
+
+  function readStoredHours() {
+    const raw = localStorage.getItem(HOURS_KEY);
+    const n = parseInt(raw == null || raw === '' ? '2' : raw, 10);
+    if (!Number.isFinite(n)) return 2;
+    return Math.max(0, Math.min(9, n));
+  }
+
+  function futureHours() {
+    const input = document.getElementById('trend-future-hours');
+    const n = input ? parseInt(input.value, 10) : readStoredHours();
+    if (!Number.isFinite(n)) return 2;
+    return Math.max(0, Math.min(9, n));
+  }
+
+  function syncHoursVisibility() {
+    const label = document.getElementById('trend-hours-label');
+    if (label) label.classList.toggle('is-on', scopeValue() === 'recent2h');
   }
 
   function statColors() {
@@ -88,6 +110,17 @@
       cells[cells.length - 1] = { text: latest.text, speci: !!latest.speci };
     }
     return cells;
+  }
+
+  function trendHandleButton(airport) {
+    const color = airport.color;
+    if (color !== 'R' && color !== 'Y' && color !== 'G') return '';
+    const handled = !!airport.handled;
+    const bg = BAR_COLOR[color] || BAR_COLOR.G;
+    const fg = color === 'Y' ? '#1b2838' : '#fff';
+    const style = handled ? '' : ` style="background:${bg};color:${fg}"`;
+    const levelCls = color === 'Y' ? ' level-y' : '';
+    return `<button type="button" class="trend-handle-btn${handled ? ' is-handled' : ''}${levelCls}" data-code="${esc(airport.airport)}"${style}>${handled ? '已处理' : '未处理'}</button>`;
   }
 
   function scoreBar(airport) {
@@ -200,7 +233,7 @@
     bindStatHover();
     let badge = btn.querySelector('.trend-nav-badge');
     const colors = new Set(statColors());
-    const count = ((payload && payload.airports) || []).filter((item) => colors.has(item.color)).length;
+    const count = ((payload && payload.airports) || []).filter((item) => colors.has(item.color) && !item.handled).length;
     if (!count) {
       if (badge) badge.remove();
       return;
@@ -234,7 +267,7 @@
       return;
     }
     const dense = slots.length > 24 ? ' trend-dense' : '';
-    const head = slots.map((ms) => `<th>${esc(slotLabel(ms))}</th>`).join('');
+    const head = slots.map((ms) => `<th>${esc(slotLabel(ms))}</th>`).join('') + '<th class="trend-handle">处理</th>';
     const body = airports.map((airport) => {
       const source = airport.color === 'N' ? [] : (airport.rows || []);
       const kept = source.filter((row) => SHOWN_KEYS.has(row.key));
@@ -255,10 +288,35 @@
           const title = cell.speci ? ' title="最新特殊报"' : '';
           return `<td${cls}${title}>${esc(cell.text || '')}</td>`;
         }).join('');
-        return `<tr>${airportCell}<td class="trend-element">${esc(row.name || '')}</td>${cells}</tr>`;
+        const handleCell = index === 0
+          ? `<td class="trend-handle" rowspan="${rows.length}">${trendHandleButton(airport)}</td>`
+          : '';
+        return `<tr>${airportCell}<td class="trend-element">${esc(row.name || '')}</td>${cells}${handleCell}</tr>`;
       }).join('');
     }).join('');
     wrap.innerHTML = `<table class="trend-table${dense}"><thead><tr><th class="trend-airport">机场</th><th class="trend-element">要素</th>${head}</tr></thead><tbody>${body}</tbody></table>`;
+  }
+
+  async function markTrendHandled(btn) {
+    if (!btn || btn.classList.contains('is-handled') || btn.disabled) return;
+    const code = btn.getAttribute('data-code');
+    if (!code) return;
+    btn.disabled = true;
+    try {
+      const res = await fetch(apiUrl('trend-alert/handle/'), {
+        method: 'POST',
+        headers: Object.assign({ 'Content-Type': 'application/json' }, headers()),
+        body: JSON.stringify({ airport: code }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || '处理失败');
+      const airport = ((payload && payload.airports) || []).find((item) => item.airport === code);
+      if (airport) airport.handled = true;
+      render();
+    } catch (err) {
+      btn.disabled = false;
+      alert(err.message || '处理失败');
+    }
   }
 
   async function load() {
@@ -267,8 +325,14 @@
     setStatus('');
     try {
       const scope = scopeValue();
+      const hours = futureHours();
       sessionStorage.setItem('mtws_trend_scope', scope);
-      const res = await fetch(apiUrl('trend-alert/results/?scope=' + encodeURIComponent(scope)), { headers: headers() });
+      localStorage.setItem(HOURS_KEY, String(hours));
+      syncHoursVisibility();
+      const res = await fetch(
+        apiUrl('trend-alert/results/?scope=' + encodeURIComponent(scope) + '&future_hours=' + hours),
+        { headers: headers() }
+      );
       const data = await res.json();
       if (!data.success) {
         payload = null;
@@ -299,6 +363,17 @@
       const radio = panel.querySelector(`input[name="trend-scope"][value="${stored}"]`);
       if (radio) radio.checked = true;
     }
+    const hoursInput = document.getElementById('trend-future-hours');
+    if (hoursInput) {
+      hoursInput.value = String(readStoredHours());
+      hoursInput.addEventListener('change', () => {
+        hoursInput.value = String(futureHours());
+        const mapHours = document.getElementById('map-future-hours');
+        if (mapHours) mapHours.value = hoursInput.value;
+        load();
+      });
+    }
+    syncHoursVisibility();
     panel.querySelectorAll('input[name="trend-scope"]').forEach((el) => {
       el.addEventListener('change', load);
     });
@@ -306,18 +381,42 @@
     if (half) half.addEventListener('change', render);
     const refresh = document.getElementById('trend-refresh');
     if (refresh) refresh.addEventListener('click', load);
+    const wrap = document.getElementById('trend-table-wrap');
+    if (wrap) wrap.addEventListener('click', (event) => {
+      const btn = event.target.closest('.trend-handle-btn');
+      if (btn) markTrendHandled(btn);
+    });
     const tz = document.getElementById('timezone-toggle-input');
     if (tz) tz.addEventListener('change', () => {
       if (panel.style.display !== 'none') render();
     });
   }
 
+  function lockHomeAlertForTrend() {
+    document.body.classList.add('trend-alert-locked');
+    document.querySelectorAll('.filter-btn[data-group="alert"], .filter-btn[data-group="domestic"], .filter-btn[data-group="international"]').forEach((btn) => {
+      btn.classList.add('selected');
+    });
+  }
+
+  function unlockHomeAlertForTrend() {
+    document.body.classList.remove('trend-alert-locked');
+    if (typeof updateAlertButtonState === 'function') updateAlertButtonState();
+    if (typeof updateRegionButtonState === 'function') {
+      updateRegionButtonState('domestic');
+      updateRegionButtonState('international');
+    }
+  }
+
   function startTrendView() {
     bindOnce();
+    lockHomeAlertForTrend();
     load();
   }
 
-  function stopTrendView() {}
+  function stopTrendView() {
+    unlockHomeAlertForTrend();
+  }
 
   window.startTrendView = startTrendView;
   window.stopTrendView = stopTrendView;

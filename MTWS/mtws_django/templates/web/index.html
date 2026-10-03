@@ -207,6 +207,42 @@
 
 <!-- 地图模式面板（fixed，与列表区等地位，切换显示） -->
 <div id="map-alert-panel" style="display:none;">
+  <div class="trend-toolbar map-flight-toolbar">
+    <div class="map-scope-module">
+    <div class="trend-title">机场范围</div>
+    <div class="trend-toolbar-main">
+      <label class="trend-switch map-wx-check"><input type="radio" name="map-flight-scope" value="has_flight" checked><span class="map-wx-box"></span><span>有航班机场</span></label>
+      <label class="trend-switch map-wx-check"><input type="radio" name="map-flight-scope" value="recent2h"><span class="map-wx-box"></span><span>起降窗口</span></label>
+      <label class="trend-hours" id="map-hours-label" title="过去固定 2 小时，此数字只作用于未来">未来
+        <input type="number" id="map-future-hours" min="0" max="9" step="1" value="2">
+        小时
+      </label>
+    </div>
+    </div>
+    <div class="map-wx-module" id="map-wx-layer-panel">
+      <span class="map-wx-module-title">图层控制</span>
+      <label class="trend-switch map-wx-check">
+        <input type="checkbox" data-wx="radar">
+        <span class="map-wx-box"></span>
+        <span>雷达回波</span>
+      </label>
+      <span class="map-wx-time" data-wx-time="radar"></span>
+      <div class="map-wx-sat" id="map-wx-sat-block">
+        <button type="button" class="trend-switch map-wx-sat-btn" data-wx="sat-toggle">
+          <span class="map-wx-box"></span>
+          <span class="map-wx-sat-label">卫星云图</span>
+        </button>
+        <div class="map-wx-sat-menu" id="map-wx-sat-sub" hidden>
+          <button type="button" data-wx="sat_ir">红外</button>
+          <button type="button" data-wx="sat_wv">水汽</button>
+          <button type="button" data-wx="sat_vis">可见光</button>
+        </div>
+      </div>
+      <span class="map-wx-time" data-wx-time="sat"></span>
+      <span id="map-wx-layer-tip" class="map-wx-layer-tip" style="display:none;"></span>
+    </div>
+  </div>
+  <div class="map-chart-wrap">
   <!-- 中国/世界切换开关：浮于地图顶部中央 -->
   <div class="map-view-overlay-wrap">
     <label class="map-view-toggle-label" title="中国/世界视图切换">
@@ -218,59 +254,15 @@
       </div>
     </label>
   </div>
-  <!-- 图层控制：左上角；可全部关闭。卫星只展开，点具体通道才选中 -->
-  <div id="map-wx-layer-panel" class="map-wx-layer-panel">
-    <div class="map-wx-layer-title">图层控制</div>
-    <div class="map-wx-node">
-      <button type="button" class="map-wx-layer-opt map-wx-layer-opt-main" data-wx="radar">
-        <span class="map-wx-radio"></span>
-        <span class="map-wx-opt-text">雷达数据</span>
-      </button>
-      <div class="map-wx-time" data-wx-time="radar"></div>
-    </div>
-    <div class="map-wx-sat-block" id="map-wx-sat-block">
-      <button type="button" class="map-wx-layer-opt map-wx-layer-opt-main" data-wx="sat-toggle">
-        <span class="map-wx-caret"></span>
-        <span class="map-wx-opt-text">卫星数据</span>
-      </button>
-      <div class="map-wx-sat-sub" id="map-wx-sat-sub">
-        <div class="map-wx-sat-badge">葵花 · 仅覆盖亚太</div>
-        <div class="map-wx-node">
-          <button type="button" class="map-wx-layer-opt map-wx-layer-opt-sub" data-wx="sat_ir">
-            <span class="map-wx-radio"></span>
-            <span class="map-wx-opt-text">红外</span>
-          </button>
-          <div class="map-wx-time" data-wx-time="sat_ir"></div>
-        </div>
-        <div class="map-wx-node">
-          <button type="button" class="map-wx-layer-opt map-wx-layer-opt-sub" data-wx="sat_wv">
-            <span class="map-wx-radio"></span>
-            <span class="map-wx-opt-text">水汽</span>
-          </button>
-          <div class="map-wx-time" data-wx-time="sat_wv"></div>
-        </div>
-        <div class="map-wx-node">
-          <button type="button" class="map-wx-layer-opt map-wx-layer-opt-sub" data-wx="sat_vis">
-            <span class="map-wx-radio"></span>
-            <span class="map-wx-opt-text">可见光</span>
-          </button>
-          <div class="map-wx-time" data-wx-time="sat_vis"></div>
-        </div>
-      </div>
-    </div>
-    <div id="map-wx-layer-tip" class="map-wx-layer-tip" style="display:none;"></div>
-  </div>
-  <div class="map-chart-wrap">
     <div id="map-world" class="map-chart-pane"></div>
     <div id="map-airport-tip" class="map-airport-tip" style="display:none;"></div>
-  </div>
   <!-- 强对流雷达预警悬浮列表（可拖动） -->
   <div id="radar-alert-float" class="radar-alert-float" style="display:none;">
     <div class="radar-alert-float-header" id="radar-alert-float-drag">
       <span>强对流预警</span>
       <div class="radar-alert-mode" id="radar-alert-mode">
-        <button type="button" data-mode="alarm" class="is-on">告警项</button>
-        <button type="button" data-mode="observe">观察项</button>
+        <span class="radar-alert-mode-alarm">告警项</span>
+        <button type="button" data-mode="observe" title="打开后在告警项下方追加观察项">观察项</button>
       </div>
     </div>
     <div id="radar-alert-rate-tip" class="radar-alert-rate-tip"></div>
@@ -278,6 +270,7 @@
     <div class="radar-alert-float-footer">
       <button type="button" id="radar-alert-run-btn" class="radar-alert-footer-btn">刷新预警</button>
     </div>
+  </div>
   </div>
 </div>
 
@@ -290,8 +283,12 @@
   <div class="trend-toolbar">
     <div class="trend-title">实况趋势告警</div>
     <div class="trend-toolbar-main">
-      <label class="trend-switch"><input type="radio" name="trend-scope" value="has_flight" checked><span>未来48小时内有航班机场</span></label>
-      <label class="trend-switch"><input type="radio" name="trend-scope" value="recent2h"><span>近2小时起飞/着陆/进港</span></label>
+      <label class="trend-switch map-wx-check"><input type="radio" name="trend-scope" value="has_flight" checked><span class="map-wx-box"></span><span>有航班机场</span></label>
+      <label class="trend-switch map-wx-check"><input type="radio" name="trend-scope" value="recent2h"><span class="map-wx-box"></span><span>起降窗口</span></label>
+      <label class="trend-hours" id="trend-hours-label" title="过去固定 2 小时，此数字只作用于未来">未来
+        <input type="number" id="trend-future-hours" min="0" max="9" step="1" value="2">
+        小时
+      </label>
       <span class="trend-split"></span>
       <label class="trend-switch"><input type="checkbox" id="trend-half"><span>半点报</span></label>
       <button type="button" id="trend-refresh" class="trend-refresh">刷新</button>
@@ -815,6 +812,12 @@
         <div class="radar-settings-toolbar">
           <button type="button" class="settings-btn-save" id="radar-save-btn">保存配置</button>
           <button type="button" class="settings-btn-cancel" id="radar-rebuild-btn">重建瓦片索引</button>
+          <div class="radar-alarm-colors" id="radar-alarm-colors">
+            <span class="radar-alarm-colors-label">计入告警</span>
+            <label class="radar-alarm-switch radar-alarm-switch-r"><input type="checkbox" class="radar-alarm-color" value="R" checked><span>红</span></label>
+            <label class="radar-alarm-switch radar-alarm-switch-y"><input type="checkbox" class="radar-alarm-color" value="Y" checked><span>黄</span></label>
+            <label class="radar-alarm-switch radar-alarm-switch-g"><input type="checkbox" class="radar-alarm-color" value="G"><span>绿</span></label>
+          </div>
           <span id="radar-status-text" class="settings-hint"></span>
         </div>
         <div class="settings-form-row" style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;">
@@ -862,7 +865,7 @@
           <div class="radar-z7-bundle">
             <div class="radar-z7-head">
               <div class="radar-flow-title">z7 终算</div>
-              <div class="radar-flow-hint">两档回波都达到告警才告警；仅一档达到为观察项</div>
+              <div class="radar-flow-hint">两档回波都达到所选颜色才告警；仅一档达到为观察项</div>
             </div>
             <div class="settings-form-row radar-rings-shared">
               <div class="radar-rings-bar">
@@ -904,6 +907,9 @@
                     <tbody id="radar-matrix-body-1"></tbody>
                   </table>
                 </div>
+              </div>
+              <div class="radar-count-note" id="radar-count-note">
+                <p>数量档的 lo / hi 按第 1 环填写。每个格子左侧是该环落入这一档所需的像素个数，右侧是告警颜色。实际个数 = 该档上下限 × 这个环的面积比 M，下限含所填的数。M = 本环面积 ÷ 第 1 环面积，面积 = π ×（外半径² − 内半径²）。像素数为 0 不入档；相邻数量档接不上的中间个数也不入档。</p>
               </div>
             </div>
           </div>

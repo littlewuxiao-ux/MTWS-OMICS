@@ -30,10 +30,10 @@ from .access_views import (
 )
 from .radar_views import (
     radar_alert_config, radar_alert_status, radar_alert_run,
-    radar_rebuild_tile_index, radar_alerts, radar_echo,
+    radar_rebuild_tile_index, radar_alerts, radar_alert_handle, radar_echo,
 )
 from .map_style_views import map_style_config
-from .trend_views import trend_alert_config, trend_alert_results
+from .trend_views import trend_alert_config, trend_alert_results, trend_alert_handle
 
 app_name = 'api'
 
@@ -136,10 +136,12 @@ urlpatterns = [
     path('radar/run/', radar_alert_run, name='radar_alert_run'),
     path('radar/rebuild-index/', radar_rebuild_tile_index, name='radar_rebuild_tile_index'),
     path('radar/alerts/', radar_alerts, name='radar_alerts'),
+    path('radar/alerts/handle/', radar_alert_handle, name='radar_alert_handle'),
     path('radar/echo/', radar_echo, name='radar_echo'),
     path('map-style/config/', map_style_config, name='map_style_config'),
 
     # 实况趋势告警
     path('trend-alert/config/', trend_alert_config, name='trend_alert_config'),
     path('trend-alert/results/', trend_alert_results, name='trend_alert_results'),
+    path('trend-alert/handle/', trend_alert_handle, name='trend_alert_handle'),
 ] 

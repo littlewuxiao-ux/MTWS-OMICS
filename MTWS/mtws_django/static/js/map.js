@@ -26,7 +26,7 @@ let _radarPollTimer = null;
 let _radarBlinkCodes = new Set();
 let _radarListMode = 'alarm'; // alarm | observe
 let _rippleRaf = 0;
-const _RADAR_COL_LEN = 12;
+const _RADAR_VISIBLE_ROWS = 10;
 let _radarOverlayMeta = null;
 let _radarFramePath = null;
 
@@ -122,6 +122,7 @@ function switchViewMode(mode) {
         setTimeout(() => {
             _syncPanelPosition();
             _initMap();
+            _bindMapFlightScope();
             _initRadarAlertFloat();
             _refreshRadarAlerts();
         }, 30);
@@ -152,15 +153,17 @@ function _switchMapView(view) {
 function _syncPanelPosition() {
     const panel = document.getElementById('map-alert-panel');
     if (!panel) return;
-    const titleRow = document.querySelector('.main-title-row');
-    const topPx = (titleRow && titleRow.getBoundingClientRect().top > 0)
-        ? Math.round(titleRow.getBoundingClientRect().top) : 180;
+    const topPx = (typeof window.contentBandTop === 'function')
+        ? window.contentBandTop() : 180;
     const totalH = window.innerHeight - topPx;
     panel.style.top = topPx + 'px';
     panel.style.height = totalH + 'px';
     const mapEl = document.getElementById('map-world');
-    if (mapEl) mapEl.style.height = Math.max(100, totalH) + 'px';
+    const bar = panel.querySelector('.map-flight-toolbar');
+    const barH = bar ? bar.offsetHeight : 0;
+    if (mapEl) mapEl.style.height = Math.max(100, totalH - barH) + 'px';
     if (_mlMap) _mlMap.resize();
+    if (typeof window.syncNavTop === 'function') window.syncNavTop();
 }
 
 // ── MapLibre style / layers ──────────────────────────────
@@ -536,10 +539,19 @@ function _applyPaletteToMap() {
     setPaint('airports-outer', 'circle-stroke-width', sizes.border);
 }
 
+function _syncMapToolbarTone() {
+    const bar = document.querySelector('.map-flight-toolbar');
+    if (!bar) return;
+    const scheme = (_mapStyle && _mapStyle.color_scheme) || '';
+    bar.classList.toggle('is-dark-map', !_isLightBasemap());
+    if (scheme) bar.dataset.scheme = scheme;
+}
+
 function applyMapStyleConfig(cfg, borderWidths, palette) {
     _mapStyle = cfg || _mapStyle;
     if (borderWidths) _borderWidths = borderWidths;
     if (palette) _mapPalette = palette;
+    _syncMapToolbarTone();
     _ensureBlinkTimer();
     _applyPaletteToMap();
     _applyLayerVisibility();
@@ -946,14 +958,22 @@ function _fmtWxTime(ms) {
     return `${p(month)}-${p(day)} ${p(hh)}:${p(mm)}:${p(ss)}`;
 }
 
+function _wxTimeSlot(layerId) {
+    if (!layerId) return '';
+    if (layerId.indexOf('sat_') === 0) return 'sat';
+    return layerId;
+}
+
 function _setWxTime(layerId, ms) {
     _wxTimeLayer = layerId || '';
     _wxTimeMs = ms || 0;
-    const text = _wxTimeMs ? _fmtWxTime(_wxTimeMs) : '';
+    const slot = _wxTimeSlot(_wxTimeLayer);
+    const text = !slot ? '' : (_wxTimeMs ? _fmtWxTime(_wxTimeMs) : '-- --:--:--');
     document.querySelectorAll('[data-wx-time]').forEach(el => {
-        const on = !!text && el.getAttribute('data-wx-time') === _wxTimeLayer;
+        const on = !!slot && el.getAttribute('data-wx-time') === slot;
         el.textContent = on ? text : '';
         el.classList.toggle('is-show', on);
+        el.classList.toggle('is-pending', on && !_wxTimeMs);
     });
 }
 
@@ -1020,21 +1040,29 @@ function _ensureWxLayer() {
     }, _wxBeforeId());
 }
 
+let _wxTileUrl = '';
+
 function _setWxTiles(tileUrl, maxzoom, visible) {
     if (!_mlMap || !_mlReady) return;
-    _ensureWxLayer();
+    const zoom = maxzoom != null ? maxzoom : 7;
+    const layer = _mlMap.getLayer(_WX_LAYER);
     const src = _mlMap.getSource(_WX_SRC);
-    if (!src) return;
-    // 重建 source 保证 maxzoom/tiles 立即生效（部分 maplibre 对 setTiles 刷新不稳）
+    if (layer && src && _wxTileUrl === tileUrl) {
+        _mlMap.setLayoutProperty(_WX_LAYER, 'visibility', visible ? 'visible' : 'none');
+        return;
+    }
+    _ensureWxLayer();
+    // 地址变了才重建。每次拆掉再铺上会让整幅回波闪一下。
     const before = _wxBeforeId();
     if (_mlMap.getLayer(_WX_LAYER)) _mlMap.removeLayer(_WX_LAYER);
     if (_mlMap.getSource(_WX_SRC)) _mlMap.removeSource(_WX_SRC);
+    _wxTileUrl = tileUrl || '';
     _mlMap.addSource(_WX_SRC, {
         type: 'raster',
         tiles: [tileUrl],
         tileSize: 256,
         minzoom: 0,
-        maxzoom: maxzoom != null ? maxzoom : 7,
+        maxzoom: zoom,
         attribution: 'RainViewer / NASA GIBS Himawari',
     });
     _mlMap.addLayer({
@@ -1120,7 +1148,7 @@ async function _loadRadarWx() {
     } catch (e) {
         if (_wxLayerId !== 'radar') return;
         _hideWxOverlay();
-        _setWxTime('', 0);
+        _setWxTime('radar', 0);
         _wxTip('雷达数据异常：' + (e.message || '加载失败'));
     }
 }
@@ -1147,20 +1175,21 @@ async function _loadSatWx(kind) {
     }
     if (_wxLayerId !== kind) return;
     _hideWxOverlay();
-    _setWxTime('', 0);
+    _setWxTime(kind, 0);
     _wxTip('卫星数据异常：近几日瓦片不可用（试过 ' + lastErr + '）');
 }
 
 async function _applyWxLayer(id) {
     const next = id || 'none';
     _wxLayerId = next;
-    if (!_mlMap || !_mlReady) return;
     if (next === 'none') {
-        _hideWxOverlay();
         _wxTip('');
         _setWxTime('', 0);
+        if (_mlMap && _mlReady) _hideWxOverlay();
         return;
     }
+    if (_wxTimeLayer !== next) _setWxTime(next, 0);
+    if (!_mlMap || !_mlReady) return;
     if (_wxBusy) return;
     _wxBusy = true;
     const requested = next;
@@ -1179,15 +1208,21 @@ async function _applyWxLayer(id) {
     }
 }
 
+const _SAT_NAMES = { sat_ir: '红外', sat_wv: '水汽', sat_vis: '可见光' };
+
 function _syncWxPanelUI(layerId) {
     const panel = document.getElementById('map-wx-layer-panel');
     if (!panel) return;
-    const isSat = layerId && layerId.indexOf('sat_') === 0;
-    panel.querySelectorAll('[data-wx]').forEach(btn => {
+    const isSat = !!(layerId && layerId.indexOf('sat_') === 0);
+    const radar = panel.querySelector('input[data-wx="radar"]');
+    if (radar) radar.checked = layerId === 'radar';
+    const satBtn = panel.querySelector('[data-wx="sat-toggle"]');
+    if (satBtn) satBtn.classList.toggle('is-on', isSat);
+    const label = panel.querySelector('.map-wx-sat-label');
+    if (label) label.textContent = isSat ? `卫星数据>>${_SAT_NAMES[layerId] || ''}` : '卫星云图';
+    panel.querySelectorAll('[data-wx="sat_ir"], [data-wx="sat_wv"], [data-wx="sat_vis"]').forEach(btn => {
         btn.classList.toggle('is-on', btn.getAttribute('data-wx') === layerId);
     });
-    const satBlock = panel.querySelector('.map-wx-sat-block');
-    if (satBlock && isSat) satBlock.classList.add('is-open');
 }
 
 function _initWxLayerPanel() {
@@ -1204,22 +1239,27 @@ function _initWxLayerPanel() {
         _applyWxLayer(id);
     };
 
-    const radarBtn = panel.querySelector('[data-wx="radar"]');
+    const radarBtn = panel.querySelector('input[data-wx="radar"]');
     if (radarBtn) {
-        radarBtn.addEventListener('click', () => {
-            applyAndSave(_wxLayerId === 'radar' ? 'none' : 'radar');
+        radarBtn.addEventListener('change', () => {
+            applyAndSave(radarBtn.checked ? 'radar' : 'none');
         });
     }
     const satToggle = panel.querySelector('[data-wx="sat-toggle"]');
-    const satBlock = panel.querySelector('.map-wx-sat-block');
-    if (satToggle && satBlock) {
-        satToggle.addEventListener('click', () => {
-            satBlock.classList.toggle('is-open');
+    const satMenu = document.getElementById('map-wx-sat-sub');
+    if (satToggle && satMenu) {
+        satToggle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            satMenu.hidden = !satMenu.hidden;
+        });
+        document.addEventListener('click', (e) => {
+            if (!satMenu.hidden && !panel.contains(e.target)) satMenu.hidden = true;
         });
     }
     panel.querySelectorAll('[data-wx="sat_ir"], [data-wx="sat_wv"], [data-wx="sat_vis"]').forEach(btn => {
         btn.addEventListener('click', () => {
             const id = btn.getAttribute('data-wx');
+            if (satMenu) satMenu.hidden = true;
             applyAndSave(_wxLayerId === id ? 'none' : id);
         });
     });
@@ -1261,19 +1301,40 @@ function _radarCodeColor(level) {
     return ({ R: '#e74c3c', Y: '#f39c12', G: '#27ae60' })[level] || '';
 }
 
-function _renderCodeColumns(list, emptyText) {
-    if (!list || !list.length) return `<div class="radar-alert-empty">${emptyText || '暂无'}</div>`;
-    const cols = [];
-    for (let i = 0; i < list.length; i += _RADAR_COL_LEN) {
-        const chunk = list.slice(i, i + _RADAR_COL_LEN);
-        cols.push(`<div class="radar-alert-col">${chunk.map(a => {
-            const color = _radarCodeColor(a.alert_highest);
-            const style = color ? ` style="color:${color}"` : '';
-            const code = a.airport_4code || '';
-            return `<div class="radar-alert-code" data-code="${code}" title="查看周边200公里雷达回波"${style}>${code}</div>`;
-        }).join('')}</div>`);
-    }
-    return `<div class="radar-alert-cols">${cols.join('')}</div>`;
+function _radarUnhandledCount(alerts) {
+    return (alerts || []).filter(a => !a.handled).length;
+}
+
+function _radarHandleButton(item) {
+    const code = item.airport_4code || '';
+    const handled = !!item.handled;
+    const level = item.alert_highest || 'Y';
+    const color = _radarCodeColor(level) || '#e74c3c';
+    const bg = handled ? '#6d7b8a' : color;
+    const fg = handled ? '#e6edf3' : (level === 'Y' ? '#1b2838' : '#fff');
+    const levelCls = !handled && level === 'Y' ? ' level-y' : '';
+    return `<button type="button" class="radar-handle-btn${handled ? ' is-handled' : ''}${levelCls}" data-code="${code}" style="--handle-bg:${bg};color:${fg}">${handled ? '已处理' : '未处理'}</button>`;
+}
+
+function _radarAlertRow(item, withHandle) {
+    const color = _radarCodeColor(item.alert_highest);
+    const codeStyle = color ? ` style="color:${color}"` : '';
+    const rowStyle = color ? ` style="--alert:${color}"` : '';
+    const code = item.airport_4code || '';
+    const handle = withHandle ? _radarHandleButton(item) : '';
+    return `<div class="radar-alert-row"${rowStyle}><div class="radar-alert-code" data-code="${code}" title="查看周边200公里雷达回波"${codeStyle}>${code}</div>${handle}</div>`;
+}
+
+function _renderAlarmList(list) {
+    if (!list || !list.length) return '<div class="radar-alert-empty">暂无告警</div>';
+    const scroll = list.length > _RADAR_VISIBLE_ROWS ? ' is-scroll' : '';
+    return `<div class="radar-alert-alarm-list${scroll}">${list.map(item => _radarAlertRow(item, true)).join('')}</div>`;
+}
+
+function _renderObserveList(list) {
+    if (!list || !list.length) return '<div class="radar-alert-empty">暂无观察项</div>';
+    const scroll = list.length > _RADAR_VISIBLE_ROWS * 2 ? ' is-scroll' : '';
+    return `<div class="radar-alert-observe-list${scroll}">${list.map(item => _radarAlertRow(item, false)).join('')}</div>`;
 }
 
 function _radarVisibleItems() {
@@ -1294,10 +1355,11 @@ function _renderRadarList() {
     const observes = _radarListMode === 'observe'
         ? (_radarAlertCache.observe || []).map(a => Object.assign({ kind: 'observe' }, a))
         : [];
-    let html = _renderCodeColumns(alarms, _radarListMode === 'observe' && observes.length ? '' : (_radarListMode === 'observe' ? '暂无告警或观察项' : '暂无告警'));
-    if (!alarms.length && observes.length) html = '';
-    if (observes.length) {
-        html += `<div class="radar-alert-observe-block">${_renderCodeColumns(observes)}</div>`;
+    const showObserve = _radarListMode === 'observe';
+    let html = '<div class="radar-alert-section">告警项</div>';
+    html += _renderAlarmList(alarms);
+    if (showObserve) {
+        html += `<div class="radar-alert-observe-block"><div class="radar-alert-section">观察项</div>${_renderObserveList(observes)}</div>`;
     }
     body.innerHTML = html;
     _syncRadarBlink();
@@ -1325,65 +1387,244 @@ function _applyRadarFloat(data) {
             tip.classList.remove('radar-alert-rate-warn');
         }
     }
-    if (data.overlay) _radarOverlayMeta = data.overlay;
-    if (typeof window.updateRadarAlarmNavBadge === 'function') {
-        window.updateRadarAlarmNavBadge((data.alerts || []).length);
+    if (data.overlay) {
+        const nextSig = `${data.overlay.frame_time}|${data.overlay.path}|${data.overlay.host || ''}`;
+        const changed = nextSig !== _radarFramePath;
+        _radarOverlayMeta = data.overlay;
+        if (changed && _wxLayerId === 'radar') _applyWxLayer('radar');
     }
-    // 气象图层由左上角开关控制；仅在选中雷达时刷新贴图
-    if (_wxLayerId === 'radar') _applyWxLayer('radar');
+    if (typeof window.updateRadarAlarmNavBadge === 'function') {
+        window.updateRadarAlarmNavBadge(_radarUnhandledCount(data.alerts));
+    }
     updateMapAlert();
+}
+
+const _FLIGHT_HOURS_KEY = 'mtws_flight_future_hours';
+let _radarScopePoll = null;
+
+function _mapFlightScope() {
+    const picked = document.querySelector('input[name="map-flight-scope"]:checked');
+    return picked ? picked.value : 'has_flight';
+}
+
+function _readFlightHours() {
+    const raw = localStorage.getItem(_FLIGHT_HOURS_KEY);
+    const n = parseInt(raw == null || raw === '' ? '2' : raw, 10);
+    if (!Number.isFinite(n)) return 2;
+    return Math.max(0, Math.min(9, n));
+}
+
+function _mapFutureHours() {
+    const input = document.getElementById('map-future-hours');
+    const n = input ? parseInt(input.value, 10) : _readFlightHours();
+    if (!Number.isFinite(n)) return 2;
+    return Math.max(0, Math.min(9, n));
+}
+
+function _syncMapHoursVisibility() {
+    const label = document.getElementById('map-hours-label');
+    if (label) label.classList.toggle('is-on', _mapFlightScope() === 'recent2h');
+}
+
+function _radarListQuery() {
+    const scope = encodeURIComponent(_mapFlightScope());
+    return `scope=${scope}&future_hours=${_mapFutureHours()}`;
 }
 
 function _refreshRadarAlerts() {
     if (typeof currentTimeMode === 'undefined') return;
-    fetch(`/${currentTimeMode}/api/radar/alerts/`, {
+    fetch(`/${currentTimeMode}/api/radar/alerts/?${_radarListQuery()}`, {
         headers: typeof getRequestHeaders === 'function' ? getRequestHeaders() : {}
     })
         .then(r => r.json())
-        .then(data => { if (data.success) _applyRadarFloat(data); })
+        .then(data => {
+            if (!data.success) return;
+            _applyRadarFloat(data);
+            const running = data.status && data.status.state === 'running';
+            if (running) _scheduleRadarPoll();
+            else _stopRadarPoll();
+        })
         .catch(err => console.warn('[雷达告警] 拉取失败', err));
 }
 
-function _runRadarAlertFromFloat() {
+function _stopRadarPoll() {
+    if (_radarScopePoll) {
+        clearTimeout(_radarScopePoll);
+        _radarScopePoll = null;
+    }
+}
+
+function _scheduleRadarPoll() {
+    if (_radarScopePoll) return;
+    const tick = () => {
+        _radarScopePoll = null;
+        if (window._viewMode !== 'map') return;
+        _refreshRadarAlerts();
+    };
+    _radarScopePoll = setTimeout(tick, 4000);
+}
+
+function _runRadarForCurrentScope(hideStale) {
     if (typeof currentTimeMode === 'undefined') return;
-    const btn = document.getElementById('radar-alert-run-btn');
-    if (btn) btn.disabled = true;
-    fetch(`/${currentTimeMode}/api/radar/run/`, {
+    const hours = _mapFutureHours();
+    localStorage.setItem(_FLIGHT_HOURS_KEY, String(hours));
+    sessionStorage.setItem('mtws_map_flight_scope', _mapFlightScope());
+    _syncMapHoursVisibility();
+    const trendHours = document.getElementById('trend-future-hours');
+    if (trendHours) trendHours.value = String(hours);
+    return fetch(`/${currentTimeMode}/api/radar/run/`, {
         method: 'POST',
         headers: {
             ...(typeof getRequestHeaders === 'function' ? getRequestHeaders() : {}),
             'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ force: false })
+        body: JSON.stringify({
+            force: false,
+            scope: _mapFlightScope(),
+            future_hours: hours,
+            hide_stale: !!hideStale
+        })
     })
         .then(r => r.json())
-        .then(() => {
-            setTimeout(_refreshRadarAlerts, 1500);
-            setTimeout(_refreshRadarAlerts, 8000);
+        .then(() => _refreshRadarAlerts())
+        .catch(err => console.warn('[雷达告警] 触发失败', err));
+}
+
+function _bindMapFlightScope() {
+    const panel = document.getElementById('map-alert-panel');
+    if (!panel || panel.dataset.flightScopeBound) return;
+    panel.dataset.flightScopeBound = '1';
+    const stored = sessionStorage.getItem('mtws_map_flight_scope');
+    if (stored) {
+        const radio = panel.querySelector(`input[name="map-flight-scope"][value="${stored}"]`);
+        if (radio) radio.checked = true;
+    }
+    const hoursInput = document.getElementById('map-future-hours');
+    if (hoursInput) hoursInput.value = String(_readFlightHours());
+    _syncMapHoursVisibility();
+    panel.querySelectorAll('input[name="map-flight-scope"]').forEach((el) => {
+        el.addEventListener('change', () => _runRadarForCurrentScope(true));
+    });
+    if (hoursInput) {
+        hoursInput.addEventListener('change', () => {
+            hoursInput.value = String(_mapFutureHours());
+            _runRadarForCurrentScope(true);
+        });
+    }
+}
+
+function _runRadarAlertFromFloat() {
+    const btn = document.getElementById('radar-alert-run-btn');
+    if (btn) btn.disabled = true;
+    const done = () => { if (btn) btn.disabled = false; };
+    try {
+        const pending = _runRadarForCurrentScope(false);
+        if (pending && typeof pending.finally === 'function') pending.finally(done);
+        else done();
+    } catch (err) {
+        done();
+    }
+}
+
+function _markRadarHandled(btn) {
+    if (!btn || btn.classList.contains('is-handled') || btn.disabled) return;
+    const code = btn.getAttribute('data-code');
+    if (!code || typeof currentTimeMode === 'undefined') return;
+    btn.disabled = true;
+    fetch(`/${currentTimeMode}/api/radar/alerts/handle/`, {
+        method: 'POST',
+        headers: {
+            ...(typeof getRequestHeaders === 'function' ? getRequestHeaders() : {}),
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ airport_4code: code })
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) throw new Error(data.error || '处理失败');
+            (_radarAlertCache.alerts || []).forEach(item => {
+                if (item.airport_4code === code) item.handled = true;
+            });
+            _renderRadarList();
+            if (typeof window.updateRadarAlarmNavBadge === 'function') {
+                window.updateRadarAlarmNavBadge(_radarUnhandledCount(_radarAlertCache.alerts));
+            }
         })
-        .catch(err => console.warn('[雷达告警] 触发失败', err))
-        .finally(() => { if (btn) btn.disabled = false; });
+        .catch(err => {
+            btn.disabled = false;
+            alert(err.message || '处理失败');
+        });
+}
+
+const _RADAR_FLOAT_POS_KEY = 'mtws_radar_float_pos';
+
+function _radarFloatParent(panel) {
+    return panel.offsetParent || panel.parentElement;
+}
+
+function _clampRadarFloat(panel, left, top) {
+    const parent = _radarFloatParent(panel);
+    const maxL = Math.max(0, (parent ? parent.clientWidth : 0) - panel.offsetWidth);
+    const maxT = Math.max(0, (parent ? parent.clientHeight : 0) - panel.offsetHeight);
+    return {
+        left: Math.min(Math.max(0, left), maxL),
+        top: Math.min(Math.max(0, top), maxT),
+    };
+}
+
+function _pinRadarFloat(panel, left, top) {
+    const pos = _clampRadarFloat(panel, left, top);
+    panel.style.left = pos.left + 'px';
+    panel.style.top = pos.top + 'px';
+    panel.style.right = 'auto';
+    panel.style.transform = 'none';
+    return pos;
+}
+
+function _restoreRadarFloatPos(panel) {
+    let saved = null;
+    try {
+        saved = JSON.parse(localStorage.getItem(_RADAR_FLOAT_POS_KEY) || '');
+    } catch (e) {
+        saved = null;
+    }
+    if (!saved || !Number.isFinite(saved.left) || !Number.isFinite(saved.top)) return;
+    _pinRadarFloat(panel, saved.left, saved.top);
 }
 
 function _initRadarAlertFloat() {
     const drag = document.getElementById('radar-alert-float-drag');
     const panel = document.getElementById('radar-alert-float');
+    if (panel) _restoreRadarFloatPos(panel);
     if (drag && panel && !panel.dataset.dragBound) {
         panel.dataset.dragBound = '1';
-        let ox = 0, oy = 0, dragging = false;
+        let ox = 0, oy = 0, parentLeft = 0, parentTop = 0, dragging = false;
         drag.addEventListener('mousedown', (e) => {
+            if (e.button !== 0) return;
+            const parent = _radarFloatParent(panel);
+            if (!parent) return;
             dragging = true;
             const r = panel.getBoundingClientRect();
-            ox = e.clientX - r.left; oy = e.clientY - r.top;
+            const pr = parent.getBoundingClientRect();
+            ox = e.clientX - r.left;
+            oy = e.clientY - r.top;
+            parentLeft = pr.left;
+            parentTop = pr.top;
+            _pinRadarFloat(panel, r.left - pr.left, r.top - pr.top);
             e.preventDefault();
         });
         window.addEventListener('mousemove', (e) => {
             if (!dragging) return;
-            panel.style.left = Math.max(0, e.clientX - ox) + 'px';
-            panel.style.top = Math.max(0, e.clientY - oy) + 'px';
-            panel.style.right = 'auto';
+            _pinRadarFloat(panel, e.clientX - ox - parentLeft, e.clientY - oy - parentTop);
         });
-        window.addEventListener('mouseup', () => { dragging = false; });
+        window.addEventListener('mouseup', () => {
+            if (!dragging) return;
+            dragging = false;
+            localStorage.setItem(_RADAR_FLOAT_POS_KEY, JSON.stringify({
+                left: parseFloat(panel.style.left),
+                top: parseFloat(panel.style.top),
+            }));
+        });
     }
     const runBtn = document.getElementById('radar-alert-run-btn');
     if (runBtn && !runBtn.dataset.bound) {
@@ -1396,23 +1637,29 @@ function _initRadarAlertFloat() {
         modeBox.addEventListener('mousedown', (e) => e.stopPropagation());
         const savedMode = localStorage.getItem('mtws_radar_list_mode');
         _radarListMode = savedMode === 'observe' ? 'observe' : 'alarm';
-        modeBox.querySelectorAll('button').forEach(btn => {
-            btn.classList.toggle('is-on', btn.getAttribute('data-mode') === _radarListMode);
-            btn.addEventListener('click', () => {
-                _radarListMode = btn.getAttribute('data-mode') === 'observe' ? 'observe' : 'alarm';
+        const observeBtn = modeBox.querySelector('button[data-mode="observe"]');
+        if (observeBtn) {
+            observeBtn.classList.toggle('is-on', _radarListMode === 'observe');
+            observeBtn.addEventListener('click', () => {
+                _radarListMode = _radarListMode === 'observe' ? 'alarm' : 'observe';
                 localStorage.setItem('mtws_radar_list_mode', _radarListMode);
-                modeBox.querySelectorAll('button').forEach(b => {
-                    b.classList.toggle('is-on', b.getAttribute('data-mode') === _radarListMode);
-                });
+                observeBtn.classList.toggle('is-on', _radarListMode === 'observe');
                 _renderRadarList();
                 updateMapAlert();
             });
-        });
+        }
     }
     const float = document.getElementById('radar-alert-float');
     if (float && !float.dataset.echoBound) {
         float.dataset.echoBound = '1';
         float.addEventListener('click', (e) => {
+            const handleBtn = e.target.closest('.radar-handle-btn');
+            if (handleBtn) {
+                e.preventDefault();
+                e.stopPropagation();
+                _markRadarHandled(handleBtn);
+                return;
+            }
             const codeEl = e.target.closest('.radar-alert-code');
             if (!codeEl) return;
             const code = codeEl.getAttribute('data-code');
@@ -1650,6 +1897,7 @@ function initMapAlertState() {
     const mapViewToggle = document.getElementById('map-view-toggle-input');
     if (mapViewToggle) mapViewToggle.checked = (_mapView === 'world');
     _initWxLayerPanel();
+    _bindMapFlightScope();
     _initRadarAlertFloat();
     _refreshRadarAlerts();
 }

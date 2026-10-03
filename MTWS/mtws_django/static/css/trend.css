@@ -55,6 +55,30 @@
   accent-color: #1b2838;
 }
 
+.trend-hours {
+  display: none;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #1b2838;
+}
+
+.trend-hours.is-on {
+  display: inline-flex;
+}
+
+.trend-hours input {
+  width: 42px;
+  height: 22px;
+  padding: 0 4px;
+  border: 1px solid #9aafc4;
+  border-radius: 4px;
+  background: #fff;
+  color: #1b2838;
+  font-size: 12px;
+  text-align: center;
+}
+
 .trend-switch:has(input:checked) {
   border-color: #1b2838;
   background: #e7eef6;
@@ -216,6 +240,40 @@
   width: 64px;
   min-width: 64px;
   max-width: 64px;
+}
+
+.trend-table .trend-handle {
+  width: 76px;
+  min-width: 76px;
+  overflow: visible;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.trend-handle-btn {
+  border: 1px solid rgba(27, 40, 56, 0.12);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+  cursor: pointer;
+  color: #fff;
+}
+
+.trend-handle-btn.level-y:not(.is-handled) {
+  color: #1b2838;
+}
+
+.trend-handle-btn.is-handled {
+  background: #c5ced6;
+  border-color: #b7c0c8;
+  color: #4a5562;
+  cursor: default;
+}
+
+.trend-handle-btn:disabled {
+  opacity: 0.7;
 }
 
 .trend-code-box {

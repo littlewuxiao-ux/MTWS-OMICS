@@ -1590,27 +1590,20 @@ function handleFilterClick(button) {
                 }, 100);
             }
         }
-    } else if (group === 'alert') {
+    } else if (group === 'alert' || group === 'domestic' || group === 'international') {
+        if (document.body.classList.contains('trend-alert-locked')) return;
+        if (group !== 'alert') {
+            if (group === 'domestic') {
+                handleRegionFilter('domestic', value);
+            } else {
+                handleRegionFilter('international', value);
+            }
+            saveFiltersToStorage();
+            applyFilters();
+            return;
+        }
         // 告警等级筛选：特殊逻辑
         handleAlertFilter(value);
-
-        // 保存筛选状态
-        saveFiltersToStorage();
-
-        // 应用筛选
-        applyFilters();
-    } else if (group === 'domestic') {
-        // 国内区域筛选：特殊逻辑
-        handleRegionFilter('domestic', value);
-
-        // 保存筛选状态
-        saveFiltersToStorage();
-
-        // 应用筛选
-        applyFilters();
-    } else if (group === 'international') {
-        // 国际区域筛选：特殊逻辑
-        handleRegionFilter('international', value);
 
         // 保存筛选状态
         saveFiltersToStorage();

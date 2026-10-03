@@ -512,7 +512,8 @@ class FlightParser:
         departure_flights = df[df['departureAirport'] == airport]
         for _, row in departure_flights.iterrows():
             at_ms = self._pick_ms(row, ['atd', 'etd', 'std', 'ptd'])
-            link_ms = self._pick_ms(row, ['eta', 'sta', 'pta'])
+            # 目的地到达：实际到达优先，其后预计、计划
+            link_ms = self._pick_ms(row, ['ata', 'eta', 'sta', 'pta'])
             has_atd = self._has_field(row, 'atd')
             has_ata = self._has_field(row, 'ata')
             if has_atd and has_ata:

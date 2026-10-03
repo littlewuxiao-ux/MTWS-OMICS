@@ -231,7 +231,10 @@
     fetch(`/${mode}/api/radar/alerts/`, { headers })
       .then((r) => r.json())
       .then((data) => {
-        if (data && data.success) updateRadarAlarmNavBadge((data.alerts || []).length);
+        if (data && data.success) {
+          const count = (data.alerts || []).filter((item) => !item.handled).length;
+          updateRadarAlarmNavBadge(count);
+        }
       })
       .catch(() => {});
   }
@@ -252,23 +255,22 @@
     });
   }
 
-  // 导航栏占住标题行左侧让出来的 58px：顶边对齐标题行上沿。
-  // 中文模式标题行隐藏时，顶边落到功能区下沿（page-chrome 底边）。
-  // 不改标题行 sticky。
+  // 导航顶边对齐功能区白线的下沿：有标题行时对齐标题行，否则对齐顶栏底边。
+  function contentBandTop() {
+    const titleRow = document.querySelector('.main-title-row');
+    if (titleRow && titleRow.offsetParent !== null) {
+      const top = titleRow.getBoundingClientRect().top;
+      if (top > 0) return Math.round(top);
+    }
+    const chrome = document.querySelector('.page-chrome');
+    if (chrome) return Math.max(0, Math.round(chrome.getBoundingClientRect().bottom));
+    return 180;
+  }
+
   function syncNavTop() {
     const nav = document.getElementById('view-nav');
     if (!nav) return;
-    const titleRow = document.querySelector('.main-title-row');
-    let top = null;
-    if (titleRow && titleRow.offsetParent !== null) {
-      top = titleRow.getBoundingClientRect().top;
-    }
-    if (top === null) {
-      const chrome = document.querySelector('.page-chrome');
-      if (!chrome) return;
-      top = chrome.getBoundingClientRect().bottom;
-    }
-    nav.style.top = Math.max(0, Math.round(top)) + 'px';
+    nav.style.top = contentBandTop() + 'px';
   }
 
   let _topQueued = false;
@@ -484,6 +486,8 @@
     return _current;
   }
 
+  window.contentBandTop = contentBandTop;
+  window.syncNavTop = syncNavTop;
   window.initViewNav = initViewNav;
   window.switchView = switchView;
   window.currentView = currentView;

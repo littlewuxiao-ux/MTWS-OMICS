@@ -56,9 +56,18 @@ def radar_alert_status(request, time_mode='current'):
 @require_http_methods(['POST'])
 @csrf_exempt
 def radar_alert_run(request, time_mode='current'):
+    from utils.airport_scope import airport_codes_for_scope, clamp_future_hours
+
     data = _json_body(request)
     force = bool(data.get('force'))
-    st = trigger_radar_job(force=force)
+    scope = (data.get('scope') or '').strip()
+    if scope in ('has_flight', 'recent2h'):
+        hours = clamp_future_hours(data.get('future_hours'))
+        codes = airport_codes_for_scope(scope, hours)
+        hide_stale = bool(data.get('hide_stale'))
+        st = trigger_radar_job(force=force, codes=codes, hide_stale=hide_stale)
+    else:
+        st = trigger_radar_job(force=force)
     return JsonResponse({'success': True, 'status': st})
 
 
@@ -119,21 +128,56 @@ def _radar_overlay_meta():
     }
 
 
-@require_http_methods(['GET'])
-def radar_alerts(request, time_mode='current'):
-    """返回当前雷达告警列表，供地图悬浮层使用。"""
+@require_http_methods(['POST'])
+@csrf_exempt
+def radar_alert_handle(request, time_mode='current'):
+    """把当前雷达告警标为已处理。告警等级变化后会重新变为未处理。"""
     from core.models import AirportRadarAlert
 
+    data = _json_body(request)
+    code = str(data.get('airport_4code') or '').strip().upper()
+    if len(code) != 4:
+        return JsonResponse({'success': False, 'error': '无效的四字代码'}, status=400)
+    row = AirportRadarAlert.objects.filter(airport_4code=code).first()
+    if not row:
+        return JsonResponse({'success': False, 'error': '未找到该机场告警'}, status=404)
+    row.handled = True
+    row.handled_signature = row.alert_signature()
+    row.save(update_fields=['handled', 'handled_signature'])
+    return JsonResponse({'success': True, 'airport_4code': code, 'handled': True})
+
+
+@require_http_methods(['GET'])
+def radar_alerts(request, time_mode='current'):
+    """返回当前雷达告警列表，供地图悬浮层使用。只含当前清单内的机场。"""
+    from core.models import AirportRadarAlert, RadarAlertConfig
+    from utils.airport_scope import airport_codes_for_scope, clamp_future_hours
+    from utils.radar.pipeline import job_stale_filter
+
     show_g = request.GET.get('include_g') == '1'
+    scope = (request.GET.get('scope') or 'has_flight').strip()
+    if scope not in ('has_flight', 'recent2h'):
+        scope = 'has_flight'
+    future_hours = clamp_future_hours(request.GET.get('future_hours'))
+    universe = set(airport_codes_for_scope(scope, future_hours))
+    hide_stale, stale_codes, stale_started = job_stale_filter()
+    cfg_row = RadarAlertConfig.objects.order_by('id').first()
+    alarm_colors = set(merge_config(cfg_row.config if cfg_row else None).get('alarm_colors') or ['R', 'Y'])
     qs = AirportRadarAlert.objects.all()
     rows = []
     observe = []
     watch = []
     for r in qs:
+        code = r.airport_4code
+        if code not in universe:
+            continue
+        if hide_stale and code in stale_codes and stale_started is not None:
+            if r.updated_at is None or r.updated_at < stale_started:
+                continue
         a33, a41 = r.alert_33 or 'N', r.alert_41 or 'N'
-        # 两档回波都达到 R/Y 才是告警；只达到一档为观察项
-        hit33 = a33 in ('R', 'Y')
-        hit41 = a41 in ('R', 'Y')
+        # 两档回波都达到所选颜色才是告警；只达到一档为观察项
+        hit33 = a33 in alarm_colors
+        hit41 = a41 in alarm_colors
         item = {
             'airport_4code': r.airport_4code,
             'alert_33': a33,
@@ -141,6 +185,7 @@ def radar_alerts(request, time_mode='current'):
             'alert_highest': r.alert_highest or 'N',
             'frame_time': r.frame_time,
             'updated_at': r.updated_at.isoformat() if r.updated_at else None,
+            'handled': r.is_handled_current(),
         }
         if hit33 and hit41:
             item['kind'] = 'alarm'
@@ -166,6 +211,9 @@ def radar_alerts(request, time_mode='current'):
         'watch': watch,
         'status': get_radar_job_status(),
         'overlay': _radar_overlay_meta(),
+        'scope': scope,
+        'future_hours': future_hours,
+        'universe_count': len(universe),
     })
 
 
