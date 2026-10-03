@@ -4333,6 +4333,11 @@ body:not(.flight-marks-mode) .flight-past-handle-float {
 }
 .flight-marks-track-upper { top: 0; }
 .flight-marks-track-lower { bottom: 0; }
+.flight-marks-track-center {
+  top: 0;
+  bottom: 0;
+  height: 100%;
+}
 
 .flight-mark {
   position: absolute;
@@ -4342,7 +4347,7 @@ body:not(.flight-marks-mode) .flight-past-handle-float {
   height: 16px;
   min-width: 12px;
   box-sizing: border-box;
-  border: 1px solid #000;
+  border: none;
   border-radius: 2px;
   color: #000;
   font-size: 10px;
@@ -4365,13 +4370,13 @@ body:not(.flight-marks-mode) .flight-past-handle-float {
   z-index: 2;
   color: #000;
 }
-/* 时刻竖线：地面白、空中黑、超时闪烁 */
+/* 时刻指向：落地尖头朝下，起飞尖头朝上；地面白、空中黑、超时闪烁 */
 .flight-mark-tick {
   position: absolute;
-  top: 0;
-  bottom: 0;
+  top: 2px;
+  bottom: 2px;
   left: 50%;
-  width: 2px;
+  width: 6px;
   height: auto;
   background: #fff;
   border: none;
@@ -4379,6 +4384,10 @@ body:not(.flight-marks-mode) .flight-past-handle-float {
   transform: translateX(-50%);
   z-index: 1;
   pointer-events: none;
+  clip-path: polygon(50% 100%, 0% 0%, 100% 0%);
+}
+.flight-mark-tick-up {
+  clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
 }
 .flight-mark-tick-air {
   background: #000;
@@ -4409,14 +4418,69 @@ body:not(.flight-marks-mode) .flight-past-handle-float {
   line-height: 1.4;
   user-select: none;
 }
+.fml-head {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-bottom: 2px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+  margin-bottom: 2px;
+}
 .fml-handle {
   cursor: move;
   font-weight: 700;
   letter-spacing: 0.04em;
   text-align: center;
-  padding-bottom: 2px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
-  margin-bottom: 2px;
+  padding-bottom: 0;
+  border-bottom: none;
+  margin-bottom: 0;
+}
+.fml-layout-toggle {
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.fml-layout-float {
+  position: absolute;
+  top: 1px;
+  right: 0;
+  z-index: 2;
+}
+.fml-layout-toggle input {
+  display: none;
+}
+.fml-layout-track {
+  position: relative;
+  display: flex;
+  width: 96px;
+  height: 18px;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  background: #243447;
+  overflow: hidden;
+}
+.fml-layout-label {
+  flex: 1;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 16px;
+  color: #fff;
+  position: relative;
+  z-index: 2;
+  pointer-events: none;
+}
+.fml-layout-thumb {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 50%;
+  height: 100%;
+  background: var(--alert-g);
+  z-index: 1;
+  transition: transform 0.2s ease;
+}
+.fml-layout-toggle input:checked + .fml-layout-track .fml-layout-thumb {
+  transform: translateX(100%);
 }
 .fml-body {
   display: flex;
@@ -4442,34 +4506,39 @@ body:not(.flight-marks-mode) .flight-past-handle-float {
   width: 22px;
   height: 16px;
   box-sizing: border-box;
-  border: 1px solid #000;
+  border: none;
   border-radius: 2px;
   flex-shrink: 0;
 }
 .fml-mark::after {
   content: '';
   position: absolute;
-  top: 1px;
-  bottom: 1px;
+  top: 2px;
+  bottom: 2px;
   left: 50%;
-  width: 2px;
+  width: 6px;
   background: #fff;
   transform: translateX(-50%);
+  clip-path: polygon(50% 100%, 0% 0%, 100% 0%);
 }
 .fml-mark-r { background: rgba(var(--alert-r-rgb), 0.8); }
 .fml-mark-y { background: rgba(var(--alert-y-rgb), 0.8); }
 .fml-mark-g { background: rgba(var(--alert-g-rgb), 0.8); }
 .fml-mark-n { background: rgba(var(--alert-n-rgb), 0.8); }
 .fml-right {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 4px;
   padding-left: 10px;
   border-left: 1px solid rgba(255, 255, 255, 0.2);
 }
+.fml-dir {
+  padding-right: 104px;
+}
 .fml-row {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 8px 14px;
   align-items: center;
 }
@@ -4492,18 +4561,25 @@ body:not(.flight-marks-mode) .flight-past-handle-float {
   font-weight: 700;
   font-size: 11px;
 }
+.fml-tri,
 .fml-tick {
   display: inline-block;
-  width: 3px;
-  height: 14px;
-  border-radius: 1px;
+  width: 8px;
+  height: 10px;
   background: #fff;
   flex-shrink: 0;
+  clip-path: polygon(50% 100%, 0% 0%, 100% 0%);
 }
-.fml-tick-black { background: #000; box-shadow: 0 0 0 1px rgba(255,255,255,0.35); }
+.fml-tri-up {
+  clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
+}
+.fml-tick-black {
+  background: #000;
+  filter: drop-shadow(0 0 1px rgba(255, 255, 255, 0.9));
+}
 .fml-tick-blink {
   animation: flight-mark-tick-overdue 0.9s steps(1, end) infinite;
-  box-shadow: 0 0 0 1px rgba(255,255,255,0.35);
+  filter: drop-shadow(0 0 1px rgba(255, 255, 255, 0.9));
 }
 
 .flight-marks-tooltip {
@@ -4527,36 +4603,69 @@ body:not(.flight-marks-mode) .flight-past-handle-float {
   padding-top: 8px;
   border-top: 1px solid rgba(255, 255, 255, 0.12);
 }
+.fmt-cols {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 12px;
+}
+.fmt-above .fmt-cols {
+  align-items: flex-end;
+}
+.fmt-col {
+  display: flex;
+  flex-direction: column;
+}
+.flight-mark-hold-hidden {
+  visibility: hidden;
+}
 .fmt-row1 {
   display: flex;
   align-items: baseline;
   gap: 8px;
 }
-.fmt-role {
-  color: #6ea8fe;
-  font-weight: 700;
-}
-.fmt-no {
+.fmt-role,
+.fmt-no,
+.fmt-at,
+.fmt-row-detail,
+.fmt-row2,
+.fmt-row2 span {
   color: #fff;
   font-weight: 700;
+  font-size: 12px;
   letter-spacing: 0.02em;
 }
-.fmt-apt {
-  color: #c5d0dc;
-  font-weight: 400;
+.fmt-tag-done {
+  text-decoration: underline;
 }
+.fmt-row-detail,
 .fmt-row2 {
   margin-top: 5px;
+}
+.fmt-row2 {
   display: flex;
   gap: 12px;
-  color: #d5dee8;
-  font-size: 11px;
 }
-.fmt-row2 i {
-  font-style: normal;
-  color: #8fa4b8;
-  margin-right: 4px;
-  font-weight: 400;
+
+.flight-mark-links {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+.flight-mark-linkbar {
+  position: absolute;
+  top: 50%;
+  height: 2px;
+  transform: translateY(-50%);
+}
+.flight-mark-linkdot {
+  position: absolute;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
 }
 
 .flight-marks-mode .flight-row {

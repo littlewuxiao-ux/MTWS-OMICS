@@ -35,6 +35,7 @@ function syncFlightMarksBodyClass() {
     const on = isFlightMarksMode();
     document.body.classList.toggle('flight-marks-mode', on);
     document.body.classList.toggle('flight-marks-past-open', on && !!window.flightMarksPastExpanded);
+    document.body.classList.toggle('flight-marks-layout-center', on && isFlightMarksLayoutCenter());
     if (on) {
         syncFlightMarksCssVars();
         ensureFlightMarksLegend();
@@ -150,12 +151,36 @@ function marksEventWarning(event) {
     return w || 'N';
 }
 
-/** 竖线：地面白、空中黑；oar/oen/odp 同一套超时闪 */
+const MARKS_LAYOUT_KEY = 'mtws_marks_layout';
+
+function marksIsDeparture(event) {
+    const kind = event && event.kind;
+    return kind === 'dep' || kind === 'off' || kind === 'odp' || kind === 'dst';
+}
+
+function getFlightMarksLayout() {
+    if (window.flightMarksLayout === 'center' || window.flightMarksLayout === 'split') {
+        return window.flightMarksLayout;
+    }
+    let saved = 'split';
+    try {
+        if (localStorage.getItem(MARKS_LAYOUT_KEY) === 'center') saved = 'center';
+    } catch (e) { /* ignore */ }
+    window.flightMarksLayout = saved;
+    return saved;
+}
+
+function isFlightMarksLayoutCenter() {
+    return getFlightMarksLayout() === 'center';
+}
+
+/** 三角：起飞朝上、着陆朝下；地面白、空中黑；oar/oen/odp 超时闪 */
 function marksTickClass(event) {
     const kind = event && event.kind;
-    if (kind === 'oar' || kind === 'oen' || kind === 'odp') return ' flight-mark-tick-overdue';
-    if (kind === 'enr' || kind === 'off') return ' flight-mark-tick-air';
-    return '';
+    const dir = marksIsDeparture(event) ? ' flight-mark-tick-up' : ' flight-mark-tick-down';
+    if (kind === 'oar' || kind === 'oen' || kind === 'odp') return dir + ' flight-mark-tick-overdue';
+    if (kind === 'enr' || kind === 'off') return dir + ' flight-mark-tick-air';
+    return dir;
 }
 
 function marksWarningColor(level) {
@@ -192,19 +217,100 @@ function formatMarksTooltipTime(v) {
     }
 }
 
+function marksTimeMs(v) {
+    if (v == null || v === '') return null;
+    const n = Number(v);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    return n;
+}
+
+/** 起飞航班看目的地到达（ata 最优先）；着陆航班看上一站起飞（atd 最优先） */
+function marksPickLink(ev, isDep) {
+    const o = (ev && ev.other) || {};
+    const fields = isDep
+        ? [['ata', '已落地', true], ['eta', '预达', false], ['sta', '计达', false], ['pta', '计达', false]]
+        : [['atd', '已起飞', true], ['etd', '预起', false], ['std', '计起', false], ['ptd', '计起', false]];
+    for (let i = 0; i < fields.length; i++) {
+        const ms = marksTimeMs(o[fields[i][0]]);
+        if (ms != null) {
+            return {
+                ms: ms,
+                label: fields[i][1],
+                done: !!fields[i][2],
+                code: isDep ? (o.arrivalAirport || '') : (o.departureAirport || ''),
+            };
+        }
+    }
+    const fallback = marksTimeMs(ev && ev.link);
+    if (fallback == null) return null;
+    return {
+        ms: fallback,
+        label: '',
+        done: false,
+        code: isDep ? (o.arrivalAirport || '') : (o.departureAirport || ''),
+    };
+}
+
+/** 方块所在的 at：起飞看本场起飞，着陆看本场落地 */
+function marksPickAt(ev, isDep) {
+    const o = (ev && ev.other) || {};
+    const at = marksTimeMs(ev && ev.at);
+    const fields = isDep
+        ? [['atd', '已起飞', true], ['etd', '预起', false], ['std', '计起', false], ['ptd', '计起', false]]
+        : [['ata', '已落地', true], ['eta', '预达', false], ['sta', '计达', false], ['pta', '计达', false]];
+    if (!isDep && ev && ev.kind === 'lnd') {
+        const ms = marksTimeMs(o.ata) || at;
+        return ms ? { ms: ms, label: '已落地', done: true } : null;
+    }
+    if (at != null) {
+        for (let i = 0; i < fields.length; i++) {
+            if (!isDep && fields[i][0] === 'ata') continue;
+            if (marksTimeMs(o[fields[i][0]]) === at) {
+                return { ms: at, label: fields[i][1], done: !!fields[i][2] };
+            }
+        }
+        return { ms: at, label: '', done: false };
+    }
+    for (let i = 0; i < fields.length; i++) {
+        if (!isDep && fields[i][0] === 'ata') continue;
+        const ms = marksTimeMs(o[fields[i][0]]);
+        if (ms != null) return { ms: ms, label: fields[i][1], done: !!fields[i][2] };
+    }
+    return null;
+}
+
+function marksTimeTag(label, done) {
+    if (!label) return '';
+    const text = `（${_marksEscHtml(label)}）`;
+    return done ? `<span class="fmt-tag-done">${text}</span>` : text;
+}
+
 function marksTooltipPayload(ev, track) {
     const o = ev.other || {};
     const kind = ev && ev.kind;
     const isDep = track === 'dep'
         || kind === 'dep' || kind === 'off' || kind === 'odp' || kind === 'dst';
+    const link = marksPickLink(ev, isDep);
+    const atInfo = marksPickAt(ev, isDep);
     return {
         role: isDep ? 'dep' : 'arr',
         flightNo: o.flightNo || '',
         dep: o.departureAirport || '',
         arr: o.arrivalAirport || '',
-        std: o.std, etd: o.etd, atd: o.atd,
-        sta: o.sta, eta: o.eta, ata: o.ata,
+        warning: marksEventWarning(ev),
+        linkMs: link ? link.ms : null,
+        linkLabel: link ? link.label : '',
+        linkDone: !!(link && link.done),
+        linkCode: link ? link.code : '',
+        atMs: atInfo ? atInfo.ms : null,
+        atLabel: atInfo ? atInfo.label : '',
+        atDone: !!(atInfo && atInfo.done),
     };
+}
+
+function _marksCssColor(c) {
+    const s = String(c || '');
+    return /^[#a-zA-Z0-9().,%\s]+$/.test(s) ? s : '#fff';
 }
 
 function formatMarksTooltipHtml(payload) {
@@ -213,22 +319,21 @@ function formatMarksTooltipHtml(payload) {
         const isDep = p.role === 'dep';
         const role = isDep ? '起飞航班' : '着陆航班';
         const no = _marksEscHtml(p.flightNo || '--');
-        const aptLabel = isDep ? '目的地机场' : '上一站起飞机场';
-        const aptCode = _marksEscHtml((isDep ? p.arr : p.dep) || '--');
-        const plan = _marksEscHtml(formatMarksTooltipTime(isDep ? p.std : p.sta));
-        const est = _marksEscHtml(formatMarksTooltipTime(isDep ? p.etd : p.eta));
-        const act = _marksEscHtml(formatMarksTooltipTime(isDep ? p.atd : p.ata));
+        const warned = p.warning && p.warning !== 'N';
+        const roleStyle = warned
+            ? ` style="color:${_marksCssColor((typeof getAlertColor === 'function') ? getAlertColor(p.warning) : '#fff')}"`
+            : '';
+        const code = _marksEscHtml(p.linkCode || '--');
+        const when = _marksEscHtml(formatMarksTooltipTime(p.linkMs));
+        const atWhen = _marksEscHtml(formatMarksTooltipTime(p.atMs));
+        const detailName = isDep ? '着陆详情' : '起飞详情';
         return `<div class="fmt-card">
             <div class="fmt-row1">
-                <span class="fmt-role">${role}</span>
+                <span class="fmt-role"${roleStyle}>${role}</span>
                 <span class="fmt-no">${no}</span>
-                <span class="fmt-apt">${aptLabel}：${aptCode}</span>
+                <span class="fmt-at">${atWhen}${marksTimeTag(p.atLabel, p.atDone)}</span>
             </div>
-            <div class="fmt-row2">
-                <span><i>计划</i>${plan}</span>
-                <span><i>预计</i>${est}</span>
-                <span><i>实际</i>${act}</span>
-            </div>
+            <div class="fmt-row-detail">${detailName}：${code}|${when}${marksTimeTag(p.linkLabel, p.linkDone)}</div>
         </div>`;
     }).join('');
 }
@@ -251,20 +356,94 @@ function hideFlightMarksTooltip() {
     el.style.display = 'none';
     el.innerHTML = '';
     el._srcMark = null;
+    el._fmtOrder = null;
 }
 
-function positionFlightMarksTooltip(el, clientX, clientY) {
-    const pad = 12;
-    const w = el.offsetWidth;
-    const h = el.offsetHeight;
-    let left = clientX + pad;
-    let top = clientY + pad;
-    if (left + w > window.innerWidth - 8) left = clientX - w - pad;
-    if (top + h > window.innerHeight - 8) top = clientY - h - pad;
+function positionFlightMarksTooltip(el, markEl) {
+    const row = (markEl && markEl.closest && (markEl.closest('.flight-row') || markEl.closest('.forecast-timeline'))) || markEl;
+    const rowRect = row.getBoundingClientRect();
+    const markRect = markEl.getBoundingClientRect();
+    const modal = markEl.closest && markEl.closest('#airport-detail-modal, #airport-search-modal');
+    let limitTop = 4;
+    if (modal) {
+        const head = modal.querySelector('.airport-detail-header-main');
+        const block = markEl.closest('.airport-search-block');
+        const title = block
+            ? block.querySelector('.title-row, .title-timeline')
+            : modal.querySelector('.airport-detail-title-row');
+        const headBottom = head ? head.getBoundingClientRect().bottom : modal.getBoundingClientRect().top;
+        const titleBottom = title ? title.getBoundingClientRect().bottom : headBottom;
+        limitTop = Math.max(4, headBottom, titleBottom) + 4;
+    } else {
+        const chrome = document.querySelector('.page-chrome');
+        const fn = document.querySelector('.function-section');
+        limitTop = Math.max(
+            4,
+            chrome ? chrome.getBoundingClientRect().bottom : 0,
+            fn ? fn.getBoundingClientRect().bottom : 0
+        ) + 4;
+    }
+    const limitBottom = window.innerHeight - 4;
+    const gap = 4;
+    const above = (rowRect.top + rowRect.height / 2) > ((limitTop + limitBottom) / 2);
+    const avail = Math.max(36, above
+        ? (rowRect.top - gap - limitTop)
+        : (limitBottom - (rowRect.bottom + gap)));
+
+    const cards = (el._fmtOrder && el._fmtOrder.length)
+        ? el._fmtOrder
+        : [...el.querySelectorAll('.fmt-card')];
+    if (!cards.length) return;
+    el.style.display = 'block';
+    el.style.visibility = 'hidden';
+    el.style.left = '0px';
+    el.style.top = '0px';
+    el.classList.remove('fmt-above');
+    cards.forEach((card) => el.appendChild(card));
+    el.querySelectorAll('.fmt-cols').forEach((node) => node.remove());
+    const cardGap = 8;
+    const heights = cards.map((card) => card.offsetHeight);
+    const cols = [];
+    let group = [];
+    let used = 0;
+    cards.forEach((card, i) => {
+        const h = heights[i] || 36;
+        const next = group.length ? used + cardGap + h : h;
+        if (group.length && next > avail) {
+            cols.push(group);
+            group = [card];
+            used = h;
+        } else {
+            group.push(card);
+            used = next;
+        }
+    });
+    if (group.length) cols.push(group);
+
+    const colsEl = document.createElement('div');
+    colsEl.className = 'fmt-cols';
+    cols.forEach((list) => {
+        const colEl = document.createElement('div');
+        colEl.className = 'fmt-col';
+        const ordered = above ? list.slice().reverse() : list;
+        ordered.forEach((card) => colEl.appendChild(card));
+        colsEl.appendChild(colEl);
+    });
+    el.innerHTML = '';
+    el.appendChild(colsEl);
+    el.classList.toggle('fmt-above', above);
+
+    const tipW = el.offsetWidth;
+    const tipH = el.offsetHeight;
+    let left = markRect.left;
+    if (left + tipW > window.innerWidth - 8) left = window.innerWidth - 8 - tipW;
     if (left < 8) left = 8;
-    if (top < 8) top = 8;
-    el.style.left = `${left}px`;
-    el.style.top = `${top}px`;
+    let top = above ? (rowRect.top - gap - tipH) : (rowRect.bottom + gap);
+    if (top < limitTop) top = limitTop;
+    if (top + tipH > limitBottom) top = Math.max(limitTop, limitBottom - tipH);
+    el.style.left = `${Math.round(left)}px`;
+    el.style.top = `${Math.round(top)}px`;
+    el.style.visibility = 'visible';
 }
 
 function showFlightMarksTooltip(markEl, clientX, clientY) {
@@ -278,9 +457,10 @@ function showFlightMarksTooltip(markEl, clientX, clientY) {
     if (el._srcMark !== markEl) {
         el.innerHTML = formatMarksTooltipHtml(payload);
         el._srcMark = markEl;
+        el._fmtOrder = [...el.querySelectorAll('.fmt-card')];
     }
     el.style.display = 'block';
-    positionFlightMarksTooltip(el, clientX, clientY);
+    positionFlightMarksTooltip(el, markEl);
 }
 
 function bindFlightMarksTooltip() {
@@ -304,6 +484,126 @@ function bindFlightMarksTooltip() {
         if (next && mark.contains(next)) return;
         hideFlightMarksTooltip();
     });
+}
+
+function hideFlightMarkLinks() {
+    document.querySelectorAll('.flight-mark-links').forEach((el) => el.remove());
+    document.querySelectorAll('.flight-mark-hold-hidden').forEach((el) => {
+        el.classList.remove('flight-mark-hold-hidden');
+    });
+}
+
+function concealSiblingFlightMarks(mark) {
+    const row = mark && mark.closest && mark.closest('.airport-row');
+    if (!row) return;
+    row.querySelectorAll('.flight-mark').forEach((el) => {
+        if (el !== mark) el.classList.add('flight-mark-hold-hidden');
+    });
+}
+
+function _appendMarkLinkBar(track, color, fromPct, toPct, dotPcts) {
+    const left = Math.min(fromPct, toPct);
+    const right = Math.max(fromPct, toPct);
+    const width = right - left;
+    if (!(width > 0.05)) return;
+    const wrap = document.createElement('div');
+    wrap.className = 'flight-mark-links';
+    const bar = document.createElement('div');
+    bar.className = 'flight-mark-linkbar';
+    bar.style.left = left + '%';
+    bar.style.width = width + '%';
+    bar.style.background = color;
+    (dotPcts || []).forEach((p) => {
+        if (p < 0 || p > 100 || p < left - 0.05 || p > right + 0.05) return;
+        const dot = document.createElement('span');
+        dot.className = 'flight-mark-linkdot';
+        dot.style.left = (((p - left) / width) * 100) + '%';
+        dot.style.background = color;
+        bar.appendChild(dot);
+    });
+    wrap.appendChild(bar);
+    track.appendChild(wrap);
+}
+
+function showFlightMarkLinks(mark) {
+    hideFlightMarkLinks();
+    const track = mark && mark.parentElement;
+    if (!track) return;
+    concealSiblingFlightMarks(mark);
+    let payload;
+    try {
+        payload = JSON.parse(mark.getAttribute('data-marks-tip') || '[]');
+    } catch (e) {
+        return;
+    }
+    const items = Array.isArray(payload) ? payload : [payload];
+    const boxLeft = parseFloat(mark.style.left);
+    const boxWidth = parseFloat(mark.style.width);
+    if (!Number.isFinite(boxLeft) || !Number.isFinite(boxWidth)) return;
+    const boxRight = boxLeft + boxWidth;
+    const color = (getComputedStyle(mark).backgroundColor) || '#95a5a6';
+    const depPcts = [];
+    const arrPcts = [];
+    items.forEach((p) => {
+        const ms = marksTimeMs(p && p.linkMs);
+        if (ms == null) return;
+        const pct = marksMsToLeftPercent(ms);
+        if (!Number.isFinite(pct)) return;
+        if (p.role === 'dep') depPcts.push(pct);
+        else arrPcts.push(pct);
+    });
+    if (depPcts.length) {
+        const farthest = Math.max.apply(null, depPcts);
+        const end = Math.min(100, farthest);
+        if (end > boxRight) {
+            _appendMarkLinkBar(
+                track,
+                color,
+                boxRight,
+                end,
+                depPcts.filter((p) => p > boxRight && p >= 0 && p <= 100)
+            );
+        }
+    }
+    if (arrPcts.length) {
+        const farthest = Math.min.apply(null, arrPcts);
+        const end = Math.max(0, farthest);
+        if (boxLeft > end) {
+            _appendMarkLinkBar(
+                track,
+                color,
+                end,
+                boxLeft,
+                arrPcts.filter((p) => p < boxLeft && p >= 0 && p <= 100)
+            );
+        }
+    }
+}
+
+function bindFlightMarkLinkHold() {
+    if (window._flightMarkLinkHoldBound) return;
+    window._flightMarkLinkHoldBound = true;
+    let timer = 0;
+    let holding = null;
+    const cancel = () => {
+        if (timer) clearTimeout(timer);
+        timer = 0;
+        holding = null;
+        hideFlightMarkLinks();
+    };
+    document.addEventListener('mousedown', (e) => {
+        if (e.button !== 0) return;
+        const mark = e.target && e.target.closest && e.target.closest('.flight-mark');
+        if (!mark) return;
+        if (timer) clearTimeout(timer);
+        holding = mark;
+        timer = setTimeout(() => {
+            timer = 0;
+            if (holding === mark && document.body.contains(mark)) showFlightMarkLinks(mark);
+        }, 500);
+    });
+    document.addEventListener('mouseup', cancel);
+    window.addEventListener('blur', cancel);
 }
 
 function clusterFlightMarks(items, timelineWidthPx) {
@@ -353,15 +653,22 @@ function createMarksFlightTimeline(flightData, airportCode) {
     });
 
     // 折叠时也要求 at >= now（与 winStart 一致）；展开则含过去 2h
+    // split：上行着陆、下行起飞。center：全部放进同一行并居中，方向只看三角。
+    const centerLayout = isFlightMarksLayoutCenter();
     const upper = [];
     const lower = [];
+    const merged = [];
     visible.forEach((e) => {
         const at = Number(e.at);
         const leftPct = marksMsToLeftPercent(at);
         if (leftPct < -1 || leftPct > 101) return;
+        const isDep = marksIsDeparture(e);
+        const isArr = e.kind === 'arr' || e.kind === 'enr' || e.kind === 'lnd' || e.kind === 'oar' || e.kind === 'oen';
+        if (!isDep && !isArr) return;
         const item = { event: e, at, leftPct, centerPx: 0, estWidth: estimateMarkBoxWidth() };
-        if (e.kind === 'dep' || e.kind === 'off' || e.kind === 'odp' || e.kind === 'dst') lower.push(item);
-        else if (e.kind === 'arr' || e.kind === 'enr' || e.kind === 'lnd' || e.kind === 'oar' || e.kind === 'oen') upper.push(item);
+        if (centerLayout) merged.push(item);
+        else if (isDep) lower.push(item);
+        else upper.push(item);
     });
 
     // 用假定时间轴宽度算像素（与格子同宽逻辑：渲染后由 CSS % 定位，聚簇用 1000px 基准再转 %）
@@ -394,7 +701,9 @@ function createMarksFlightTimeline(flightData, airportCode) {
             const color = marksWarningColor(cl.warning);
             const tipPayload = eventsIn.map((ev) => marksTooltipPayload(ev, track));
             const tipAttr = _marksEscHtml(JSON.stringify(tipPayload));
-            const trackClass = track === 'dep' ? 'flight-mark-lower' : 'flight-mark-upper';
+            const trackClass = track === 'dep'
+                ? 'flight-mark-lower'
+                : (track === 'center' ? 'flight-mark-center' : 'flight-mark-upper');
             // 簇内每个航班在对应时刻各画上下短线；单票则居中一根
             const boxLeftPx = (leftPct / 100) * axisPx;
             const boxWidthPx = Math.max((widthPct / 100) * axisPx, 1);
@@ -414,6 +723,12 @@ function createMarksFlightTimeline(flightData, airportCode) {
         }).join('');
     };
 
+    if (centerLayout) {
+        return `
+        <div class="flight-marks-layer">
+            <div class="flight-marks-track flight-marks-track-center">${renderTrack(merged, 'center')}</div>
+        </div>`;
+    }
     return `
         <div class="flight-marks-layer">
             <div class="flight-marks-track flight-marks-track-upper">${renderTrack(upper, 'upper')}</div>
@@ -959,6 +1274,46 @@ function toggleFlightMarksPast(event, scope) {
 
 const MARKS_LEGEND_POS_KEY = 'mtws_marks_legend_pos';
 
+function marksLegendDirHtml(center) {
+    if (center) {
+        return `
+            <span class="fml-item"><span class="fml-tri fml-tri-down"></span>朝下＝进港/落地</span>
+            <span class="fml-item"><span class="fml-tri fml-tri-up"></span>朝上＝起飞/离港</span>`;
+    }
+    return `
+        <span class="fml-item"><span class="fml-tri fml-tri-down"></span>上行＝进港/落地</span>
+        <span class="fml-item"><span class="fml-tri fml-tri-up"></span>下行＝起飞/离港</span>`;
+}
+
+function syncMarksLegendLayout() {
+    const el = document.getElementById('flight-marks-legend');
+    if (!el) return;
+    const center = isFlightMarksLayoutCenter();
+    const input = el.querySelector('.fml-layout-input');
+    if (input) input.checked = center;
+    const dir = el.querySelector('.fml-dir');
+    if (dir) dir.innerHTML = marksLegendDirHtml(center);
+    document.body.classList.toggle('flight-marks-layout-center', center);
+}
+
+function setFlightMarksLayout(mode) {
+    window.flightMarksLayout = mode === 'center' ? 'center' : 'split';
+    try { localStorage.setItem(MARKS_LAYOUT_KEY, window.flightMarksLayout); } catch (e) { /* ignore */ }
+    syncMarksLegendLayout();
+    redrawAllFlightMarks();
+}
+
+function redrawAllFlightMarks() {
+    if (marksScopeHostVisible('home')) redrawMarksScope('home');
+    if (marksScopeHostVisible('detail')) redrawMarksScope('detail');
+    const searchOpen = marksScopeHostVisible('search:');
+    if (!searchOpen) return;
+    document.querySelectorAll('.airport-search-block[data-code]').forEach((block) => {
+        const code = block.dataset.code;
+        if (code) redrawMarksScope('search:' + String(code).toUpperCase());
+    });
+}
+
 function hideFlightMarksLegend() {
     const el = document.getElementById('flight-marks-legend');
     if (el) el.style.display = 'none';
@@ -1005,9 +1360,11 @@ function ensureFlightMarksLegend() {
             }
         });
     }
-    if (!el.querySelector('.fml-left')) {
+    if (!el.querySelector('.fml-layout-float')) {
         el.innerHTML = `
-            <div class="fml-handle" title="按住拖动">航班标记说明</div>
+            <div class="fml-head">
+                <div class="fml-handle" title="按住拖动">航班标记说明</div>
+            </div>
             <div class="fml-body">
                 <div class="fml-left">
                     <span class="fml-swatch"><span class="fml-mark fml-mark-r"></span>红色告警</span>
@@ -1016,20 +1373,32 @@ function ensureFlightMarksLegend() {
                     <span class="fml-swatch"><span class="fml-mark fml-mark-n"></span>无告警</span>
                 </div>
                 <div class="fml-right">
-                    <div class="fml-row">
-                        <span class="fml-item">上行＝进港/落地</span>
-                        <span class="fml-item">下行＝起飞/离港</span>
-                    </div>
+                    <div class="fml-row fml-dir"></div>
                     <div class="fml-row fml-row-lines">
                         <span class="fml-item"><span class="fml-tick fml-tick-white"></span>白＝飞机在地面</span>
                         <span class="fml-item"><span class="fml-tick fml-tick-black"></span>黑＝飞机在空中</span>
                         <span class="fml-item"><span class="fml-tick fml-tick-blink"></span>闪＝超时未起/未落</span>
                     </div>
+                    <label class="fml-layout-toggle fml-layout-float" title="切换航班排列">
+                        <input type="checkbox" class="fml-layout-input">
+                        <span class="fml-layout-track">
+                            <span class="fml-layout-label">上下行</span>
+                            <span class="fml-layout-label">居中</span>
+                            <span class="fml-layout-thumb"></span>
+                        </span>
+                    </label>
                 </div>
             </div>`;
+        const layoutInput = el.querySelector('.fml-layout-input');
+        if (layoutInput) {
+            layoutInput.addEventListener('change', () => {
+                setFlightMarksLayout(layoutInput.checked ? 'center' : 'split');
+            });
+        }
         el.dataset.dragBound = '';
         _bindMarksLegendDrag(el);
     }
+    syncMarksLegendLayout();
     el.style.display = 'flex';
     try {
         const saved = JSON.parse(localStorage.getItem(MARKS_LEGEND_POS_KEY) || 'null');
@@ -1130,6 +1499,7 @@ function initFlightMarksMode() {
     syncFlightMarksCssVars();
     ensureFlightPastHandleFloat();
     bindFlightMarksTooltip();
+    bindFlightMarkLinkHold();
     ensureFlightMarksLegend();
     bindMarksPastHandleLayoutWatch();
     if (!window._flightMarksHandleBound) {
