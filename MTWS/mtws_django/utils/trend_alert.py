@@ -624,8 +624,10 @@ def _clean_condition(raw: dict, index: int, known_weather: set, errors: list) ->
             errors.append(f'{prefix}基础条件分值需在 1 到 5 之间')
             if score is None:
                 score = 1
+    elif role == 'veto':
+        score = 0
     else:
-        role_name = {'extra': '附加条件', 'veto': '否决条件', 'deduct': '减分条件'}[role]
+        role_name = {'extra': '附加条件', 'deduct': '减分条件'}[role]
         if score is None or score < 0.1 or score > EXTRA_SCORE_CAP:
             errors.append(f'{prefix}{role_name}分值需在 0.1 到 {EXTRA_SCORE_CAP} 之间')
             if score is None:
@@ -965,8 +967,14 @@ def refresh_airports(codes, now_ms: Optional[int] = None) -> None:
         if not inside or not active_groups:
             clear_airports(inside)
             return
+        lookback = max_lookback_ms(active_groups)
+        try:
+            from parsers.trend_metar_backfill import ensure_hourly_sa_history
+            ensure_hourly_sa_history(inside, lookback, now_ms)
+        except Exception:
+            logger.exception('实况趋势告警历史补数失败: %s', inside)
         slots = build_slots(now_ms)
-        since = now_ms - max_lookback_ms(active_groups)
+        since = now_ms - lookback
         rows = Metar.objects.filter(
             airport_4code__in=inside,
             metar_observation_time__gte=since,

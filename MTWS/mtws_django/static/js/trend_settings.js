@@ -81,15 +81,23 @@
   }
 
   function scoreRange(role) {
-    if (role === 'extra' || role === 'veto' || role === 'deduct') return { min: 0.1, max: 3 };
+    if (role === 'extra' || role === 'deduct') return { min: 0.1, max: 3 };
     return { min: 1, max: 5 };
   }
 
   function scoreHint(role) {
     if (role === 'extra') return '0.1–3.0 分，命中后累加到基础分上。';
     if (role === 'deduct') return '0.1–3.0 分，命中后从本组总分中扣减，最低为 0。';
-    if (role === 'veto') return '0.1–3.0 分。命中后本组总分清零，分值不参与加减。';
+    if (role === 'veto') return '命中后本组总分清零，无需设置分值。';
     return '1.0–5.0 分。';
+  }
+
+  function scoreField(g, c, cond) {
+    if (cond.role === 'veto') {
+      return `<span class="trend-hint">${scoreHint('veto')}</span>`;
+    }
+    const range = scoreRange(cond.role);
+    return `<span>分值</span>${num(g, c, 'score', cond.score, '0.1', range.max, range.min)}<span class="trend-hint">${scoreHint(cond.role)}</span>`;
   }
 
   function blankCondition(kind) {
@@ -374,8 +382,7 @@
               <div class="trend-cond-body">
                 <div class="trend-line">
                   <span>描述</span>${text(g, c, 'label', cond.label, '如能见度快速下降')}
-                  <span>分值</span>${num(g, c, 'score', cond.score, '0.1', scoreRange(cond.role).max, scoreRange(cond.role).min)}
-                  <span class="trend-hint">${scoreHint(cond.role)}</span>
+                  ${scoreField(g, c, cond)}
                 </div>
                 ${conditionBody(cond, g, c)}
               </div>
@@ -435,10 +442,14 @@
     if (el.dataset.field === 'role' && el.dataset.c !== undefined && el.dataset.c !== '') {
       const cond = (group.conditions || [])[Number(el.dataset.c)];
       if (cond) {
-        const range = scoreRange(cond.role);
-        const score = Number(cond.score);
-        if (!Number.isFinite(score) || score < range.min) cond.score = range.min;
-        else if (score > range.max) cond.score = range.max;
+        if (cond.role === 'veto') {
+          cond.score = 0;
+        } else {
+          const range = scoreRange(cond.role);
+          const score = Number(cond.score);
+          if (!Number.isFinite(score) || score < range.min) cond.score = range.min;
+          else if (score > range.max) cond.score = range.max;
+        }
       }
     }
     if (el.classList.contains('trend-codes')) fitCodeBoxes(el.parentElement || document);
